@@ -169,12 +169,26 @@ import.
 
 ## Requirements
 
-- Python **3.12** — not merely 3.12 or newer. `pgserver`, which provides the
-  embedded PostgreSQL, publishes no wheel past cp312, so 3.13 and 3.14 cannot
-  install the database. `bootstrap` checks this and says so rather than letting
-  pip fail obliquely.
-- Node 20+ *(for `apps/web`; if installed user-locally at `~/.local/opt/node`,
-  the launcher finds it. The API and workers run without it.)*
+**Any Python 3.8 or newer, and git.** That is the whole list, and it is short
+because the bootstrap now fetches what it actually runs on rather than asking
+you to.
+
+What it fetches, and why it cannot just use yours:
+
+- **Python 3.12 exactly** — not merely 3.12 or newer. `pgserver`, which provides
+  the embedded PostgreSQL, publishes no wheel past cp312, so 3.13 and 3.14
+  cannot install the database. A relocatable build is downloaded from
+  `python-build-standalone`, verified against a checksum committed to this
+  repository, and the bootstrap re-executes itself under it. If your machine
+  already has 3.12, that one is used and nothing is downloaded.
+- **Node 20+**, because `serve.sh` runs `next start` — the interface is a Node
+  process at runtime, not only at build time. Fetched the same way, and skipped
+  when the machine already has one new enough. The API and workers run without
+  it; `serve.sh` says so plainly rather than appearing to start.
+
+Both land in `~/.throughline-os/runtimes`, versioned, so an update can be walked
+back. `THROUGHLINE_RUNTIME_DIR` moves them; `THROUGHLINE_SKIP_NODE=1` declines
+the Node download for a deliberately headless install.
 
 PostgreSQL is **not** a prerequisite — `pgserver` bundles a real PostgreSQL with
 pgvector as a Python wheel and runs it against a local data directory.
@@ -183,6 +197,18 @@ Linux, macOS and Windows. The analysis sandbox was POSIX-only until it grew a
 Windows backend built on Job Objects; see `services/scientific-runtime`.
 
 ## Quick start
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SarthakPattnaik1/throughline-os/main/scripts/install.sh | sh
+```
+
+That clones the repository to `~/throughline-os` (override with
+`THROUGHLINE_INSTALL_DIR`) and runs the bootstrap. A terminal line rather than a
+download on purpose: the quarantine flag that triggers Gatekeeper and SmartScreen
+is set by the downloading browser, not by the operating system, so this path
+carries no security warning at all.
+
+From an existing clone, the bootstrap directly:
 
 ```bash
 ./scripts/bootstrap.sh
