@@ -479,8 +479,15 @@ def dev(api_port: int, web_port: int) -> int:
                                THROUGHLINE_API=f"http://127.0.0.1:{api_port}",
                                PATH=os.pathsep.join(
                                    [str(Path(node).parent), os.environ.get("PATH", "")]))
+            # `node_exe`, not `shutil.which`: which() searches *this* process's
+            # PATH, which is not where the chosen node necessarily lives. On a
+            # machine carrying an old node on PATH and a fetched one under
+            # ~/.throughline-os/runtimes, that pairs the new node with the old
+            # npm — the same pick-by-position mistake `_node_on_path` fixes one
+            # level up, and it surfaces as an npm error about an engine
+            # constraint rather than as a version mismatch.
             children.append(_spawn(
-                [shutil.which("npm") or "npm", "run", "dev", "--",
+                [node_exe(node, "npm"), "run", "dev", "--",
                  "--port", str(web_port)],
                 cwd=str(ROOT / "apps" / "web"), env=environment))
         else:

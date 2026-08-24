@@ -430,3 +430,30 @@ def test_the_managed_node_is_a_candidate(monkeypatch, tmp_path):
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_text("#!/bin/sh\n")
     assert str(binary) in manage._node_candidates()
+
+
+def test_npm_is_taken_from_beside_the_chosen_node(tmp_path):
+    """The pick-by-position mistake, one level down.
+
+    `dev` chooses node by version and then has to run npm. Resolving npm on
+    PATH can hand back the one belonging to a *different* node — on a machine
+    with an old node on PATH and a fetched one in the runtime directory, that is
+    exactly what happens, and it surfaces as an npm error about an engine
+    constraint rather than as a version mismatch.
+    """
+    node = tmp_path / "bin" / "node"
+    node.parent.mkdir(parents=True)
+    node.write_text("#!/bin/sh\n")
+    npm = tmp_path / "bin" / ("npm.cmd" if manage.WINDOWS else "npm")
+    npm.write_text("#!/bin/sh\n")
+
+    assert manage.node_exe(str(node), "npm") == str(npm)
+
+
+def test_a_missing_sibling_falls_back_to_the_bare_name(tmp_path):
+    """An absolute path to a file that is not there fails less clearly than a
+    name the child's PATH can still resolve."""
+    node = tmp_path / "bin" / "node"
+    node.parent.mkdir(parents=True)
+    node.write_text("#!/bin/sh\n")
+    assert manage.node_exe(str(node), "npm") == "npm"
