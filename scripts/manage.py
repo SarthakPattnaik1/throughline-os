@@ -28,8 +28,20 @@ import sys
 import time
 from pathlib import Path
 
+import runtimes
+
 ROOT = Path(__file__).resolve().parent.parent
 WINDOWS = sys.platform == "win32"
+
+# Set on the child when this script re-executes itself under a fetched
+# interpreter. Without it a build whose fetched Python somehow reports the wrong
+# version would fetch and re-exec forever, which is a worse failure than the
+# refusal it replaced because it never returns.
+_REEXEC = "THROUGHLINE_BOOTSTRAP_REEXEC"
+
+# Below this, `next` will not start. Enforced rather than merely printed: a
+# bootstrap that ships Node is pointless if an older one on PATH shadows it.
+NODE_MINIMUM = 20
 
 # The floor every pyproject declares, and the ceiling pgserver imposes: it ships
 # the embedded PostgreSQL as a binary wheel and publishes none past cp312. Windows
@@ -75,19 +87,81 @@ def _venv_has_pip(root: Path = ROOT) -> bool:
                           capture_output=True).returncode == 0
 
 
+def _explain_the_version(want: str, have: str) -> None:
+    """Why 3.12 and not whatever this machine has. Printed only when we cannot
+    fix it ourselves — it is an explanation, not an instruction, now that the
+    normal path is to go and get the right one."""
+    print(f"Python {want} is required; this is {have} ({sys.executable}).",
+          file=sys.stderr)
+    print(f"\n  Every package here declares requires-python >= {want}, and"
+          f"\n  pgserver — which provides the embedded PostgreSQL — publishes"
+          f"\n  no wheel past cp{''.join(str(p) for p in REQUIRED_PYTHON)}."
+          f" Anything newer cannot install\n  the database."
+          f"\n\n  Run this with a {want} interpreter instead.", file=sys.stderr)
+
+
+def _venv_version(root: Path = ROOT) -> tuple[int, int] | None:
+    """The Python the existing virtualenv was built from, if it has one.
+
+    This became a question worth asking the moment the bootstrap could supply
+    its own interpreter. Before, the venv was always built by whatever ran this
+    script and the version could not drift; now a venv left by an earlier run
+    may have been built from a different Python entirely, and `_venv_has_pip`
+    would happily call it usable right up until an extension module fails to
+    import with a message about a symbol.
+    """
+    python = venv_python(root)
+    if not python.exists():
+        return None
+    result = subprocess.run(
+        [str(python), "-c",
+         "import sys; print(sys.version_info[0], sys.version_info[1])"],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    try:
+        major, minor = result.stdout.split()
+        return int(major), int(minor)
+    except ValueError:
+        return None
+
+
 def bootstrap() -> int:
     version = sys.version_info[:2]
+    want = ".".join(str(part) for part in REQUIRED_PYTHON)
+    have = ".".join(str(part) for part in version)
+
     if version != REQUIRED_PYTHON:
-        want = ".".join(str(part) for part in REQUIRED_PYTHON)
-        have = ".".join(str(part) for part in version)
-        print(f"Python {want} is required; this is {have} ({sys.executable}).",
-              file=sys.stderr)
-        print(f"\n  Every package here declares requires-python >= {want}, and"
-              f"\n  pgserver — which provides the embedded PostgreSQL — publishes"
-              f"\n  no wheel past cp{''.join(str(p) for p in REQUIRED_PYTHON)}."
-              f" Anything newer cannot install\n  the database."
-              f"\n\n  Run this with a {want} interpreter instead.", file=sys.stderr)
-        return 1
+        if os.environ.get(_REEXEC):
+            # Fetched an interpreter, ran this under it, and it still is not the
+            # version it claims to be. Stopping is the only safe answer: the
+            # alternative is fetching the same thing again forever.
+            print(f"The fetched interpreter reports {have}, not {want}.",
+                  file=sys.stderr)
+            _explain_the_version(want, have)
+            return 1
+
+        print(f"This is Python {have}, and {want} is required.")
+        print("Fetching one rather than asking you to install it.\n")
+        try:
+            interpreter = runtimes.ensure("python")
+        except runtimes.RuntimeError_ as error:
+            print(f"\n{error}\n", file=sys.stderr)
+            _explain_the_version(want, have)
+            return 1
+
+        return subprocess.run(
+            [str(interpreter), str(Path(__file__).resolve()), "bootstrap"],
+            env={**os.environ, _REEXEC: "1"}).returncode
+
+    # A virtualenv built by a different interpreter is not reusable, and the
+    # symptom if it is reused is an import error naming a C symbol.
+    existing = _venv_version()
+    if existing is not None and existing != REQUIRED_PYTHON:
+        stale = ".".join(str(part) for part in existing)
+        print(f"Replacing the existing virtualenv: it was built from Python "
+              f"{stale}, and this is {have}.")
+        shutil.rmtree(ROOT / ".venv", ignore_errors=True)
 
     if not _venv_has_pip():
         shutil.rmtree(ROOT / ".venv", ignore_errors=True)
@@ -129,17 +203,96 @@ def bootstrap() -> int:
     subprocess.run([python, "-c",
                     "from throughline_domain.migrate import migrate;"
                     " print('applied:', migrate() or 'nothing new')"], check=True)
+
+    _ensure_node_for_the_interface()
     print("\nReady. Start the stack with:  python scripts/manage.py dev")
     return 0
 
 
-def _node_on_path() -> str | None:
-    """node, including the user-local location the repo installs it to."""
+def _ensure_node_for_the_interface(log=print) -> str | None:
+    """Make sure something on this machine can run the interface.
+
+    Node is a *runtime* dependency here, not just a build one: `serve.sh` starts
+    `next start`, and without it the API and the worker come up and the researcher
+    gets a warning line instead of a product. Shipping Python and not Node would
+    have produced an install that starts and cannot be used, which is a worse
+    outcome than the one this task set out to fix.
+
+    Three deliberate choices. **Skipped when an adequate node is already here** —
+    a 200 MB download to duplicate a working tool is not a kindness. **Not
+    fatal**: the API is genuinely useful headless, `serve.sh` already degrades
+    honestly, and a failed optional download should not throw away a
+    just-completed database migration. **Opt-out via THROUGHLINE_SKIP_NODE**,
+    for the container, which installs Node its own way, and for anyone
+    deliberately running headless.
+    """
+    if os.environ.get("THROUGHLINE_SKIP_NODE"):
+        log("  skipping Node (THROUGHLINE_SKIP_NODE is set) — API only.")
+        return None
+
+    existing = _node_on_path()
+    if existing is not None:
+        major = _node_major(existing)
+        if major is not None and major >= NODE_MINIMUM:
+            log(f"  Node {major} already here ({existing}) — not fetching one.")
+            return existing
+
+    try:
+        node = runtimes.ensure("node", log=log)
+    except runtimes.RuntimeError_ as error:
+        log(f"\n  Could not fetch Node: {error}")
+        log("  The API and worker will run; the web interface will not.")
+        return None
+    log(f"  Node ready at {node}")
+    return str(node)
+
+
+def _node_major(binary: str) -> int | None:
+    """The major version of a node binary, or None if it will not answer."""
+    try:
+        result = subprocess.run([binary, "--version"], capture_output=True,
+                                text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.match(r"v(\d+)\.", result.stdout.strip())
+    return int(match.group(1)) if match else None
+
+
+def _node_candidates() -> list[str]:
+    """Every node this machine might use, best-known location first."""
+    candidates = []
     found = shutil.which("node")
     if found:
-        return found
-    local = Path.home() / ".local" / "opt" / "node" / "bin" / "node"
-    return str(local) if local.exists() else None
+        candidates.append(found)
+    # Where Phase 5 installed it by hand, before anything fetched it.
+    legacy = Path.home() / ".local" / "opt" / "node" / "bin" / "node"
+    if legacy.exists():
+        candidates.append(str(legacy))
+    try:
+        managed = runtimes.executable("node")
+    except runtimes.RuntimeError_:
+        managed = None
+    if managed is not None and managed.exists():
+        candidates.append(str(managed))
+    return candidates
+
+
+def _node_on_path() -> str | None:
+    """The first node new enough to run the interface, else the first we found.
+
+    Version, not just presence, because this is now a real fork: a machine may
+    carry an old node on PATH *and* the one the bootstrap fetched, and picking
+    by position rather than by capability would prefer the one that cannot
+    start `next`. Falling back to the first candidate keeps `doctor` honest —
+    "Node v18.4.0, too old" is a better report than "not found" about a node
+    that is plainly there.
+    """
+    candidates = _node_candidates()
+    for candidate in candidates:
+        major = _node_major(candidate)
+        if major is not None and major >= NODE_MINIMUM:
+            return candidate
+    return candidates[0] if candidates else None
 
 
 def _spawn(command: list[str], **kwargs: object) -> subprocess.Popen:
