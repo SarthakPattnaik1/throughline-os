@@ -59,7 +59,7 @@ the standard the project sells itself on, so it is also the thing most worth
 checking: `tests/test_packaging.py` and the primitive registry exist to make
 drift between what is claimed and what runs visible in CI rather than in a demo.
 
-The current suite is **1315 backend tests and 1269 web tests**, with 13 backend
+The current suite is **1341 backend tests and 1269 web tests**, with 13 backend
 skips. Nine carry a reason CI's allowlist recognises — a skip with an
 unrecognised reason fails the build, so the suite cannot quietly shrink. The
 other four are the speech tests, whose reason (`openai-whisper is not
@@ -219,6 +219,32 @@ Then:
 ```bash
 ./scripts/dev.sh
 ```
+
+### Without a terminal
+
+`launchers/` holds one door per platform. Each sets up on first run and starts
+Throughline afterwards — they all call `python scripts/manage.py start`, so
+there is one install sequence rather than three that drift.
+
+| Platform | Double-click | First-run warning |
+|---|---|---|
+| macOS | `launchers/Throughline.command` | Gatekeeper — right-click, Open, once |
+| Windows | `launchers/Throughline.bat` | SmartScreen — More info, Run anyway, once |
+| Linux | `python scripts/manage.py desktop-entry`, then Throughline in the menu | none |
+
+The warnings are what being unsigned costs; signing removes them for roughly
+$100–500 a year, and is worth buying the first time a link goes to somebody
+nobody has spoken to. The `curl | sh` line above carries no warning at all,
+because quarantine is set by the downloading browser rather than by the
+operating system.
+
+**The window stays open while it installs.** A first run pulls several hundred
+megabytes, and behind a hidden window that is indistinguishable from a freeze.
+
+Linux gets a `.desktop` entry rather than an `.AppImage`: an AppImage is a
+squashfs image built by `appimagetool` around a bundled runtime, which is a
+build pipeline rather than a script in this repository. The entry is written
+rather than committed because it has to carry an absolute path.
 
 On Windows, or wherever bash is not the shell, call the launcher directly — the
 shell scripts are wrappers around it and there is no separate implementation to

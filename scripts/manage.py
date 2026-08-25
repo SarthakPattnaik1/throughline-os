@@ -247,6 +247,95 @@ def _ensure_node_for_the_interface(log=print) -> str | None:
     return str(node)
 
 
+def start(api_port: int, web_port: int) -> int:
+    """Install if this machine has not got it yet, then run. One command.
+
+    The launchers exist to be double-clicked by somebody who has never opened a
+    terminal, and what they need is not `bootstrap` or `dev` but "make it work".
+    Splitting that into two commands and a decision is exactly the step that
+    loses people, so the decision is made here — the same sequence `ROADMAP.md`
+    describes: detect an existing install, otherwise build one, then launch.
+
+    **The window stays visible while it installs**, and the message says how long
+    it will take. A first run downloads a relocatable Python, possibly Node, and
+    several hundred megabytes of wheels; behind a hidden window that is
+    indistinguishable from a freeze, and the person kills it at four minutes and
+    reports that it does not start.
+
+    The venv is checked for its *version*, not merely its existence, so an
+    install left behind by a different interpreter is rebuilt rather than used —
+    `bootstrap` knows how to do that, this only has to ask the question.
+    """
+    if _venv_has_pip() and _venv_version() == REQUIRED_PYTHON:
+        return dev(api_port, web_port)
+
+    print("First run — setting this up before starting it.")
+    print("It downloads a few hundred megabytes and takes a few minutes.")
+    print("Leave this window open; it will start on its own when it is done.\n",
+          flush=True)
+    code = bootstrap()
+    if code != 0:
+        print("\nSetup did not finish, so there is nothing to start yet.",
+              file=sys.stderr)
+        return code
+    print("\nSetup finished. Starting…\n", flush=True)
+    return dev(api_port, web_port)
+
+
+def desktop_entry() -> int:
+    """Put Throughline in the Linux applications menu, pointing at this checkout.
+
+    The Linux half of T071 asked for an `.AppImage`, and that is the one door on
+    the list that cannot be a script in this repository: an AppImage is a
+    squashfs image built by `appimagetool` around a bundled runtime — a build
+    artifact produced by a pipeline, not twenty lines somebody can read. What the
+    request actually wants is *a thing you double-click*, and on Linux that is a
+    `.desktop` entry; a double-clicked shell script has not run by default in
+    GNOME for years. Recorded as D033 so the substitution is visible rather than
+    quietly made.
+
+    Written rather than committed because it has to carry an **absolute path**,
+    which is not known until somebody clones this somewhere. That is also why it
+    is an explicit command and not a side effect of `bootstrap`: writing into a
+    user's applications menu is a thing to ask for, not to discover.
+    """
+    if sys.platform != "linux":
+        print("Desktop entries are a Linux thing. On macOS double-click "
+              "launchers/Throughline.command; on Windows, Throughline.bat.",
+              file=sys.stderr)
+        return 1
+
+    launcher = ROOT / "launchers" / "throughline.sh"
+    if not launcher.exists():
+        print(f"No launcher at {launcher}.", file=sys.stderr)
+        return 1
+
+    directory = Path.home() / ".local" / "share" / "applications"
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / "throughline.desktop"
+
+    # Terminal=true is the point of the whole exercise: a first run installs
+    # several hundred megabytes, and behind a hidden window that is
+    # indistinguishable from a freeze.
+    target.write_text(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=Throughline\n"
+        "Comment=A research workspace that keeps its provenance\n"
+        # Quoted per the Desktop Entry spec: an unquoted Exec is split on
+        # spaces, so a clone under "~/My Research/" becomes two arguments and
+        # the entry launches nothing, silently.
+        f'Exec="{launcher}"\n'
+        f"Path={ROOT}\n"
+        "Terminal=true\n"
+        "Categories=Science;Education;\n")
+    target.chmod(0o755)
+    print(f"Written {target}")
+    print("It points at this checkout, so moving the folder means running this "
+          "again.")
+    return 0
+
+
 def _node_major(binary: str) -> int | None:
     """The major version of a node binary, or None if it will not answer."""
     try:
@@ -1055,9 +1144,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("bootstrap", help="create the virtualenv and install everything")
+    go = sub.add_parser("start", help="set up if needed, then run — what the "
+                                      "double-click launchers call")
+    go.add_argument("--api-port", type=int, default=8080)
+    go.add_argument("--web-port", type=int, default=3000)
     run = sub.add_parser("dev", help="run the API, a worker and the web interface")
     run.add_argument("--api-port", type=int, default=int(os.environ.get("PORT", 8080)))
     run.add_argument("--web-port", type=int, default=int(os.environ.get("WEB_PORT", 3000)))
+    sub.add_parser("desktop-entry",
+                   help="add Throughline to the Linux applications menu")
     sub.add_parser("sync", help="fetch, and show what everyone else is working on")
     doc = sub.add_parser("doctor", help="check this installation and say what is wrong")
     doc.add_argument("--api-port", type=int, default=int(os.environ.get("PORT", 8080)))
@@ -1076,6 +1171,10 @@ def main() -> int:
         return doctor(args.api_port, args.web_port)
     if args.command == "preflight":
         return preflight(args.full)
+    if args.command == "start":
+        return start(args.api_port, args.web_port)
+    if args.command == "desktop-entry":
+        return desktop_entry()
     return dev(args.api_port, args.web_port)
 
 
