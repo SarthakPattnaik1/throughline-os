@@ -93,14 +93,25 @@ jobs:
         #   Neo4j            — a derived projection (ADR 0002), extra: [graph]
         #   cv2              — figure digitising, extra: [digitise]
         #   embedding model  — semantic search; /api/system/capabilities says so
+        #   openai-whisper   — local transcription (§38), extra: [speech]
         #
         # Anything else fails the build. Adding a line here should feel like a
         # decision, because that is what it is.
+        #
+        # The whisper line was added after this step was found failing on a run
+        # nobody had fired: the speech tests landed with a skip reason, and
+        # because CI is dispatch-only there was no run to catch it. It belongs
+        # here on the same grounds as the other three — `[speech]` is a declared
+        # optional extra that pulls in torch, gigabytes of it, and the extra's
+        # own docstring says a clone that never installs it "still runs the whole
+        # suite, with the transcription tests skipped rather than failed". That
+        # was the intent; it simply never reached this list. Recorded as D030.
         run: |
           if grep '^SKIPPED' pytest.out \
               | grep -v 'no Neo4j configured' \
               | grep -v "could not import 'cv2'" \
-              | grep -v 'no local embedding model installed'; then
+              | grep -v 'no local embedding model installed' \
+              | grep -v 'openai-whisper is not installed'; then
             echo "::error::A test skipped for a reason that is not allowlisted."
             echo "Either make it run everywhere, or add its reason above on purpose."
             exit 1
