@@ -170,6 +170,16 @@ def create_visual(
     if run["project_id"] != project_id:
         raise VisualError("The analysis run belongs to a different project.")
 
+    # finding_id is optional, but when present it becomes a stored foreign key
+    # on the visual. The foreign key proves existence, not project ownership;
+    # validate the tenant boundary explicitly (T185).
+    if finding_id:
+        cur.execute(
+            "SELECT id FROM findings WHERE id = %s AND project_id = %s",
+            (finding_id, project_id))
+        if not cur.fetchone():
+            raise VisualError("No such finding in this project.")
+
     result = run["result"] or {}
     data = visual_prepare.prepare(spec, analysis_result=result, sample=sample)
     report = visual_critic.critique(spec, data, analysis=result, autofix=autofix)
