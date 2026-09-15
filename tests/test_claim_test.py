@@ -1270,3 +1270,27 @@ def test_unchecked_scope_names_every_side_that_lacks_it(cur, project):
             cur, project, population="adults in England")["version_id"])
     said = next(u for u in dataset_only["unchecked"] if "Population scope" in u)
     assert "the paper" in said and "dataset" not in said, said
+
+
+# ---------------------------------------------------------------------------
+# Project isolation (T185)
+# ---------------------------------------------------------------------------
+
+def test_a_claim_test_cannot_read_another_projects_paper(cur, project):
+    data = _mapped(cur, project)
+    other_user, other_project = new_id("usr"), new_id("prj")
+    cur.execute(
+        "INSERT INTO users(id, email, display_name, password_hash, password_salt) "
+        "VALUES (%s, %s, 'Other', 'x', 'y')",
+        (other_user, f"{other_user}@test.local"))
+    cur.execute(
+        "INSERT INTO projects(id, owner_user_id, name) VALUES (%s, %s, 'Other')",
+        (other_project, other_user))
+    foreign_source = _paper(
+        cur, other_project, title="Private paper",
+        passages=["Data availability: this is another project's private text."])
+
+    with pytest.raises(claim_test.ClaimTestError, match="source in this project"):
+        claim_test.test_claim(
+            cur, project_id=project, claim=CLAIM,
+            dataset_version_id=data["version_id"], source_id=foreign_source)
