@@ -600,7 +600,7 @@ def test_claim(cur, *, project_id: str, claim: dict[str, Any],
     claim = {**claim, "source_id": claim.get("source_id") or source_id}
     testability = assess_testability(
         cur, project_id=project_id, claim=claim,
-        dataset_version_id=dataset_version_id, source_id=source_id)
+        dataset_version_id=dataset_version_id, source_id=claim["source_id"])
     if not testability["testable"]:
         return _result(cur, testability, claim, testability["verdict"])
 
