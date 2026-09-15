@@ -834,3 +834,25 @@ def test_a_visual_cannot_link_to_another_projects_finding(analysed):
             "SELECT id FROM visuals WHERE finding_id = %s",
             (foreign_finding,))
         assert cur.fetchall() == []
+
+
+def test_a_visual_recommendation_cannot_read_another_projects_run(analysed):
+    project_id, _, runs = analysed
+    with connection() as conn, conn.cursor() as cur:
+        with pytest.raises(visuals.VisualError, match="in this project"):
+            visuals.recommend_for_run(
+                cur, analysis_run_id=runs["correlation"],
+                project_id=new_id("prj"))
+
+
+def test_a_visual_spec_cannot_sample_a_dataset_outside_its_run(analysed):
+    project_id, _, runs = analysed
+    with connection() as conn, conn.cursor() as cur:
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=runs["correlation"], project_id=project_id)
+        foreign_spec = recommendation["spec"].model_copy(
+            update={"dataset_version_id": new_id("dsv")})
+
+        with pytest.raises(visuals.VisualError, match="dataset version"):
+            visuals.validate_spec_scope(
+                cur, project_id=project_id, spec=foreign_spec)
