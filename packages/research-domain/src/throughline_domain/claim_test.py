@@ -370,6 +370,14 @@ def assess_testability(cur, *, project_id: str, claim: dict[str, Any],
 
     # --- P7: circularity, before anything else ------------------------------
     if source_id:
+        # A caller-supplied identifier is not authorisation. Without this check,
+        # the circularity scan could read passages and lineage from another
+        # project before the claim was adjudicated.
+        cur.execute(
+            "SELECT 1 FROM sources WHERE id = %s AND project_id = %s",
+            (source_id, project_id))
+        if not cur.fetchone():
+            raise ClaimTestError("No such source in this project.")
         circular = check_circularity(
             cur, source_id=source_id, dataset_version_id=dataset_version_id)
         if circular:
