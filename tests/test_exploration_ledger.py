@@ -502,13 +502,10 @@ def test_a_foreign_spec_cannot_be_attached_to_this_projects_ledger(cur, project)
     other = _other_project(cur)
     spec_id = new_id("asp")
     cur.execute(
-        "INSERT INTO analysis_specs("
-        "id, project_id, schema_version, analysis_type, research_question, "
-        "dataset_version_ids, variables, filters, transformations, method, "
-        "method_rationale, parameters, confidence_level, assumptions, "
-        "outputs_requested, visualization_intent, random_seed, content_hash"
-        ") VALUES (%s, %s, 1, 'association', 'q', '[]', '{}', '[]', '[]', "
-        "'pearson_correlation', '', '{}', 0.95, '[]', '[]', '', 1, 'foreign')",
+        "INSERT INTO analysis_specs(id, project_id, analysis_type, method, "
+        "content_hash, created_by, research_question, dataset_version_ids) "
+        "VALUES (%s, %s, 'correlation', 'pearson', 'foreign', 'test', "
+        "'q', '[]'::jsonb)",
         (spec_id, other["id"]))
 
     with pytest.raises(ValueError, match="analysis specification"):
