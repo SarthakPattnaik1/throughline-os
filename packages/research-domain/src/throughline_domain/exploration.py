@@ -132,7 +132,7 @@ def preregister(cur, *, project_id: str, hypothesis: str,
 
 def _registration(cur, registration_id: str) -> dict[str, Any] | None:
     cur.execute(
-        "SELECT id, hypothesis, predicted_direction, locked_hash, sequence "
+        "SELECT id, project_id, hypothesis, predicted_direction, locked_hash, sequence "
         "FROM preregistrations WHERE id = %s", (registration_id,))
     return cur.fetchone()
 
@@ -181,6 +181,21 @@ def record(cur, *, enquiry_id: str, project_id: str, verb: str,
     if owner is None or owner["project_id"] != project_id:
         raise ValueError("That line of enquiry does not belong to this project.")
 
+    # Optional references are tenant boundaries too. A foreign key proves
+    # that a row exists; it does not prove that it belongs to this project.
+    # Validate them here so every caller is protected, including callers that
+    # do not pass a pre-registration and therefore never call deviations.compare.
+    for table, reference, label in (
+        ("analysis_specs", spec_id, "analysis specification"),
+        ("analysis_runs", analysis_run_id, "analysis run"),
+    ):
+        if reference:
+            cur.execute(
+                f"SELECT id FROM {table} WHERE id = %s AND project_id = %s",
+                (reference, project_id))
+            if not cur.fetchone():
+                raise ValueError(f"No such {label} in this project.")
+
     confirmatory, why = False, None
     # The claim is only storable when the thing claimed exists — a foreign key
     # cannot point at a registration nobody wrote, and a caller quoting an id
@@ -188,6 +203,8 @@ def record(cur, *, enquiry_id: str, project_id: str, verb: str,
     claimed = None
     if preregistration_id:
         registration = _registration(cur, preregistration_id)
+        if registration is not None and registration["project_id"] != project_id:
+            raise ValueError("No such pre-registration in this project.")
         if registration is None:
             why = "No such pre-registration; counted as exploratory."
         elif registration["locked_hash"] != _hash(registration["hypothesis"]):
