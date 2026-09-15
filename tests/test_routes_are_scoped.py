@@ -227,11 +227,15 @@ BODY_ID_SCOPE = {
     "ClaimPayload.source_id": "claim_test.assess_testability requires the source's project_id before reading it.",
     "ClaimPayload.claim_id": "claim evidence is written only after loading the claim by project_id.",
     "ClaimTestRequest.dataset_version_id": "claim_test.assess_testability requires the dataset's project_id.",
+    "SynthesisRequest.source_ids": "_sources_in_project validates every source before synthesis.",
+    "DatasetSetRequest.dataset_version_ids": "dataset synthesis resolves every version through the scoped project.",
+    "ImageSetRequest.source_ids": "_sources_in_project validates every image source before comparison.",
+    "AnalysisSpecRequest.dataset_version_ids": "analysis.validate_spec requires every dataset version's project_id.",
 }
 
 
 def body_identifier_fields() -> set[str]:
-    """All singular *_id fields accepted by API Pydantic models."""
+    """All *_id and *_ids fields accepted by API Pydantic models."""
     found: set[str] = set()
     tree = ast.parse((API / "app.py").read_text())
     for node in tree.body:
@@ -243,7 +247,7 @@ def body_identifier_fields() -> set[str]:
         for member in node.body:
             if (isinstance(member, ast.AnnAssign)
                     and isinstance(member.target, ast.Name)
-                    and member.target.id.endswith("_id")):
+                    and member.target.id.endswith(("_id", "_ids"))):
                 found.add(f"{node.name}.{member.target.id}")
     return found
 
