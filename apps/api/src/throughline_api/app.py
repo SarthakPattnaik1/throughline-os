@@ -4897,15 +4897,17 @@ def create_visual(project_id: str, payload: VisualCreate,
             recommendation = visuals.recommend_for_run(
                 cur, analysis_run_id=payload.analysis_run_id,
                 goal=payload.goal, audience=payload.audience,
+                project_id=project_id,
             )
         except visuals.VisualError as exc:
             raise HTTPException(409, str(exc)) from exc
 
         spec = (ResearchVisualSpec.model_validate(payload.spec) if payload.spec
                 else recommendation["spec"])
-        # The account is discarded here on purpose: a stored visual records
-        # its own provenance, and the figure endpoint above is what a reader
-        # sees the sampling in.
+        # Validate every data-bearing identifier before reading a sample. A
+        # user-supplied spec may otherwise name a dataset from another project,
+        # and sampling happens before the visual is stored (T185).
+        visuals.validate_spec_scope(cur, project_id=project_id, spec=spec)
         sample, _sampling = _visual_sample(cur, spec)
         try:
             created = visuals.create_visual(
