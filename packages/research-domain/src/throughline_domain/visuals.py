@@ -132,12 +132,14 @@ def variable_labels(cur, *, project_id: str, dataset_version_id: str) -> LabelBo
 
 def recommend_for_run(
     cur, *, analysis_run_id: str, goal: str = "show the relationship",
-    audience: str = "researcher",
+    audience: str = "researcher", project_id: str | None = None,
 ) -> dict[str, Any]:
     """ — recommend a figure for a completed analysis."""
     run = get_run(cur, analysis_run_id)
     if not run:
         raise VisualError(f"Unknown analysis run: {analysis_run_id}")
+    if project_id is not None and run["project_id"] != project_id:
+        raise VisualError("No such analysis run in this project.")
     if run["status"] != "completed":
         raise VisualError(
             f"Analysis run {analysis_run_id} is {run['status']}; only a completed "
@@ -157,6 +159,19 @@ def recommend_for_run(
     )
 
 
+def validate_spec_scope(cur, *, project_id: str,
+                        spec: ResearchVisualSpec) -> dict[str, Any]:
+    """Return the owned run only when every data-bearing id stays in-project."""
+    run = get_run(cur, spec.analysis_run_id)
+    if not run or run["project_id"] != project_id:
+        raise VisualError("No such analysis run in this project.")
+    version_id = spec.dataset_version_id
+    if version_id and version_id not in (run["dataset_version_ids"] or []):
+        raise VisualError(
+            "The visual's dataset version does not belong to its analysis run.")
+    return run
+
+
 def create_visual(
     cur, *, project_id: str, spec: ResearchVisualSpec, actor: str,
     sample: dict[str, Sequence[Any]] | None = None,
@@ -164,11 +179,7 @@ def create_visual(
     finding_id: str | None = None, autofix: bool = True,
 ) -> dict[str, Any]:
     """Prepare, critique and store a figure, with its lineage."""
-    run = get_run(cur, spec.analysis_run_id)
-    if not run:
-        raise VisualError(f"Unknown analysis run: {spec.analysis_run_id}")
-    if run["project_id"] != project_id:
-        raise VisualError("The analysis run belongs to a different project.")
+    run = validate_spec_scope(cur, project_id=project_id, spec=spec)
 
     # finding_id is optional, but when present it becomes a stored foreign key
     # on the visual. The foreign key proves existence, not project ownership;
