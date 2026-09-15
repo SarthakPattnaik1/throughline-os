@@ -14,31 +14,16 @@
 name: CI
 
 on:
-  # Manual only. Nothing here runs on a push or a pull request.
-  #
-  # This repository is private, so Actions minutes are metered and the
-  # multipliers are steep: Linux 1x, Windows 2x, macOS 10x. A full run billed
-  # ~82 minutes, 66 of them macOS. Twenty-nine runs in a week exhausted the
-  # monthly allowance and every job stopped mid-work. With two people both
-  # pushing often, automatic runs cost more than they return: the same commit
-  # gets verified five times on its way to being merged once.
-  #
-  # So this runs when somebody decides it should:
-  #
-  #     gh workflow run ci.yml --ref <branch>
-  #
-  # or the "Run workflow" button on the Actions tab.
-  #
-  # **What this gives up, stated plainly.** The header above says every defect
-  # this project shipped was invisible because nothing ever ran it anywhere but
-  # the machine it was written on. That is still true, and this file was the
-  # answer to it. Making it manual moves the guarantee from the tooling to a
-  # habit — and habits lapse in a way triggers do not.
-  #
-  # The habit that replaces it: run this before merging anything to `main`, and
-  # before publishing. A branch that has never been dispatched has been tested
-  # on exactly one machine, whatever its tests say locally.
+  # Run the exact commit proposed for main. workflow_dispatch remains available
+  # for release candidates and for re-running a known SHA deliberately.
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - hardening/open-source-readiness
+  pull_request:
+    branches:
+      - main
 
 concurrency:
   # A superseded run tells you about code nobody is looking at any more.
