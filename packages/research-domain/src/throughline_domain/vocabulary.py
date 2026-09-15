@@ -160,6 +160,16 @@ def suggest(cur, *, project_id: str, phrase: str, canonical_variable_id: str,
     """
     key = normalise(phrase)
 
+    # The ID is supplied by a caller and a foreign key alone proves only that
+    # the variable exists, not that it belongs to this project. Without this
+    # check an account could attach another project's canonical variable to its
+    # own vocabulary and create a cross-project relationship (T185).
+    cur.execute(
+        "SELECT id FROM canonical_variables WHERE id = %s AND project_id = %s",
+        (canonical_variable_id, project_id))
+    if not cur.fetchone():
+        raise AliasRefused("No such canonical variable in this project.")
+
     # A phrase that is already the name or label of a *different* variable is
     # refused, not queued. `resolve` refuses a phrase that names two variables
     # (T156), so approving this would silently break a lookup that works today
