@@ -91,15 +91,16 @@ def _parse(raw: bytes) -> ET.Element:
             f"The repository returned more than {MAX_RESPONSE_BYTES // (1024 * 1024)}MB "
             "in one response, which no page of records needs. Nothing was parsed.")
 
-    head = raw[:2048].lstrip().lower()
-    if b"<!doctype" in head or b"<!entity" in head:
-        raise ConnectorError(
-            "That response carries a document type declaration. A valid "
-            "OAI-PMH response has no use for one, and parsing it is how a few "
-            "kilobytes become gigabytes. Nothing was parsed.")
+    class NoDocumentType(ET.TreeBuilder):
+        def doctype(self, name, pubid, system):
+            # Let the XML parser handle encodings and the entire prolog. A
+            # byte-prefix scan misses declarations after comments or in UTF-16.
+            raise ConnectorError(
+                "That response carries a document type declaration. A valid "
+                "OAI-PMH response has no use for one. Nothing was parsed.")
 
     try:
-        return ET.fromstring(raw)
+        return ET.fromstring(raw, parser=ET.XMLParser(target=NoDocumentType()))
     except ET.ParseError as exc:
         raise ConnectorError(
             f"The repository returned XML that could not be parsed ({exc}). "
