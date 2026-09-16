@@ -211,7 +211,8 @@ class OAIRepository(Connector):
         }
 
     def harvest(self, *, set_spec: str = "", since: str = "", until: str = "",
-                prefix: str = "oai_dc", max_records: int = DEFAULT_MAX_RECORDS
+                prefix: str = "oai_dc", max_records: int = DEFAULT_MAX_RECORDS,
+                max_pages: int = 1000
                 ) -> dict[str, Any]:
         """
         List records, following pagination until the cap.
@@ -221,9 +222,14 @@ class OAIRepository(Connector):
         that silently omits it leaves a stale copy in the local corpus with
         nothing to say it should not be cited.
         """
+        for name, value in (("max_records", max_records), ("max_pages", max_pages)):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ConnectorError(f"{name} must be a positive integer.")
         records: list[SourceRecord] = []
         deleted: list[str] = []
         token, pages, truncated = "", 0, False
+        seen_tokens: set[str] = set()
+        processed = 0
 
         while True:
             try:
@@ -235,7 +241,7 @@ class OAIRepository(Connector):
                                         set=set_spec, **{"from": since,
                                                          "until": until}))
             except OAIError as exc:
-                if exc.code == "noRecordsMatch" and not records:
+                if exc.code == "noRecordsMatch" and pages == 0:
                     return {"records": [], "deleted": [], "pages": 0,
                             "truncated": False,
                             "note": ("The repository has nothing matching that "
@@ -246,29 +252,37 @@ class OAIRepository(Connector):
             pages += 1
             listing = root.find(f"{OAI}ListRecords")
             if listing is None:
-                break
+                raise ConnectorError("The repository replied without a ListRecords block.")
 
-            for record in listing.findall(f"{OAI}record"):
+            entries = listing.findall(f"{OAI}record")
+            token_node = listing.find(f"{OAI}resumptionToken")
+            next_token = token_node.text if token_node is not None and token_node.text else ""
+            for index, record in enumerate(entries):
+                processed += 1
                 header = record.find(f"{OAI}header")
                 identifier = _text(header.find(f"{OAI}identifier")) if header is not None else ""
 
                 if header is not None and header.get("status") == "deleted":
                     deleted.append(identifier)
-                    continue
-
-                normalised = self._record(record, identifier)
-                if normalised:
-                    records.append(normalised)
-                if len(records) >= max_records:
-                    truncated = True
+                else:
+                    normalised = self._record(record, identifier)
+                    if normalised:
+                        records.append(normalised)
+                if processed >= max_records:
+                    truncated = index + 1 < len(entries) or bool(next_token)
                     break
 
-            if truncated:
+            if processed >= max_records:
                 break
 
-            token_node = listing.find(f"{OAI}resumptionToken")
-            token = _text(token_node) if token_node is not None else ""
+            token = next_token
             if not token:
+                break
+            if token in seen_tokens:
+                raise ConnectorError("The repository repeated a pagination token; harvest stopped.")
+            seen_tokens.add(token)
+            if pages >= max_pages:
+                truncated = True
                 break
 
         return {
@@ -288,8 +302,9 @@ class OAIRepository(Connector):
                 "already in this project, they should not be cited as current.")
         if truncated:
             parts.append(
-                f"Stopped at the {cap}-record ceiling; there is more. Narrow "
-                "the date range or raise the limit deliberately.")
+                "Stopped at a harvest safety limit before completion. Deleted "
+                "and unparseable records count toward the record limit too. "
+                "Narrow the date range or raise the limit deliberately.")
         return " ".join(parts)
 
     # -- normalisation -----------------------------------------------------
