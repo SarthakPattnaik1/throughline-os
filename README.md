@@ -7,6 +7,22 @@ database, the job queue and the scientific sandbox all run locally. Nothing
 leaves the machine unless the researcher connects an external service — and
 where one can be connected, the interface says so before it is used.
 
+## Start here
+
+**Early research release — not medical or clinical decision software.**
+Do not use this release for diagnosis, treatment, or clinical decisions.
+Cross-platform release verification is incomplete; a live demo is not proof
+that a clean installation or every integration works.
+
+1. Choose one installation route under [Quick start](#quick-start).
+2. Use a disposable project and synthetic or non-sensitive data first.
+3. Follow [the guided walkthrough](docs/TRY_IT.md) before enabling optional features.
+4. If setup fails, run `python scripts/manage.py doctor` and review the named
+   corrective action. Remove secrets and personal data before sharing diagnostics.
+
+External integrations are optional. Check what data a provider receives before
+connecting it; do not upload confidential research just to test connectivity.
+
 ## Status
 
 The scientific spine works end to end: a paper goes in, claims come out, a
@@ -401,10 +417,10 @@ one is private, so the clone that used to happen here failed for everybody
 without credentials (D050). Set `THROUGHLINE_REPO` to take the git path on
 purpose if you have access.
 
-A terminal line rather than a
-download on purpose: the quarantine flag that triggers Gatekeeper and SmartScreen
-is set by the downloading browser, not by the operating system, so this path
-carries no security warning at all.
+The commands above download and immediately execute code. For a safer reviewable
+installation, download the script first, inspect it, and execute it only if you
+trust its source. HTTPS and a published checksum do not independently establish
+publisher identity. Do not disable operating-system security protections to install.
 
 From an existing clone, the bootstrap directly:
 
@@ -446,11 +462,8 @@ rather than a way to get it, which is the opposite of what a download is for.
 | Windows | `launchers/Throughline.bat` | SmartScreen — More info, Run anyway, once |
 | Linux | `python scripts/manage.py desktop-entry`, then Throughline in the menu | none |
 
-The warnings are what being unsigned costs; signing removes them for roughly
-$100–500 a year, and is worth buying the first time a link goes to somebody
-nobody has spoken to. The `curl | sh` line above carries no warning at all,
-because quarantine is set by the downloading browser rather than by the
-operating system.
+These launchers are unsigned. Review their source and publisher before running
+them. A missing security warning is not evidence that a download is safe.
 
 **The window stays open while it installs.** A first run pulls several hundred
 megabytes, and behind a hidden window that is indistinguishable from a freeze.
@@ -627,7 +640,7 @@ docker build -t throughline-os .
 ```
 
 ```bash
-docker run -p 3000:3000 -p 8080:8080 -v throughline:/data throughline-os
+docker run -p 127.0.0.1:8080:8080 -v throughline:/data throughline-os
 ```
 
 **The volume is not optional.** PostgreSQL runs inside the container and writes
@@ -691,20 +704,16 @@ build, and a Docker job that builds the image and polls `/api/health` until the
 API answers inside it — a Dockerfile that is written but never built is not
 evidence of anything.
 
-**It is manual only: nothing runs on a push or a pull request.** Actions minutes
-are metered on a private repository and the multipliers are steep — a full run
-billed about 82 minutes, 66 of them macOS — so with two people pushing often,
-automatic runs verified the same commit five times on its way to being merged
-once. A clean-environment check therefore happens when somebody asks for it:
+CI is configured for pushes to `main` and `hardening/open-source-readiness`,
+pull requests targeting `main`, and manual dispatch. GitHub may refuse jobs
+before any step executes when the private account's Actions allowance is exhausted.
+Such a refusal is not a test failure or a passing verification.
 
-```bash
-gh workflow run ci.yml --ref "$(git rev-parse --abbrev-ref HEAD)"
-```
-
-The trade is real and worth stating: a defect only a fresh checkout can see now
-waits until someone dispatches a run. That is why `preflight` builds the
-interface as well as running the tests — the production build catches what unit
-tests cannot, and for a while nothing anywhere was doing it.
+Before merging or tagging a release, verify all five jobs on the current candidate:
+Ubuntu suite, macOS suite, Windows sandbox, web tests/build, and Docker build/health.
+Record the exact commit and run links. Local tests do not verify other operating systems.
+Public-source publication and a verified release are separate decisions; neither
+should be represented as complete while security or installation checks remain open.
 
 ### What counts as a passing test here
 
