@@ -17,7 +17,7 @@
 
 <br />
 
-[**Download Throughline**](https://throughline-research.pages.dev) · [**Quick start**](#quick-start) · [**What it can do**](#what-throughline-can-do-today) · [**Capabilities**](docs/CAPABILITIES.md) · [**Roadmap**](ROADMAP.md) · [**Contribute**](CONTRIBUTING.md)
+[**Download Throughline**](https://throughline-research.pages.dev) · [**Quick start**](#quick-start) · [**What it can do**](#what-throughline-can-do-today) · [**Architecture**](#system-design--engineering-architecture) · [**Capabilities**](docs/CAPABILITIES.md) · [**Roadmap**](ROADMAP.md) · [**Contribute**](CONTRIBUTING.md)
 
 </div>
 
@@ -211,34 +211,134 @@ Retrieved papers and other external content are treated as **untrusted research 
 
 ---
 
-## Architecture at a glance
+## System design & engineering architecture
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│                     Researcher interface                     │
-│                    Next.js / React / D3                      │
-└─────────────────────────────┬────────────────────────────────┘
-                              │ same origin
-┌─────────────────────────────▼────────────────────────────────┐
-│                         FastAPI API                          │
-│          auth · projects · workflows · capabilities          │
-└───────────────┬─────────────────────────────┬────────────────┘
-                │                             │
-┌───────────────▼──────────────┐  ┌───────────▼────────────────┐
-│       Research domain        │  │     Scientific runtime      │
-│ evidence · lineage · claims  │  │ deterministic computation  │
-│ findings · reports · models  │  │ sandboxed analysis paths   │
-└───────────────┬──────────────┘  └────────────────────────────┘
-                │
-┌───────────────▼──────────────────────────────────────────────┐
-│                 PostgreSQL + object storage                  │
-│               local project data + provenance               │
-└──────────────────────────────────────────────────────────────┘
+Throughline is designed as a **local-first research system with explicit trust boundaries**. The interface is intentionally thin; research rules live in domain packages; numerical work is delegated to the scientific runtime; optional model providers sit behind a separate boundary; and durable state is stored together with the provenance needed to explain how it was produced.
+
+### Component topology
+
+```mermaid
+flowchart TB
+    U[Researcher]
+    UI[Next.js / React / D3 interface]
+    API[FastAPI application]
+    AUTH[Authentication + project ownership]
+    DOMAIN[Research domain]
+    INGEST[Ingestion + connectors]
+    RUNTIME[Scientific runtime]
+    WORKERS[Background workers]
+    MODEL[Model provider boundary]
+    LOCAL[Local model / Ollama]
+    HOSTED[Hosted provider / Anthropic]
+    DB[(PostgreSQL)]
+    OBJECTS[(Object storage)]
+
+    U --> UI
+    UI -->|same-origin HTTP| API
+    API --> AUTH
+    AUTH --> DOMAIN
+    DOMAIN --> INGEST
+    DOMAIN --> RUNTIME
+    DOMAIN --> WORKERS
+    DOMAIN --> MODEL
+    MODEL -. optional .-> LOCAL
+    MODEL -. explicit opt-in .-> HOSTED
+    INGEST --> OBJECTS
+    DOMAIN --> DB
+    RUNTIME --> DB
+    WORKERS --> DB
+    WORKERS --> OBJECTS
 ```
 
-The API and interface are served from one origin on port `8080`. Authentication uses an `httpOnly`, `SameSite=strict` session cookie.
+### Engineering boundaries
 
-The application runtime targets **Python 3.12**. Node is used to build the web interface from source; the built interface is served by the Python application and does not require a separate Node server at runtime.
+| Layer | Responsibility | What should **not** live there |
+|---|---|---|
+| **Web interface** | Researcher workflows, interaction state, visualization, presentation | Ownership enforcement, scientific truth, or hidden business rules |
+| **FastAPI surface** | HTTP contracts, authentication entry points, request orchestration, capability exposure | Core research logic embedded directly in route handlers |
+| **Research domain** | Evidence, claims, analyses, findings, lineage, validation, workflow rules | Browser-specific behavior or provider-specific UI concerns |
+| **Scientific runtime** | Deterministic analysis and numerical computation | Free-form model reasoning presented as statistical output |
+| **Ingestion / connectors** | Bring papers, files, datasets, and external metadata across controlled boundaries | Treating retrieved content as trusted instructions |
+| **Model layer** | Optional reading, extraction, labeling, comparison, and interpretation | Becoming the source of numerical research results or silently calling hosted services |
+| **Schemas** | Versioned contracts between packages and persisted structures | Unversioned ad-hoc dictionaries crossing subsystem boundaries |
+| **Workers** | Durable background work that should survive the request that initiated it | UI-only state or security decisions that belong in the API/domain layer |
+| **PostgreSQL + object storage** | Durable project state, metadata, artifacts, and provenance-linked files | Being treated as independent stores whose backups can safely drift apart |
+
+### Request and data flow
+
+```mermaid
+sequenceDiagram
+    participant R as Researcher
+    participant W as Web UI
+    participant A as API
+    participant D as Domain
+    participant S as Scientific runtime
+    participant M as Optional model
+    participant P as Persistence
+
+    R->>W: Start research action
+    W->>A: Same-origin request
+    A->>A: Authenticate + resolve project
+    A->>D: Execute domain operation
+    alt deterministic analysis
+        D->>S: Run recorded computation
+        S-->>D: Result + diagnostics
+    else model-assisted operation
+        D->>M: Send bounded context
+        M-->>D: Structured/model response
+    end
+    D->>P: Persist result + provenance + lineage
+    P-->>D: Durable identifiers
+    D-->>A: Project-scoped response
+    A-->>W: Renderable result
+    W-->>R: Evidence + next action
+```
+
+The important architectural property is that **the result returned to the interface is not the only record of what happened**. Analyses, findings, artifacts, validation results, and relationships are persisted so the system can later explain where a conclusion came from.
+
+### Data and trust model
+
+Throughline separates four different kinds of trust:
+
+1. **User/session trust** — who is making the request.
+2. **Project ownership** — whether the requested object belongs to that user's project.
+3. **Research evidence** — what sources, datasets, analyses, and validation support a finding.
+4. **External/model input** — content that may be useful, but is not automatically authoritative.
+
+Ownership checks are enforced server-side. Retrieved documents are treated as data. Hosted-model use is explicit. Numerical results come from deterministic computation. Those boundaries are intended to remain visible in both code and product behavior.
+
+### Local deployment model
+
+```mermaid
+flowchart LR
+    B[Browser] -->|localhost:8080| APP[Throughline application]
+    APP --> API[FastAPI]
+    APP --> WEB[Built web interface]
+    API --> DB[(PostgreSQL)]
+    API --> OS[(Object storage)]
+    API --> SR[Scientific runtime]
+    API -. optional .-> LM[Local model]
+    API -. explicit configuration .-> HM[Hosted model]
+```
+
+The normal application is presented through one local origin on port `8080`. Authentication uses an `httpOnly`, `SameSite=strict` session cookie. Node is used to build the web interface from source; the built interface is served by the Python application rather than requiring a second development server at runtime.
+
+### Architectural invariants
+
+Contributions should preserve these rules:
+
+- **Project isolation is server-side.** A UI filter is not an authorization boundary.
+- **Research logic belongs below the HTTP layer.** Route handlers should orchestrate rather than become the domain model.
+- **Numerical results are reproducible computations.** A language model can describe a result; it does not manufacture the result.
+- **Provenance is written with the work.** A result should not need reconstruction from logs or chat history to explain its origin.
+- **External text is untrusted input.** A paper, webpage, or retrieved document cannot instruct the application simply because it contains imperative language.
+- **Optional capabilities fail explicitly.** Missing models or heavy capability packs should degrade to an unavailable capability, not break unrelated workflows.
+- **Database and object storage form one recovery unit.** Backups and restores keep them consistent.
+- **Missing verification is not success.** CI, release, and research evidence follow the same rule.
+
+### Current engineering pressure points
+
+The repository is actively moving toward smaller, more focused boundaries. In particular, `apps/api/src/throughline_api/app.py` is still substantially larger than the desired end state. New API work should prefer focused router/modules and domain services instead of making that file more central.
 
 ---
 
