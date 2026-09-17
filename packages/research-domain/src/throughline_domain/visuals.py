@@ -323,8 +323,9 @@ def render_visual(cur, *, visual_id: str, fmt: str,
     # same name.
     directory = export_directory("visuals", visual_id)
     directory.mkdir(parents=True, exist_ok=True)
+    render_id = new_id("vren")
     size = "" if height_px is None else f"-{height_px}"
-    filename = f"{visual_id}-{current_hash[:12]}{size}.{fmt}"
+    filename = f"{render_id}-{current_hash[:12]}{size}.{fmt}"
     path = export_path("visuals", visual_id, filename)
     publication.render(
         spec, data, path=path, fmt=fmt, height_px=height_px,
@@ -346,7 +347,7 @@ def render_visual(cur, *, visual_id: str, fmt: str,
         "DO UPDATE "
         "SET storage_key = EXCLUDED.storage_key, content_hash = EXCLUDED.content_hash, "
         "bytes = EXCLUDED.bytes RETURNING id",
-        (new_id("vren"), visual_id, fmt, storage_key, digest, current_hash,
+        (render_id, visual_id, fmt, storage_key, digest, current_hash,
          byte_size, height_px),
     )
     return {"visual_id": visual_id, "format": fmt, "storage_key": storage_key,
