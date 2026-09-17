@@ -1,0 +1,47 @@
+name: Feature request
+description: Propose a research workflow or product capability
+title: "feature: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the research or user problem first. A proposed solution is welcome, but the problem and evidence for it matter more than the implementation idea.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow gap
+      description: What can a researcher not currently do, represent, validate, inspect, or export?
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current workaround
+      description: How is this handled today, if at all?
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed capability
+      description: Describe the behavior rather than only the UI.
+    validations:
+      required: true
+  - type: textarea
+    id: integrity
+    attributes:
+      label: Research-integrity / privacy considerations
+      description: Could this affect provenance, statistical interpretation, data leaving the machine, authorization, or reproducibility?
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or examples
+      description: Public references, reproducible examples, or comparable tools that help explain the need.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and pull requests for this request.
+          required: true
+        - label: I did not include private research, credentials, personal data, or other sensitive information.
+          required: true
