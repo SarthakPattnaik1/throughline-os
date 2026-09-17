@@ -129,21 +129,7 @@ jobs:
         #                      phrase
         #   Blender          — rendering through Blender needs Blender
         run: |
-          if grep '^SKIPPED' pytest.out \
-              | grep -v 'no Neo4j configured' \
-              | grep -v "could not import 'cv2'" \
-              | grep -v 'no local embedding model installed' \
-              | grep -v 'openai-whisper is not installed' \
-              | grep -v 'the digitise pack is not installed here' \
-              | grep -v 'no pack installed in this environment to check against' \
-              | grep -v 'Main.dc.html is generated' \
-              | grep -v 'tests/test_mutating_routes_require_a_session.py' \
-              | grep -v 'Blender is not installed'; then
-            echo "::error::A test skipped for a reason that is not allowlisted."
-            echo "Either make it run everywhere, or add its reason above on purpose."
-            exit 1
-          fi
-          echo "All skips accounted for."
+          ./.venv/bin/python scripts/check_test_skips.py pytest.out
 
   windows-sandbox:
     name: windows · sandbox
@@ -229,3 +215,4 @@ jobs:
           docker logs throughline
           docker rm -f throughline
           exit 1
+
