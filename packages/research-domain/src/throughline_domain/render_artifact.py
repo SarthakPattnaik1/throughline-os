@@ -84,7 +84,7 @@ def render(cur, *, artifact_id: str, fmt: str) -> dict[str, Any]:
     directory = export_directory("communication_artifacts", artifact_id)
     directory.mkdir(parents=True, exist_ok=True)
     path = export_path(
-        "communication_artifacts", artifact_id, f"{render_id}.{suffix}")
+        "communication_artifacts", artifact_id, render_id, suffix)
     path.write_bytes(payload)
     storage_key = str(path.relative_to(storage_root()))
 
