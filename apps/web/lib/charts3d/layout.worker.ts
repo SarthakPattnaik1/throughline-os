@@ -21,7 +21,11 @@ export type LayoutResponse =
   | { id: number; ok: false; because: string };
 
 self.onmessage = (event: MessageEvent<LayoutRequest>) => {
-  const { id, graph } = event.data;
+  if (event.origin !== "" && event.origin !== self.location.origin) return;
+  const payload = event.data;
+  if (!payload || !Number.isInteger(payload.id) || !payload.graph
+      || typeof payload.graph !== "object") return;
+  const { id, graph } = payload;
   try {
     const laid = layoutGraph(graph);
     /*
