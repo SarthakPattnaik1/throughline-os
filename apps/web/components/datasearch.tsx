@@ -369,7 +369,7 @@ export function DataSearch({ projectId, onImported, initialQuery }: {
 
                         {record.description && (
                           <p className="lit-abstract">
-                            {record.description.replace(/<[^>]*>/g, "").slice(0, 300)}
+                            {record.description.slice(0, 300)}
                             {record.description.length > 300 && "…"}
                           </p>
                         )}
