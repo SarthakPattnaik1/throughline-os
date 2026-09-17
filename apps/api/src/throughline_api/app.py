@@ -5133,9 +5133,11 @@ def download_visual(visual_id: str, format: str = Query("png"),
             400, f"{format} is a web specification rather than a file. Ask for "
                  "svg, pdf, png, tiff, jpeg or webp to download one.")
 
-    path = storage.storage_root() / key
-    if not path.exists():
-        raise HTTPException(500, "The figure was recorded but its file is missing.")
+    try:
+        path = storage.path_for(key)
+    except storage.StorageError as exc:
+        raise HTTPException(
+            500, "The figure was recorded but its file is unavailable.") from exc
 
     size = "" if height is None else f"-{height}px"
     return FileResponse(
