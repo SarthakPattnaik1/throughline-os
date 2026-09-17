@@ -13,6 +13,7 @@ reused, and that unconfirmed similarity resolves nothing at all.
 from __future__ import annotations
 
 import pytest
+from conftest import sign_in
 from throughline_domain import claim_test, harmonize, vocabulary
 from throughline_domain.ids import new_id
 
@@ -345,12 +346,7 @@ def test_the_route_says_why_it_refused_rather_than_calling_it_a_ruling():
 
     with TestClient(app) as client:
         try:
-            status = client.get("/api/auth/status").json()
-            endpoint = "/api/auth/setup" if status["needs_setup"] else "/api/auth/login"
-            signed_in = client.post(endpoint, json={
-                "email": "lead@lab.local", "display_name": "Lead",
-                "password": "correct-horse-battery"})
-            assert signed_in.status_code == 200, signed_in.text
+            sign_in(client, email="lead@lab.local", display_name="Lead")
             project = client.post("/api/projects", json={"name": "Vocabulary"}).json()["id"]
 
             with connection() as conn, conn.cursor() as cur:
