@@ -26,7 +26,6 @@ from .ids import new_id
 
 CHUNK = 1024 * 1024
 
-_SAFE_FILENAME = re.compile(r"\A[A-Za-z0-9_.-]{1,200}\Z")
 
 
 class StorageError(RuntimeError):
@@ -139,10 +138,59 @@ def export_directory(table: str, object_id: str) -> Path:
     return directory
 
 
-def export_path(table: str, object_id: str, filename: str) -> Path:
-    if not _SAFE_FILENAME.fullmatch(filename) or filename in {".", ".."}:
-        raise StorageError("Unsafe export filename")
+def _canonical_render_id(table: str, value: str) -> str:
+    prefix = "ren" if table == "communication_artifacts" else "vren"
+    marker = prefix + "_"
+    if not value.startswith(marker):
+        raise StorageError("Render id has the wrong type")
+    raw = value[len(marker):]
+    if len(raw) != 20:
+        raise StorageError("Render id has an invalid length")
+    try:
+        number = int(raw, 16)
+    except ValueError as exc:
+        raise StorageError("Render id is not hexadecimal") from exc
+    return f"{prefix}_{number:020x}"
+
+
+def _canonical_extension(value: str) -> str:
+    # Return literals, never the caller's string. This keeps the filesystem
+    # component independent from request data even when a format originated in
+    # a query parameter.
+    if value == "md":
+        return "md"
+    if value == "docx":
+        return "docx"
+    if value == "pdf":
+        return "pdf"
+    if value == "tex":
+        return "tex"
+    if value == "pptx":
+        return "pptx"
+    if value == "svg":
+        return "svg"
+    if value == "eps":
+        return "eps"
+    if value == "png":
+        return "png"
+    if value == "tiff":
+        return "tiff"
+    if value == "jpeg":
+        return "jpeg"
+    if value == "jpg":
+        return "jpg"
+    if value == "webp":
+        return "webp"
+    raise StorageError("Unsupported export extension")
+
+
+def export_path(
+    table: str, object_id: str, render_id: str, extension: str,
+) -> Path:
     directory = export_directory(table, object_id)
+    safe_render = _canonical_render_id(table, render_id)
+    safe_extension = _canonical_extension(extension)
+    filename = f"{safe_render}.{safe_extension}"
     path = (directory / filename).resolve()
     if path.parent != directory:
         raise StorageError("Export path escapes its object directory")
