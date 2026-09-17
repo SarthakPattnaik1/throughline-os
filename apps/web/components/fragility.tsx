@@ -146,7 +146,33 @@ export function Fragility({ connectionId }: { connectionId: string }) {
     );
   }
 
-  if (refused || !usable) {
+  /*
+   * A successful response with no usable fragility number is defensive UI,
+   * not a result the reader needs expanded on arrival. It can happen when an
+   * older or malformed response reaches the client. Keeping the explanation
+   * open on every connection made this secondary state consume roughly forty
+   * words of the connection-detail screen's readability budget. The summary
+   * says exactly what is behind it; opening it preserves the full explanation.
+   *
+   * A real 422 refusal stays open below. That is an intentional answer from
+   * the current server, not merely a defensive fallback.
+   */
+  if (!refused && !usable) {
+    return (
+      <section className="fragility">
+        <Fold summary="How fragile is this?" count={1}>
+          <p className="lede" style={{ marginTop: 0 }}>
+            This connection&rsquo;s method is not one it can convert to a risk
+            ratio honestly, so no number is shown rather than a confident one
+            with no meaning. The number this panel reports for a correlation is
+            the <Term id="E-value" />.
+          </p>
+        </Fold>
+      </section>
+    );
+  }
+
+  if (refused) {
     return (
       <section className="fragility">
         <h2>How fragile is this?</h2>
