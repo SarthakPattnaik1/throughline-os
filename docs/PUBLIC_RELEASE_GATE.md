@@ -1,55 +1,105 @@
-# Public release evidence
+# Public release and distribution evidence
 
-Throughline is an early research release, not medical or clinical decision
-software. A live landing page is not evidence that installation, isolation,
-analysis, or recovery works.
+Throughline's source repository is public. That does **not** mean a tagged binary/release candidate has been verified for broad distribution. Throughline is an early research release, not medical or clinical decision software. A public repository or live landing page is not evidence that installation, isolation, analysis, update, backup, or recovery works on every supported platform.
+
+This document is the gate for claiming that a specific commit is release-ready.
 
 ## Check the candidate's actual CI
 
 With Python and an authenticated GitHub CLI:
 
 ```sh
-python scripts/check_ci_evidence.py --pr 17
 python scripts/check_ci_evidence.py --sha FULL_40_CHARACTER_RELEASE_COMMIT
 ```
 
-The command only reads GitHub; it does not dispatch jobs or change billing.
-Exit 0 means the latest matching CI run completed successfully and all five
-required jobs have successful required steps. Exit 1 means missing or unsuccessful
-evidence; exit 2 means the evidence could not be read. Push, PR and manual runs
-are included, all pages are read, and jobs must belong to the same commit and
-attempt. A PR head change during the check invalidates the result.
+For a pull request candidate, use its current PR number:
 
-No recorded steps means execution is unverified. It does not identify billing
-as the cause by itself; inspect GitHub's job annotation before attributing it.
-Missing, skipped, cancelled, refused, and stale checks do not satisfy this gate.
+```sh
+python scripts/check_ci_evidence.py --pr PR_NUMBER
+```
 
-This is a review helper, not a protected-branch rule or an automatic release
-block. It verifies job evidence, not whether a workflow's test commands are
-sufficient; workflow edits need review. Main currently uses manual dispatch.
+The command only reads GitHub. Exit 0 means the latest matching CI run completed successfully and all required jobs have successful required steps. Exit 1 means evidence is missing or unsuccessful; exit 2 means evidence could not be read.
 
-## Evidence still required before public exposure
+A changed PR head invalidates evidence from the old head. Missing, skipped, cancelled, refused, stale, or infrastructure-blocked checks do not satisfy the release gate.
 
-- Bring the security changes and current main together and resolve conflicts.
-  Re-run the route-derived T185 ownership tests on that combined commit.
-- Record Ubuntu and macOS suites, Windows sandbox, web tests and production
-  build, Docker build and health check on the exact release commit.
-- Scan all history and refs for secrets, signing material and private data.
-  A current-files scan or release archive cannot establish history safety.
-  Review findings privately and rotate any exposed credentials.
-- Review internal documentation and release contents for private information.
-- Enable and verify the private reporting route described in SECURITY.md.
-- Rehearse installation without repository credentials on clean Linux, macOS
-  and Windows machines; exercise first account, source import, analysis,
-  validation, report export, backup and restore. Also test two independent
-  accounts for isolation. Record the version, commands, results and limitations.
-- Configure main's required reviews and successful checks before merge; verify
-  the repository rules in GitHub. This document does not configure them.
+CI now runs automatically for pull requests targeting `main` and for pushes to `main`; manual dispatch remains available. Repository rules should require the relevant successful checks before merge. This file is evidence policy, not a substitute for GitHub ruleset configuration.
 
-Keep hosted Actions spending capped at zero. If the private repository's free
-allowance is exhausted, paid capacity is not a prerequisite to developing fixes:
-use existing local machines for testing and wait for free capacity to reset for
-hosted verification. Local results must be labelled local and do not substitute
-for missing platform evidence. Do not expose unscanned history to obtain CI.
+## Release candidate checklist
 
-The Apache-2.0 license is already present. It does not certify release readiness.
+A commit may be called release-ready only when all applicable items below have recorded evidence for that exact commit.
+
+### Security and isolation
+
+- [ ] Route-derived ownership/isolation tests pass on the candidate commit.
+- [ ] Any open security-hardening branch whose fixes are not on the candidate has been reconciled or explicitly shown to be superseded.
+- [ ] Two independent accounts have been exercised against the same installation and cannot read or mutate each other's projects or project objects.
+- [ ] Server-side fetch protections are exercised against loopback/private-network targets and redirects.
+- [ ] Authentication, authorization, rate limiting, CSP/cookie settings, update verification, and sandbox tests pass.
+- [ ] Private vulnerability reporting is enabled and verified from a non-maintainer account.
+
+### Clean-environment verification
+
+- [ ] Ubuntu backend suite passed.
+- [ ] macOS backend suite passed.
+- [ ] Windows sandbox job passed.
+- [ ] Web tests, lint, and production build passed.
+- [ ] Docker image built and `/api/health` answered from the built container.
+- [ ] No required job was merely skipped, cancelled, or blocked before execution.
+
+### Installation and recovery rehearsal
+
+Using clean machines or clean virtual machines, without repository credentials:
+
+- [ ] Linux installation completed using a documented route.
+- [ ] macOS installation completed using a documented route.
+- [ ] Windows installation completed using a documented route.
+- [ ] First account/setup flow completed.
+- [ ] A source was imported.
+- [ ] A dataset analysis completed.
+- [ ] Validation completed.
+- [ ] A report/figure export completed.
+- [ ] Backup completed.
+- [ ] Restore into a clean installation completed and provenance links remained usable.
+
+Record the exact version/commit, platform, commands, results, and limitations. Local testing on one machine does not establish another platform.
+
+### Repository and supply-chain hygiene
+
+- [ ] Scan all reachable Git history and refs for secrets, signing material, credentials, private data, and accidentally committed environment files.
+- [ ] Review findings privately and rotate any credential that may have been exposed; deletion alone is not rotation.
+- [ ] Review the release archive contents against the allowlist and confirm no developer-only/private files are shipped.
+- [ ] Review dependency advisories for the resolved release dependency graph.
+- [ ] Confirm the release manifest/checksum/signature behavior on an actual generated release archive.
+- [ ] Confirm the version reported by the running application matches the candidate being tested.
+
+### Documentation and user expectations
+
+- [ ] README installation instructions match the current public repository and release mechanism.
+- [ ] `SECURITY.md`, `SUPPORT.md`, `CONTRIBUTING.md`, and `CODE_OF_CONDUCT.md` are present and current.
+- [ ] Known limitations are stated without presenting planned or unverified behavior as complete.
+- [ ] External-service/model privacy behavior is stated before use.
+- [ ] The release notes identify breaking changes, migrations, known issues, and rollback/backup requirements.
+
+## Open-source readiness versus release readiness
+
+The repository can accept public contributions while a release candidate is still unverified. These are separate claims:
+
+- **Open-source ready** means licensing, contribution guidance, conduct rules, security reporting, issue intake, review controls, and CI are present and usable by outsiders.
+- **Release ready** means a particular commit has passed the security, cross-platform, installation, recovery, and supply-chain evidence above.
+
+Do not represent one as proof of the other.
+
+## Evidence retention
+
+For every tagged release, retain or link to:
+
+- full commit SHA;
+- CI run URL(s);
+- clean-install rehearsal notes;
+- secret/dependency scan summary;
+- release archive hash/signature evidence;
+- known limitations and unresolved issues.
+
+If evidence is unavailable, state that it is unavailable. Do not convert missing verification into a passing claim.
+
+The Apache-2.0 license permits use and contribution; it does not certify scientific correctness, security, fitness for a particular purpose, or release readiness.
