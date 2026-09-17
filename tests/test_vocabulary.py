@@ -366,3 +366,30 @@ def test_the_route_says_why_it_refused_rather_than_calling_it_a_ruling():
         finally:
             with connection() as conn, conn.cursor() as cur:
                 cur.execute("DELETE FROM users")
+
+
+# ---------------------------------------------------------------------------
+# Project isolation (T185)
+# ---------------------------------------------------------------------------
+
+def test_a_foreign_canonical_variable_cannot_enter_this_projects_vocabulary(
+        cur, project):
+    other_user, other_project = new_id("usr"), new_id("prj")
+    cur.execute(
+        "INSERT INTO users(id, email, display_name, password_hash, password_salt) "
+        "VALUES (%s, %s, 'Other', 'x', 'y')",
+        (other_user, f"{other_user}@test.local"))
+    cur.execute(
+        "INSERT INTO projects(id, owner_user_id, name) VALUES (%s, %s, 'Other')",
+        (other_project, other_user))
+    foreign = _canonical(cur, other_project, "private_measure")
+
+    with pytest.raises(vocabulary.AliasRefused, match="in this project"):
+        vocabulary.suggest(
+            cur, project_id=project, phrase="borrowed",
+            canonical_variable_id=foreign)
+
+    cur.execute(
+        "SELECT id FROM variable_aliases WHERE project_id = %s",
+        (project,))
+    assert cur.fetchall() == []

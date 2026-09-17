@@ -194,3 +194,72 @@ def test_nothing_is_excused_that_no_longer_exists():
 @pytest.mark.parametrize("route", sorted(NO_PROJECT))
 def test_every_excuse_says_what_the_route_reaches(route):
     assert len(NO_PROJECT[route].strip()) > 20
+
+
+#: Every singular identifier accepted inside a request body, and the boundary
+#: that proves it belongs to the route's project. This complements the route
+#: scan above: calling scoped_project(project_id) authenticates the container,
+#: but does not make a second id in the same request safe. A new *_id field must
+#: therefore be reviewed and named here before this test can pass.
+BODY_ID_SCOPE = {
+    "RestoreRequest.version_id": "objects.restore_version requires the version to be in the scoped object's chain.",
+    "SpecificationCurveRequest.dataset_version_id": "the route selects the dataset version and compares its project_id.",
+    "DraftRequest.connection_id": "authoring.draft_from_connection loads the connection by project_id.",
+    "PlacementRequest.object_id": "board.place compares the object's project_id.",
+    "MarkRequest.source_id": "_sources_in_project checks the source before marks.record.",
+    "ExcerptRequest.source_id": "_sources_in_project checks the source before excerpts.record.",
+    "ImportRequest.arxiv_id": "external catalogue identifier; it does not address stored project data.",
+    "ReconcilePapersRequest.left_source_id": "claim_test.claims_for loads the source by project_id.",
+    "ReconcilePapersRequest.right_source_id": "claim_test.claims_for loads the source by project_id.",
+    "ConsistencyRequest.left_connection_id": "consistency._load filters the connection by project_id.",
+    "ConsistencyRequest.right_connection_id": "consistency._load filters the connection by project_id.",
+    "AliasSuggestion.canonical_variable_id": "vocabulary.suggest loads the canonical variable by project_id.",
+    "AnalysisSpecRequest.enquiry_id": "the route and exploration.record both require the enquiry's project_id.",
+    "AnalysisSpecRequest.preregistration_id": "exploration.record requires the registration's project_id.",
+    "DiscoveryRequest.dataset_version_id": "the route resolves the dataset version and compares its project_id.",
+    "DiscoveryRequest.enquiry_id": "the route requires the enquiry's project_id.",
+    "CohortRequest.dataset_version_id": "the route resolves the dataset version and compares its project_id.",
+    "CohortRequest.parent_id": "cohorts.define requires the parent cohort to share the dataset version.",
+    "VisualCreate.analysis_run_id": "recommend_for_run and validate_spec_scope require the run's project_id.",
+    "VisualCreate.finding_id": "visuals.create_visual loads the finding by project_id.",
+    "CompareRequest.left_dataset_version_id": "compare.assess_datasets loads both versions by project_id.",
+    "CompareRequest.right_dataset_version_id": "compare.assess_datasets loads both versions by project_id.",
+    "ClaimPayload.source_id": "claim_test.assess_testability requires the source's project_id before reading it.",
+    "ClaimPayload.claim_id": "claim evidence is written only after loading the claim by project_id.",
+    "ClaimTestRequest.dataset_version_id": "claim_test.assess_testability requires the dataset's project_id.",
+    "SynthesisRequest.source_ids": "_sources_in_project validates every source before synthesis.",
+    "DatasetSetRequest.dataset_version_ids": "dataset synthesis resolves every version through the scoped project.",
+    "ImageSetRequest.source_ids": "_sources_in_project validates every image source before comparison.",
+    "AnalysisSpecRequest.dataset_version_ids": "analysis.validate_spec requires every dataset version's project_id.",
+}
+
+
+def body_identifier_fields() -> set[str]:
+    """All *_id and *_ids fields accepted by API Pydantic models."""
+    found: set[str] = set()
+    tree = ast.parse((API / "app.py").read_text())
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if not any(isinstance(base, ast.Name) and base.id == "BaseModel"
+                   for base in node.bases):
+            continue
+        for member in node.body:
+            if (isinstance(member, ast.AnnAssign)
+                    and isinstance(member.target, ast.Name)
+                    and member.target.id.endswith(("_id", "_ids"))):
+                found.add(f"{node.name}.{member.target.id}")
+    return found
+
+
+def test_every_body_identifier_has_a_reviewed_scope_boundary():
+    found = body_identifier_fields()
+    missing = sorted(found - set(BODY_ID_SCOPE))
+    stale = sorted(set(BODY_ID_SCOPE) - found)
+    assert not missing, "unreviewed request identifiers:\n  " + "\n  ".join(missing)
+    assert not stale, "scope entries for fields that no longer exist:\n  " + "\n  ".join(stale)
+
+
+@pytest.mark.parametrize("field", sorted(BODY_ID_SCOPE))
+def test_every_body_identifier_scope_note_names_its_boundary(field):
+    assert len(BODY_ID_SCOPE[field].strip()) > 30

@@ -467,3 +467,50 @@ def test_a_look_cannot_be_recorded_into_another_projects_enquiry(cur, project):
                            verb="discovery", description="planted", p_value=0.9)
 
     assert exploration.ledger(cur, theirs)["looks"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Every optional reference stays inside the project (T185)
+# ---------------------------------------------------------------------------
+
+def _other_project(cur):
+    user_id, project_id = new_id("usr"), new_id("prj")
+    cur.execute(
+        "INSERT INTO users(id, email, display_name, password_hash, password_salt) "
+        "VALUES (%s, %s, 'Other', 'x', 'y')",
+        (user_id, f"{user_id}@test.local"))
+    cur.execute(
+        "INSERT INTO projects(id, owner_user_id, name) VALUES (%s, %s, 'Other')",
+        (project_id, user_id))
+    return {"id": project_id, "user": user_id,
+            "enquiry": make_enquiry(cur, project_id)}
+
+
+def test_a_foreign_preregistration_cannot_claim_an_exemption(cur, project):
+    other = _other_project(cur)
+    foreign = exploration.preregister(
+        cur, project_id=other["id"], hypothesis="Private hypothesis.",
+        predicted_direction="increase", author=other["user"])
+
+    with pytest.raises(ValueError, match="in this project"):
+        look(cur, project, p=0.01, prereg=foreign["id"])
+
+    assert exploration.ledger(cur, project["enquiry"])["looks"] == 0
+
+
+def test_a_foreign_spec_cannot_be_attached_to_this_projects_ledger(cur, project):
+    other = _other_project(cur)
+    spec_id = new_id("asp")
+    cur.execute(
+        "INSERT INTO analysis_specs(id, project_id, analysis_type, method, "
+        "content_hash, created_by, research_question, dataset_version_ids) "
+        "VALUES (%s, %s, 'correlation', 'pearson', 'foreign', 'test', "
+        "'q', '[]'::jsonb)",
+        (spec_id, other["id"]))
+
+    with pytest.raises(ValueError, match="analysis specification"):
+        exploration.record(
+            cur, enquiry_id=project["enquiry"], project_id=project["id"],
+            verb="analysis", description="foreign spec", spec_id=spec_id)
+
+    assert exploration.ledger(cur, project["enquiry"])["looks"] == 0
