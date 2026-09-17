@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/SarthakPattnaik1/throughline-os/security/advisories/new
+    about: Report security issues privately. Do not post exploit details in a public issue.
+  - name: Support guidance
+    url: https://github.com/SarthakPattnaik1/throughline-os/blob/main/SUPPORT.md
+    about: Read what to include in installation, bug, and scientific-correctness reports.
