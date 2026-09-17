@@ -104,7 +104,8 @@ def _archive_name(member: tarfile.TarInfo) -> PurePosixPath:
     if (not raw or raw.startswith("/") or name.is_absolute()
             or any(part in ("", ".", "..") for part in name.parts)):
         raise InstallError(
-            "The release archive holds an unsafe path: {}".format(member.name))
+            "The release archive would write outside the install directory "
+            "or uses an unsafe path: {}".format(member.name))
     return name
 
 
