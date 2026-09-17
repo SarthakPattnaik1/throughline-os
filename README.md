@@ -1,149 +1,319 @@
+<div align="center">
+
 # Throughline
 
-**A local-first research workspace for connecting papers, datasets, analyses, findings, and evidence.**
+### Research software for turning sources into traceable evidence.
 
-Throughline is open source under the Apache-2.0 license. It is an early research release, **not medical or clinical decision software**. Review statistical conclusions independently and use synthetic or non-sensitive data when evaluating a new installation.
+**Local-first · evidence-first · reproducible by design**
+
+[![CI](https://github.com/SarthakPattnaik1/throughline-os/actions/workflows/ci.yml/badge.svg)](https://github.com/SarthakPattnaik1/throughline-os/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/SarthakPattnaik1/throughline-os/actions/workflows/codeql.yml/badge.svg)](https://github.com/SarthakPattnaik1/throughline-os/actions/workflows/codeql.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Next.js 15](https://img.shields.io/badge/Next.js-15-black?logo=nextdotjs&logoColor=white)](apps/web)
+
+[**Download Throughline**](https://throughline-research.pages.dev) · [**Quick start**](#quick-start) · [**Capabilities**](docs/CAPABILITIES.md) · [**Roadmap**](ROADMAP.md) · [**Contributing**](CONTRIBUTING.md)
+
+</div>
+
+---
+
+## Research should have a throughline
+
+A paper, a dataset, an analysis, a figure, and a finding should not become five disconnected files—or disappear into a chat transcript.
+
+**Throughline is a research workspace built around the chain of evidence itself.** It connects source material, datasets, analyses, validation checks, findings, figures, and reports so a researcher can move forward without losing where a conclusion came from.
+
+It is intentionally different from an AI chat wrapper:
+
+| | Throughline |
+|---|---|
+| **Evidence first** | Findings stay connected to the analyses and sources that support them. |
+| **Local first** | Core research workflows run on your machine. Hosted AI is optional and explicit. |
+| **Statistics stay deterministic** | Language models do not invent numerical research results. Computation happens in the scientific runtime. |
+| **Provenance is a product feature** | Analyses, versions, lineage, validation, and communication artifacts remain traceable. |
+| **Refusal is allowed** | When evidence is missing, incompatible, or insufficient, the system is designed to say so rather than manufacture certainty. |
+
+> [!IMPORTANT]
+> **Throughline is an early research release.** It is not medical or clinical decision software. Review statistical conclusions independently, and use synthetic or non-sensitive data when evaluating a new installation.
 
 **Current packaged release:** `v0.3.0`  
-**Download / installer host:** https://throughline-research.pages.dev
+**Installer / download host:** https://throughline-research.pages.dev
 
-## What Throughline does
+---
 
-The core workflow is designed around a research chain rather than a chat transcript:
+## From source to finding
+
+```mermaid
+flowchart LR
+    A[Sources] --> B[Ingest & organize]
+    B --> C[Profile & extract]
+    C --> D[Analyze]
+    D --> E[Validate & challenge]
+    E --> F[Record finding]
+    F --> G[Figure / report / export]
+
+    A -. provenance .-> F
+    C -. lineage .-> F
+    D -. computation .-> F
+    E -. validation .-> F
+```
+
+The working loop is simple:
 
 1. **Add sources** — papers, documents, and datasets.
-2. **Profile data** — types, units, distributions, and missingness.
-3. **Generate and test candidates** — including multiple-comparison correction for discovery sweeps.
-4. **Challenge the result** — resampling, outlier sensitivity, missingness checks, and selected confounder adjustment.
-5. **Record a finding** — linked to the analysis and evidence that produced it.
-6. **Communicate it** — reports and figures that preserve provenance and specification.
+2. **Profile and understand the material** — types, units, distributions, missingness, passages, and metadata.
+3. **Generate or define analyses** — including discovery workflows with multiple-comparison correction.
+4. **Challenge the result** — resampling, sensitivity checks, missingness checks, outliers, and selected confounder adjustment.
+5. **Record a finding** — connected to the analysis and evidence that produced it.
+6. **Communicate it** — figures and reports preserve the research chain instead of flattening it into detached prose.
 
-The deterministic research path does not require an AI model. Model-assisted reading and interpretation are optional and are separated from statistical computation.
+The deterministic path works without an AI provider. Model-assisted reading, labeling, comparison, and interpretation are optional layers around—not replacements for—the recorded computation.
 
-## Current status
+---
 
-**Dataset-first workflows work end to end today.** A dataset can be imported, profiled, explored, analyzed, validated, recorded as a finding, and communicated through the product.
+## What you can do today
 
-**Paper/topic-first workflows are still being re-verified end to end.** Individual defects have tests, but a fixed component is not treated as proof that the entire user journey has been re-walked on a clean installation.
+### Dataset-first research
 
-For detailed capability status, see `docs/CAPABILITIES.md`. For what remains or is intentionally incomplete, see `ROADMAP.md` and `docs/REQUIREMENTS.md`.
+The dataset-first path works end to end: import a dataset, profile it, explore it, analyze it, validate the result, record a finding, and communicate the finding through the product.
 
-## Quick start
+### Paper and evidence workflows
 
-### macOS / Linux
+Throughline can ingest papers, preserve passages and citations, locate research claims, compare evidence, connect papers to analyses, and build provenance-aware outputs. Paper/topic-first journeys are still being re-verified as complete user flows on clean installations; individual components having tests is not treated as proof that the entire journey is finished.
+
+### Research integrity mechanisms
+
+The project includes mechanisms for project isolation, analysis provenance, lineage, multiple-comparison correction, validation, sensitivity checks, reproducible analysis specifications, report generation, backup/restore, capability reporting, and explicit AI data-boundary controls.
+
+For the detailed truth table, use [**`docs/CAPABILITIES.md`**](docs/CAPABILITIES.md). For incomplete or planned work, see [**`ROADMAP.md`**](ROADMAP.md) and [**`docs/REQUIREMENTS.md`**](docs/REQUIREMENTS.md).
+
+---
+
+# Quick start
+
+## macOS / Linux
 
 ```bash
 curl -fsSL https://throughline-research.pages.dev/install.sh | sh
 ```
 
-This command downloads and executes an installer. If you prefer to inspect code before executing it, download `install.sh` from the same host, review it, then run it locally.
+The command downloads and executes the installer. If you prefer to inspect it first, download `install.sh`, review it, and run it locally.
 
-### Windows
+## Windows
 
-There is no `sh` on a stock Windows installation, so use PowerShell:
+Use PowerShell:
 
 ```powershell
 irm https://throughline-research.pages.dev/install.ps1 | iex
 ```
 
-### From a source checkout
+## From source
 
 ```bash
+git clone https://github.com/SarthakPattnaik1/throughline-os.git
+cd throughline-os
 python scripts/manage.py bootstrap
 python scripts/manage.py dev
 ```
 
-Run diagnostics with:
+Then open:
+
+```text
+http://localhost:8080
+```
+
+Run installation diagnostics with:
 
 ```bash
 python scripts/manage.py doctor
 ```
 
-The bootstrap obtains the exact Python runtime Throughline needs when the host machine does not already provide it, creates the environment, installs workspace packages, applies migrations, and builds the interface.
+`bootstrap` obtains the Python runtime Throughline expects when needed, creates the environment, installs the workspace packages, applies migrations, and builds the web interface.
 
-## Requirements and runtime model
+---
 
-Throughline's application runtime is built around **Python 3.12** because the embedded PostgreSQL dependency currently publishes compatible wheels through CPython 3.12. Node is used to build the web interface from a source checkout; the shipped static interface is served by the Python API and does not require a separate Node server at runtime.
+## Local-first does not mean AI-first
 
-The API and web interface are served from one origin on port `8080`. This is intentional: authentication uses an `httpOnly`, `SameSite=strict` session cookie and same-origin deployment removes an unnecessary cross-origin failure mode.
+Throughline can run with **no language model configured**.
 
-PostgreSQL is bundled through the project's database runtime rather than required as a separately managed prerequisite.
+| Provider | Where it runs | What happens |
+|---|---|---|
+| `none` | Nowhere | Model features are unavailable; deterministic research workflows continue to work. |
+| `ollama` | Local by default | Model-assisted features can run on the researcher's machine. |
+| `anthropic` | Hosted | Selected research text is sent to the configured hosted provider. |
 
-## Privacy and models
+There is **no silent fallback from local/offline operation to a hosted provider**. Sending research material to an external model must be an explicit configuration choice.
 
-Throughline can run with no model provider configured.
-
-| Provider | Behavior |
-|---|---|
-| `none` | No model calls. Deterministic research paths remain available. |
-| `ollama` | Local model execution. Research text stays on the machine when Ollama is local. |
-| `anthropic` | Hosted provider. Text sent to this provider leaves the machine. |
-
-Nothing silently falls back from a local/offline mode to a hosted provider. A hosted provider must be selected deliberately.
-
-Example:
+Example hosted configuration:
 
 ```bash
 export THROUGHLINE_MODEL_PROVIDER=anthropic
 export ANTHROPIC_API_KEY=...
 ```
 
-The hosted client is optional. If it is not installed/configured, the product reports the capability as unavailable rather than failing unrelated workflows.
+A missing or unreachable optional provider is represented as an unavailable capability rather than being allowed to break unrelated research workflows.
 
-## Accounts and project isolation
+---
 
-The first account on an installation is the administrator. Administrative operations that affect the whole installation are enforced on the server.
+## Design principles
 
-Network sign-up is off by default. Project ownership checks are server-side rather than UI-only, and object identifiers are tested against project/account boundaries. Security-sensitive changes should preserve the rule that another account's object is not distinguishable from a nonexistent object unless a route explicitly needs a different behavior.
+### 1. A model does not get to become the calculator
 
-See `SECURITY.md` for reporting and threat-boundary details.
+Language models may help interpret, classify, locate, compare, or explain. Numerical research results come from recorded computation, not generated prose.
 
-## Feature packs
+### 2. Retrieved text is data, not instruction
 
-Optional capabilities are exposed through `/api/system/capabilities` and Settings. A missing optional dependency is represented as a missing capability with an explanation rather than as a generic runtime failure.
+Papers and other retrieved material cross an explicit trust boundary before model use. Content inside a document is treated as untrusted research material rather than as authority over the application.
 
-Some optional packs are large. For example, local speech recognition can pull in multi-gigabyte ML dependencies. They are intentionally not required for the base research workflow.
+### 3. Missing evidence is not evidence
 
-## Backups
+A failed request, missing provider, skipped test, absent citation, or unavailable check is represented as missing verification—not quietly promoted into a successful result.
 
-Local-first means the researcher may hold the only copy of a project. Backup therefore belongs to the product, not just operations.
+### 4. Local-first includes recovery
+
+If the researcher's machine holds the only copy of a project, backup and restoration are part of the product contract.
+
+### 5. Security belongs on the server
+
+Project ownership, administrative permissions, account isolation, and installation-wide actions are enforced server-side rather than trusted to the interface.
+
+---
+
+## Architecture at a glance
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                     Researcher interface                     │
+│                    Next.js / React / D3                      │
+└─────────────────────────────┬────────────────────────────────┘
+                              │ same origin
+┌─────────────────────────────▼────────────────────────────────┐
+│                         FastAPI API                          │
+│          auth · projects · workflows · capabilities          │
+└───────────────┬─────────────────────────────┬────────────────┘
+                │                             │
+┌───────────────▼──────────────┐  ┌───────────▼────────────────┐
+│       Research domain        │  │     Scientific runtime      │
+│ evidence · lineage · claims  │  │ deterministic computation  │
+│ findings · reports · models  │  │ sandboxed analysis paths   │
+└───────────────┬──────────────┘  └────────────────────────────┘
+                │
+┌───────────────▼──────────────────────────────────────────────┐
+│                 PostgreSQL + object storage                  │
+│               local project data + provenance               │
+└──────────────────────────────────────────────────────────────┘
+```
+
+The API and interface are served from one origin on port `8080`. Authentication uses an `httpOnly`, `SameSite=strict` session cookie.
+
+The application runtime targets **Python 3.12**. Node is used to build the web interface from source; the built interface is served by the Python application and does not require a separate Node server at runtime.
+
+PostgreSQL is provided through the project's database runtime rather than requiring a separately managed database installation for the normal local setup.
+
+---
+
+## Repository map
+
+```text
+apps/
+  api/                  FastAPI HTTP surface
+  web/                  Next.js researcher interface
+
+packages/
+  schemas/              Versioned domain schemas
+  model/                Model providers + prompt contracts
+  research-domain/      Evidence, analyses, lineage, findings, workflows
+  connector-sdk/        Connector interfaces + capability model
+  ingestion/            Document and dataset ingestion
+  visual-spec/          Visualization specification + rendering
+
+services/
+  workers/              Durable background work
+  scientific-runtime/   Isolated analysis execution
+
+docs/                   Architecture, capabilities, requirements, release evidence
+tests/                  Cross-package regression and invariant tests
+evals/                  Evaluation harness
+scripts/                Bootstrap, diagnostics, release, backup, verification
+```
+
+New research logic belongs in the domain packages rather than React components or HTTP handlers. New API surfaces should use focused router modules instead of further concentrating routes in `apps/api/src/throughline_api/app.py`.
+
+---
+
+## Security and project isolation
+
+The first account on an installation is the administrator. Installation-wide operations are protected by server-side role checks.
+
+Network sign-up is off by default. Project ownership is checked server-side, and the test suite exercises object identifiers across account/project boundaries so another account's object cannot simply be reached by knowing its ID.
+
+Security-sensitive routes should preserve a simple rule: **another account's private object should generally be indistinguishable from an object that does not exist.**
+
+Please report vulnerabilities privately as described in [**`SECURITY.md`**](SECURITY.md).
+
+> [!CAUTION]
+> Do not put private datasets, unpublished research, credentials, database exports, session cookies, API keys, or personal information into public GitHub issues or pull requests.
+
+---
+
+## Optional capability packs
+
+Large or specialized dependencies are kept out of the base install where possible. Capabilities are surfaced through the product so a missing optional dependency becomes an explainable unavailable feature rather than an opaque crash.
+
+This is especially important for features such as local speech recognition and other ML-heavy tooling that may add gigabytes of dependencies but are not required for the core research path.
+
+---
+
+## Backup and restore
+
+A local-first workspace needs a real recovery story.
 
 ```bash
 ./scripts/backup.sh
 ./scripts/restore.sh <archive.tar> [--force]
 ```
 
-A backup includes both the PostgreSQL dump and the object store because database rows and files reference one another. Restore testing is part of the release gate in `docs/PUBLIC_RELEASE_GATE.md`.
+Backups include the database and object store together because rows and files reference one another. Restore rehearsal is part of the release-readiness process.
+
+---
 
 ## Docker
 
-The container is currently intended for `linux/amd64`. On Apple Silicon, use the native bootstrap path rather than relying on x86 emulation for the embedded database/pgvector stack.
-
-Build and run:
+The current container path targets `linux/amd64`.
 
 ```bash
 docker build -t throughline-os .
-docker run -p 127.0.0.1:8080:8080 -v throughline:/data throughline-os
+docker run \
+  -p 127.0.0.1:8080:8080 \
+  -v throughline:/data \
+  throughline-os
 ```
 
 Then open `http://localhost:8080`.
 
-The volume is required for durable research data. Running a fresh container without mounting the data volume creates a fresh local corpus.
+The mounted volume is what makes the research corpus durable. A fresh container without the data volume is a fresh local workspace.
 
-## Updating
+On Apple Silicon, the native bootstrap path is currently preferred over relying on x86 emulation for the embedded database/pgvector stack.
+
+---
+
+## Updates
+
+Updates are deliberate rather than automatic:
 
 ```bash
 python scripts/manage.py update --check
 python scripts/manage.py update
 ```
 
-Updates are explicit rather than automatic. The updater backs up before migration, uses fast-forward semantics, and reports rollback/recovery information if an update fails.
+The updater backs up before migration, uses fast-forward semantics, and reports recovery information when an update cannot complete cleanly.
 
-A release version that cannot be tied to a specific commit is a provenance defect, so the running installation reports its software version/source.
+The running product also reports its software version/source so a research result can be tied back to the code that produced it.
+
+---
 
 ## Testing
-
-The suite is at least **2828 backend tests and 3712 web tests**. Optional feature packs can add collected cases. CI also audits skip reasons so optional-capability skips do not become a general way to hide failing tests.
 
 Run the full local preflight:
 
@@ -151,88 +321,82 @@ Run the full local preflight:
 python scripts/manage.py preflight
 ```
 
-Or run suites individually:
+Or run suites directly:
 
 ```bash
 .venv/bin/python -m pytest tests -q
 cd apps/web && npm test
 ```
 
-GitHub Actions runs automatically for pull requests targeting `main` and for pushes to `main`. The workflow covers:
+Pull requests to `main` are checked across the major product surfaces:
 
-- backend suite on Ubuntu;
-- backend suite on macOS;
-- Windows sandbox tests;
-- web tests, lint, and production build;
-- Docker build and in-container health check.
+- **Ubuntu** backend suite
+- **macOS** backend suite
+- **Windows** sandbox/confinement checks
+- **Web** tests, lint, and production build
+- **Docker** build and in-container health check
+- **CodeQL** static analysis
 
-A skipped, cancelled, infrastructure-blocked, or billing-refused workflow is missing verification, not a passing result.
+A skipped, cancelled, infrastructure-blocked, or billing-refused workflow is **missing verification**, not a passing result.
+
+---
 
 ## Release readiness
 
-Public source code and a verified release are different claims. Before calling a commit release-ready, follow `docs/PUBLIC_RELEASE_GATE.md`, including cross-platform CI, clean-install rehearsal, account isolation, history/secret review, dependency review, backup/restore rehearsal, and release-signature checks.
+Public source code and a verified release are different claims.
 
-Build a release artifact with:
+Before calling a commit release-ready, follow [**`docs/PUBLIC_RELEASE_GATE.md`**](docs/PUBLIC_RELEASE_GATE.md). The gate covers cross-platform CI, clean-install rehearsal, account isolation, history/secret review, dependency review, backup/restore rehearsal, and release-signature checks.
+
+Build release artifacts with:
 
 ```bash
 python scripts/manage.py release
 ```
 
-The release builder refuses a dirty checkout, builds from an allowlist of paths, emits a SHA-256 digest and manifest, and supports signed update verification. See `keys/README.md` for release-signing details.
+The release builder uses an allowlist of paths, refuses a dirty checkout, emits a SHA-256 digest and manifest, and supports signed update verification. See [`keys/README.md`](keys/README.md) for signing details.
+
+---
 
 ## Contributing
 
-Contributions are welcome through forks and pull requests. Start with:
+Throughline welcomes careful contributions—especially work that improves research correctness, reproducibility, usability, security, accessibility, and evidence traceability.
 
-- `CONTRIBUTING.md` — development and review workflow;
-- `CODE_OF_CONDUCT.md` — community expectations;
-- `SUPPORT.md` — bug/support/scientific-correctness reports;
-- `SECURITY.md` — private vulnerability reporting.
+Start here:
 
-For substantial features or architecture changes, open an issue before implementation so the problem, research-integrity implications, and interfaces can be discussed first.
+- [**`CONTRIBUTING.md`**](CONTRIBUTING.md) — development and review workflow
+- [**`CODE_OF_CONDUCT.md`**](CODE_OF_CONDUCT.md) — community expectations
+- [**`SUPPORT.md`**](SUPPORT.md) — bugs, support, and scientific-correctness reports
+- [**`SECURITY.md`**](SECURITY.md) — private vulnerability reporting
 
-Do not include private datasets, unpublished research, credentials, database exports, session cookies, or personal information in public issues or pull requests.
+For substantial features or architectural changes, open an issue before implementation so the problem, research-integrity implications, and interfaces can be discussed before code hardens around them.
 
-## Repository layout
+---
 
-```text
-apps/
-  api/                  FastAPI HTTP surface
-  web/                  Next.js researcher interface
-packages/
-  schemas/              Versioned domain schemas
-  model/                Model providers and prompt/version contracts
-  research-domain/      Research objects, lineage, analyses, findings, workflows
-  connector-sdk/        Connector interfaces and capability model
-  ingestion/            Document and dataset ingestion
-  visual-spec/          Visualization specification and rendering logic
-services/
-  workers/              Durable background work
-  scientific-runtime/   Isolated analysis execution
-docs/                   Architecture, capabilities, requirements, release evidence
-tests/                  Cross-package regression and invariant tests
-evals/                  Evaluation harness
-scripts/                Bootstrap, release, diagnostics, backup, verification
-```
+## Documentation
 
-New research logic should live in the domain packages rather than React components or HTTP handlers. New API surfaces should use focused modules/routers instead of further concentrating routes in `apps/api/src/throughline_api/app.py`.
-
-## Documentation map
-
-| File | Purpose |
+| Document | Use it for |
 |---|---|
-| `README.md` | What Throughline is and how to run it |
-| `docs/CAPABILITIES.md` | Detailed implemented capabilities |
-| `ROADMAP.md` | What is planned or incomplete |
-| `docs/REQUIREMENTS.md` | Status against the full specification |
-| `TASKS.md` | Current internal task/evidence ledger |
-| `CONTRIBUTING.md` | Contribution workflow |
-| `SECURITY.md` | Security reporting and expectations |
-| `SUPPORT.md` | Support and issue-reporting guidance |
-| `docs/PUBLIC_RELEASE_GATE.md` | Evidence required to call a commit release-ready |
+| [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md) | What the product can do now |
+| [`ROADMAP.md`](ROADMAP.md) | Planned and incomplete work |
+| [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | Status against the broader specification |
+| [`TASKS.md`](TASKS.md) | Current task/evidence ledger |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution workflow |
+| [`SECURITY.md`](SECURITY.md) | Security model and vulnerability reporting |
+| [`SUPPORT.md`](SUPPORT.md) | Support and issue reporting |
+| [`docs/PUBLIC_RELEASE_GATE.md`](docs/PUBLIC_RELEASE_GATE.md) | Evidence required for release readiness |
 
-Historical planning documents remain useful context, but current behavior should be taken from code, tests, the capability/requirements ledgers, and the release evidence for the exact commit being evaluated.
+Historical planning documents are useful context, but current behavior should be judged from code, tests, the capability/requirements ledgers, and evidence for the exact commit under review.
+
+---
 
 ## License
 
-Apache License 2.0 — see `LICENSE`.
+Throughline is open source under the **Apache License 2.0**. See [LICENSE](LICENSE).
+
+<div align="center">
+
+**Build research that can explain where it came from.**
+
+[Download](https://throughline-research.pages.dev) · [Contribute](CONTRIBUTING.md) · [Security](SECURITY.md) · [Roadmap](ROADMAP.md)
+
+</div>
