@@ -65,7 +65,7 @@
     "eslint-config-next": "15.5.23",
     "happy-dom": "^20.11.2",
     "jsdom": "^27.0.1",
-    "typescript": "^5",
+    "typescript": "^7",
     "vitest": "^4.1.10"
   },
   "overrides": {
