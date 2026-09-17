@@ -1,17 +1,17 @@
-"""Repository-wide pytest hooks that must apply before ``tests/conftest.py``.
+"""Narrow pytest support for the route-derived ownership sweep.
 
-The T185 ownership sweep exercises every id-bearing API route. A handful of
-those routes intentionally require a model, while clean CI intentionally has no
-Ollama process, API key, or paid provider. The sweep's contract is stronger than
-"the foreign request failed": its caller-owned control request must first
-succeed, otherwise a model/configuration refusal could masquerade as an
-ownership check.
+The T185 sweep exercises every id-bearing API route and requires the caller-owned
+control request to succeed before it can prove a foreign id is rejected. A few
+of those routes deliberately need a language model. Clean CI deliberately has
+no Ollama process or paid provider, so this module supplies a deterministic
+in-process model only while that one sweep module is running.
 
-For that one sweep only, provide a deterministic in-process model. It performs
-no network I/O and produces no research numbers. This keeps CI free and local
-while preserving the sweep's control-request requirement. Product tests of the
-real no-model/refusal paths continue to use the real provider because this
-fixture is scoped by test module.
+Important: this fixture intentionally does *not* depend on pytest's ``monkeypatch``
+fixture. The suite already has an autouse provider-reset fixture in
+``tests/conftest.py``. Making a second root autouse fixture depend on monkeypatch
+changes teardown ordering for every test and can leave temporary provider doubles
+installed while the reset fixture calls ``provider(refresh=True)``. That was the
+cause of the 125-error CI cascade this file replaces.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import pytest
 
 
 class _OwnershipSweepModel:
-    """Small deterministic stand-in used only by the cross-account id sweep."""
+    """Deterministic, network-free model used only by the T185 ownership sweep."""
 
     def _completion(self, prompt_name: str, prompt_version: int):
         from throughline_model.provider import Completion, Usage
@@ -33,16 +33,18 @@ class _OwnershipSweepModel:
             prompt_name=prompt_name,
             prompt_version=prompt_version,
             usage=Usage(),
-            operational_summary="Deterministic test response.",
+            operational_summary="Deterministic ownership-test response.",
         )
 
-    def generate_text(self, *, prompt_name: str, prompt_version: int, **_: Any):
+    def generate_text(self, *, prompt_name: str = "ownership_sweep",
+                      prompt_version: int = 1, **_: Any):
         return self._completion(prompt_name, prompt_version)
 
     def generate_structured(
         self, *, schema: type, prompt_name: str, prompt_version: int, **_: Any,
     ):
         from throughline_model.schemas import (
+            PaperExtraction,
             PlainSummary,
             TestableClaims,
             VariableProposal,
@@ -52,12 +54,17 @@ class _OwnershipSweepModel:
         if schema is TestableClaims:
             value = TestableClaims(
                 claims=[],
-                note="The ownership sweep does not need a substantive claim.",
+                note="No substantive claim is needed for the ownership sweep.",
+            )
+        elif schema is PaperExtraction:
+            value = PaperExtraction(
+                fields=[],
+                note="No substantive extraction is needed for the ownership sweep.",
             )
         elif schema is PlainSummary:
             value = PlainSummary(
                 headline="The recorded result is available for review.",
-                what_it_means="The variables move together in the recorded analysis.",
+                what_it_means="The recorded variables move together in this analysis.",
                 how_confident="The recorded checks determine how much weight it deserves.",
                 what_would_change_it="Different data or failed robustness checks could change it.",
                 causal_reading="association_only",
@@ -85,18 +92,36 @@ class _OwnershipSweepModel:
 
 
 @pytest.fixture(autouse=True)
-def _model_for_cross_account_id_sweep(request, monkeypatch):
-    """Make model-backed T185 controls executable without an external service."""
+def _model_for_cross_account_id_sweep(request):
+    """Provide a model only to the route-derived cross-account ownership sweep."""
     if request.module.__name__.split(".")[-1] != "test_every_id_is_checked_against_the_caller":
         yield
         return
 
-    from throughline_domain import claim_test, harmonize, interpret, journal
+    import throughline_model
+    from throughline_domain import claim_test, extraction, harmonize, interpret
 
     fake = _OwnershipSweepModel()
-    for module in (claim_test, harmonize, interpret, journal):
-        # These modules import ``provider`` directly, so patch the live name at
-        # the point of use rather than the registry it was copied from.
-        monkeypatch.setattr(module, "provider", lambda fake=fake: fake)
+    real_global_provider = throughline_model.provider
+    modules = (claim_test, extraction, harmonize, interpret)
+    originals = {module: module.provider for module in modules}
 
-    yield
+    def sweep_global_provider(*, refresh: bool = False):
+        # The suite's normal reset fixture probes with refresh=True. Preserve
+        # that contract even if its teardown happens while this fixture is live.
+        if refresh:
+            return real_global_provider(refresh=True)
+        return fake
+
+    try:
+        throughline_model.provider = sweep_global_provider
+        for module in modules:
+            # These modules imported provider directly, so replace the bound name
+            # at the point of use. journal.ask imports provider inside the function
+            # and therefore sees throughline_model.provider above automatically.
+            module.provider = lambda fake=fake: fake
+        yield
+    finally:
+        for module, original in originals.items():
+            module.provider = original
+        throughline_model.provider = real_global_provider
