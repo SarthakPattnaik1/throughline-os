@@ -102,7 +102,7 @@ The command downloads and executes the installer. If you prefer to inspect it fi
 
 ## Windows
 
-Use PowerShell:
+There is no `sh` on a stock Windows installation, so use PowerShell instead:
 
 ```powershell
 irm https://throughline-research.pages.dev/install.ps1 | iex
@@ -327,6 +327,8 @@ Or run suites directly:
 .venv/bin/python -m pytest tests -q
 cd apps/web && npm test
 ```
+
+The repository currently records **2,828 backend tests and 3,712 web tests**. The backend count is guarded against both overstatement and excessive drift; the web suite also has an offline floor check in the backend tests.
 
 Pull requests to `main` are checked across the major product surfaces:
 
