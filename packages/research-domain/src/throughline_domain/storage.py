@@ -26,7 +26,6 @@ from .ids import new_id
 
 CHUNK = 1024 * 1024
 
-_SAFE_COMPONENT = re.compile(r"\A[A-Za-z0-9_-]{1,128}\Z")
 _SAFE_FILENAME = re.compile(r"\A[A-Za-z0-9_.-]{1,200}\Z")
 
 
@@ -99,10 +98,31 @@ def path_for(storage_key: str) -> Path:
     return path
 
 
-def _safe_component(value: str, *, label: str) -> str:
-    if not _SAFE_COMPONENT.fullmatch(value):
-        raise StorageError(f"{label} is not a safe storage identifier")
-    return value
+_EXPORT_ID_PREFIX = {
+    "communication_artifacts": "art",
+    "visuals": "vis",
+}
+
+
+def _canonical_export_id(table: str, value: str) -> str:
+    """Rebuild an export id from typed data, never from a path-shaped string."""
+    try:
+        prefix = _EXPORT_ID_PREFIX[table]
+    except KeyError as exc:
+        raise StorageError("Unknown export directory") from exc
+    marker = prefix + "_"
+    if not value.startswith(marker):
+        raise StorageError("Object id has the wrong type for this export")
+    raw = value[len(marker):]
+    if len(raw) != 20:
+        raise StorageError("Object id has an invalid length")
+    try:
+        number = int(raw, 16)
+    except ValueError as exc:
+        raise StorageError("Object id is not hexadecimal") from exc
+    # Formatting an integer into a fixed-width hexadecimal token guarantees the
+    # result contains no separator, dot or platform-specific path syntax.
+    return f"{prefix}_{number:020x}"
 
 
 def export_directory(table: str, object_id: str) -> Path:
@@ -110,7 +130,7 @@ def export_directory(table: str, object_id: str) -> Path:
         folder = EXPORT_DIRECTORIES[table]
     except KeyError as exc:
         raise StorageError("Unknown export directory") from exc
-    safe_id = _safe_component(object_id, label="Object id")
+    safe_id = _canonical_export_id(table, object_id)
     root = storage_root().resolve()
     parent = (root / folder).resolve()
     directory = (parent / safe_id).resolve()
