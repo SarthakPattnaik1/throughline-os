@@ -39,3 +39,13 @@ jobs:
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
+        with:
+          output: ${{ runner.temp }}/codeql-sarif-${{ matrix.language }}
+
+      - name: Preserve SARIF for security triage
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: ${{ runner.temp }}/codeql-sarif-${{ matrix.language }}
+          if-no-files-found: error
+          retention-days: 1
