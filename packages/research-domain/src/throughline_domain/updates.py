@@ -59,8 +59,8 @@ def _git(root: Path, *args: str, timeout: int = TIMEOUT) -> tuple[int, str, str]
                                 capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return 124, "", f"git {' '.join(args)} took longer than {timeout}s"
-    except OSError as error:
-        return 127, "", str(error)
+    except OSError:
+        return 127, "", "git could not be started"
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
@@ -118,15 +118,15 @@ def check_releases(root: Path, here: dict[str, Any], *,
 
     try:
         manifest = _fetch_manifest(where)
-    except (urllib.error.URLError, OSError, ValueError) as error:
+    except (urllib.error.URLError, OSError, ValueError):
         return {"checked": False, "current": here,
-                "reason": f"Could not reach the release server: {error}"}
+                "reason": "Could not reach or read the release server."}
 
     try:
         signing.verify(manifest, key)
-    except signing.VerificationError as error:
+    except signing.VerificationError:
         return {"checked": False, "current": here,
-                "reason": f"The release manifest did not verify: {error}"}
+                "reason": "The release manifest did not verify."}
 
     newest = manifest.get("version")
     if not newest:
@@ -166,7 +166,7 @@ def check(root: Path | None = None) -> dict[str, Any]:
     if code != 0:
         # Not knowing is its own answer, and it is not "up to date".
         return {"checked": False, "current": here,
-                "reason": f"Could not reach the remote: {error or 'unknown error'}"}
+                "reason": "Could not reach the configured update remote."}
 
     tag = _newest_tag(root)
     channel = tag or "main"
@@ -175,7 +175,7 @@ def check(root: Path | None = None) -> dict[str, Any]:
     code, behind, error = _git(root, "rev-list", "--count", f"HEAD..{target}")
     if code != 0:
         return {"checked": False, "current": here,
-                "reason": f"Could not compare against {channel}: {error}"}
+                "reason": f"Could not compare this installation against {channel}."}
 
     code, ahead, _ = _git(root, "rev-list", "--count", f"{target}..HEAD")
     count = int(behind or 0)
