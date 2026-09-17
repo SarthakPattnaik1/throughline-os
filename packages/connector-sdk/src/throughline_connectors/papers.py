@@ -31,8 +31,9 @@ connection (rebinding) passed the first guard and was fetched from this machine
 urllib honors `HTTP_PROXY`/`HTTPS_PROXY`, the socket peer is the proxy rather
 than the destination. A proxy could then resolve a destination differently from
 this process and turn a URL we checked as public into a request to an internal
-address. Ordinary connectors may support proxies; this endpoint accepts a URL
-from a client and therefore does not.
+address. The opener explicitly carries an empty proxy map, and the HTTP handlers
+also fail closed if they are ever reused by a caller that supplied a proxied
+request.
 
 **A PDF is not trusted here either.** The bytes are handed to the browser, which
 hands them to PDF.js with scripting off; nothing on this side parses them. What
@@ -53,16 +54,8 @@ import urllib.request
 
 from .base import USER_AGENT, ConnectorError
 
-#: Papers are large but not unbounded. A 60MB PDF is a big supplementary-heavy
-#: article; a 600MB one is not a paper and would sit in browser memory.
 MAX_BYTES = 60 * 1024 * 1024
-
-#: Long enough for a slow repository, short enough that a hung host does not
-#: hold a request open until the researcher gives up on the whole page.
 TIMEOUT = 30.0
-
-#: Enough hops for the usual doi.org -> publisher -> CDN chain, few enough that
-#: a redirect loop ends.
 MAX_REDIRECTS = 5
 
 
@@ -78,7 +71,6 @@ def _is_public(host: str) -> bool:
         return False
     if not infos:
         return False
-
     for info in infos:
         address = ipaddress.ip_address(info[4][0].split("%", 1)[0])
         if not address.is_global:
@@ -95,9 +87,6 @@ def _checked(url: str) -> str:
     if not parsed.hostname:
         raise PaperFetchError("That address names no host.")
     if not _is_public(parsed.hostname):
-        # Deliberately the same message for "private address" and "does not
-        # resolve": distinguishing them turns this endpoint into a scanner that
-        # reports which internal hosts exist.
         raise PaperFetchError(
             f"{parsed.hostname} is not a public address this can fetch from.")
     return urllib.parse.urlunsplit(parsed)
@@ -123,9 +112,6 @@ def fetch_pdf(url: str, *, mailto: str | None = None) -> bytes:
     opener = _safe_opener()
 
     for _ in range(MAX_REDIRECTS):
-        # `current` has been returned by `_checked` for the initial URL and for
-        # every redirect. Keeping validation immediately beside the sink makes
-        # the security invariant obvious to both reviewers and static analysis.
         current = _checked(current)
         request = urllib.request.Request(current, headers=headers)
         try:
@@ -147,7 +133,7 @@ def fetch_pdf(url: str, *, mailto: str | None = None) -> bytes:
                 "behind a paywall.") from exc
         except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
             raise PaperFetchError(
-                f"That paper could not be downloaded ({exc}).") from exc
+                "That paper could not be downloaded from the remote host.") from exc
 
     raise PaperFetchError("That address redirects in a loop.")
 
@@ -155,7 +141,6 @@ def fetch_pdf(url: str, *, mailto: str | None = None) -> bytes:
 def _body(response: object) -> bytes:
     read = getattr(response, "read")
     headers = getattr(response, "headers")
-
     declared = headers.get("Content-Length")
     if declared is not None:
         try:
@@ -165,7 +150,6 @@ def _body(response: object) -> bytes:
                     "larger than this will download.")
         except ValueError:
             pass
-
     data = read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:
         raise PaperFetchError("That file is larger than this will download.")
@@ -177,8 +161,6 @@ def _body(response: object) -> bytes:
 
 
 class _NoRedirects(urllib.request.HTTPRedirectHandler):
-    """Hands redirects back rather than following them (see `fetch_pdf`)."""
-
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
         return None
 
@@ -203,8 +185,18 @@ def _connection_to_public_peers(base: type, *, host: str):
     return make
 
 
+def _refuse_proxy(req: urllib.request.Request) -> None:
+    # These handlers are also imported by dataset_import and OAI. Even if those
+    # callers build an opener without the explicit empty ProxyHandler above, a
+    # request rewritten to a proxy must never bypass destination peer checking.
+    if req.has_proxy():
+        raise PaperFetchError(
+            "Security-sensitive server-side fetches do not use network proxies.")
+
+
 class _PublicOnlyHTTP(urllib.request.HTTPHandler):
     def http_open(self, req):  # noqa: D102
+        _refuse_proxy(req)
         host = urllib.parse.urlsplit(req.full_url).hostname or ""
         return self.do_open(
             _connection_to_public_peers(http.client.HTTPConnection, host=host), req)
@@ -212,6 +204,7 @@ class _PublicOnlyHTTP(urllib.request.HTTPHandler):
 
 class _PublicOnlyHTTPS(urllib.request.HTTPSHandler):
     def https_open(self, req):  # noqa: D102
+        _refuse_proxy(req)
         host = urllib.parse.urlsplit(req.full_url).hostname or ""
         return self.do_open(
             _connection_to_public_peers(http.client.HTTPSConnection, host=host),
