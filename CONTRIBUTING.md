@@ -1,108 +1,124 @@
-# Working on Throughline together
+# Contributing to Throughline
 
-Throughline is open source, but the canonical repository is maintainer-controlled.
-You do not need collaborator access to contribute: fork the repository, work on a
-branch, and open a pull request.
+Thank you for considering a contribution. Throughline is an early research release, not medical or clinical decision software. The canonical repository is maintainer-controlled, but contribution does not require collaborator access: fork the repository, work on a branch, and open a pull request.
 
-## Contribution model
+## Before you start
 
-- **External contributors:** fork + pull request. No direct write access is needed.
-- **Trusted collaborators:** may receive repository write access, but should still
-  work on branches and use pull requests.
-- **`main`:** should never be used as a working branch. Changes belong in pull
-  requests and should be reviewed before merge.
-- **Code ownership:** `.github/CODEOWNERS` assigns the repository to
-  `@SarthakPattnaik1`. When branch protection is configured to require code-owner
-  review, changes cannot be merged without that approval.
-- **Admin access:** keep this limited to the repository owner and only people who
-  genuinely need repository-administration privileges.
+- Check existing issues and pull requests to avoid duplicating work.
+- For a substantial feature or architectural change, open an issue first so scope and interfaces can be discussed before implementation.
+- Do not include confidential research, credentials, access tokens, private datasets, database exports, session cookies, signing material, or personal information in issues, logs, screenshots, tests, or commits.
+- Security vulnerabilities belong in the private reporting route described in `SECURITY.md`, not in public issues.
 
-## The loop
+## Development setup
+
+From a source checkout:
 
 ```bash
-./scripts/sync.sh                  # before you start. every time.
-git checkout -b feat/<what-you-are-doing>
-# … build …
-./scripts/preflight.sh --full      # before you push
-git push -u origin feat/<what-you-are-doing>
+python scripts/manage.py bootstrap
+python scripts/manage.py dev
 ```
 
-Then open a pull request. `main` is what the container is built from; nothing
-should reach it without passing through review.
+The bootstrap installs the workspace packages and builds the web interface. Run diagnostics with:
 
-## Why `sync` first, every time
-
-This repository has already lost time to duplicated work: two people independently
-wrote a Dockerfile, fixed the same package list, and edited the same route file.
-Nothing was broken — the work was simply done twice, and one copy was discarded.
-
-No test catches that. CI cannot catch it. It is invisible until the merge.
-
-`sync` fetches and prints what every other unmerged branch has touched, and warns
-when a file appears on your branch *and* somebody else's — including files you
-have only edited locally and not yet committed, because those are the ones you
-can still cheaply decide not to work on.
-
-```text
-  feat/wave-1-definition-of-done
-      Dockerfile
-      apps/api/src/throughline_api/app.py
-      …
-    ⚠ You are both editing:
-      Dockerfile
+```bash
+python scripts/manage.py doctor
 ```
 
-Overlap is not an error. Two people editing `app.py` is normal and Git can merge
-it. It is a prompt to coordinate before spending a day on something that already
-exists.
+## Branches and pull requests
 
-`sync` changes nothing. It fetches, reports, and exits.
+- Never use `main` as a working branch.
+- External contributors should fork the repository and submit a pull request.
+- Collaborators with write access should still use branches and pull requests.
+- Keep each pull request focused on one coherent change.
+- Maintainer/code-owner review is required before merge.
+- Do not bypass failing or missing required verification to merge a change.
 
-## Why `preflight` before pushing
+A typical local loop is:
 
-It runs the same checks CI runs, in the same order, so a failure is yours to see
-before it is anyone else's to wait on.
+```bash
+git checkout -b feat/<short-description>
+# make the change
+./scripts/preflight.sh --full
+git push -u origin feat/<short-description>
+```
 
-- `./scripts/preflight.sh` — compile, package-list drift guards, and web tests.
-- `./scripts/preflight.sh --full` — the above plus the whole backend suite.
-  **Use this one before pushing.**
-
-## Claim a wave before building it
-
-`ROADMAP.md` is the live plan and the waves are deliberately independent. Say
-which one you are taking before you start — a branch named after it is enough,
-since `sync` shows branch names to everyone else.
+`scripts/sync.sh` can be used by collaborators working in the canonical repository to inspect overlapping branches. Fork-based contributors do not need it.
 
 ## Tests
 
-Write the test against the property, not against your implementation.
+Write tests against behavior and invariants, not incidental implementation shape. A better implementation should be free to change internal structure without breaking a test whose actual guarantee still holds.
 
-A better implementation should be free to change internal structure without
-breaking a test whose real purpose is unchanged.
+For bug fixes, include a regression test when practical. For security-sensitive or identifier-bearing API changes, include ownership/isolation tests that prove an object from another project or account cannot be read or mutated through the changed path.
+
+For interface changes, exercise:
+
+- the primary user journey;
+- keyboard navigation and focus behavior;
+- narrow screens;
+- loading, empty, error, and disabled states;
+- reduced-motion or accessibility behavior when relevant.
+
+For integrations, test missing credentials, denied access, malformed responses, timeouts, rate limits, and safe retry behavior where applicable.
+
+## Local verification
+
+Before pushing, run:
+
+```bash
+./scripts/preflight.sh --full
+```
+
+The individual suites are also available:
+
+```bash
+.venv/bin/python -m pytest tests -q
+cd apps/web && npm test
+```
+
+Local verification does not establish that another operating system or a clean installation works.
+
+## CI
+
+CI runs automatically for pull requests targeting `main` and for pushes to `main`; it can also be dispatched manually. The workflow verifies:
+
+- the backend suite on Ubuntu;
+- the backend suite on macOS;
+- the Windows sandbox implementation;
+- web tests, lint, and production build;
+- Docker build plus an in-container `/api/health` check.
+
+A GitHub Actions billing or infrastructure refusal before job steps execute is missing evidence, not a passing run and not evidence of a code defect. A changed pull-request head requires verification of the new commit.
 
 ## Pull-request expectations
 
 A pull request should:
 
-- explain what changed and why;
-- include concrete evidence of testing;
+- explain the problem and why the change belongs in Throughline;
+- describe the implementation at the level needed for review;
+- include the exact verification performed;
 - call out caveats and intentionally untested areas;
-- avoid mixing unrelated changes;
-- avoid committing secrets, credentials, private datasets, or generated local
-  environment files;
-- receive maintainer review before merge.
+- avoid unrelated generated files or drive-by refactors;
+- update documentation when behavior, setup, security boundaries, or public claims change;
+- update `TASKS.md` when the work corresponds to a tracked internal task.
 
-## CI does not run by itself
+## Code and architecture expectations
 
-The full GitHub Actions workflow is currently dispatch-only. Run it before merging
-into `main` and before publishing a release:
+- Research logic belongs in the domain packages, not React components or HTTP handlers.
+- New API surface should go into a focused router/module rather than further growing `apps/api/src/throughline_api/app.py`.
+- Keep network access explicit. Do not silently send research content to hosted services.
+- Prefer fail-closed behavior at privacy, authorization, signature-verification, and release-evidence boundaries.
+- Preserve provenance: a change that makes an output impossible to trace back to its inputs, method, version, or evidence needs redesign before merge.
 
-```bash
-gh workflow run ci.yml --ref <branch>
-```
+## Security and privacy
 
-or use **Run workflow** in the GitHub Actions tab.
+Read `SECURITY.md` before changing authentication, authorization, network fetches, model-provider behavior, update/release verification, sandboxing, or secrets handling.
 
-The full run covers the backend suite on Linux and macOS, the Windows sandbox,
-the web build, and a Docker build that verifies `/api/health` from the built
-container.
+Never weaken a security control merely to make a test or release checklist pass. If verification is unavailable, state that evidence is unavailable.
+
+## Licensing
+
+By submitting a contribution, you agree that your contribution may be distributed under the repository's Apache-2.0 license. Submit only material you have the right to contribute.
+
+## Community expectations
+
+Participation in this project is governed by `CODE_OF_CONDUCT.md`. Technical disagreement is welcome; harassment, personal attacks, and disclosure of another person's private information are not.
