@@ -96,7 +96,7 @@ def version_of(executable: str) -> str:
         done = subprocess.run([executable, "--version"], capture_output=True,
                               text=True, timeout=30, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
-        raise BlenderError("Blender could not be started on this machine.") from exc
+        raise BlenderError("Blender could not be run on this machine.") from exc
 
     match = re.search(r"Blender\s+(\S+)", done.stdout or "")
     if not match:
