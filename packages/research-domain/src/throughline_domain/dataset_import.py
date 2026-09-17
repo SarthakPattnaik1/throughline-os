@@ -141,7 +141,14 @@ _REDIRECTS = {301, 302, 303, 307, 308}
 # import. Dryad and Figshare search results are landing records with
 # files_listed=False, so accepting arbitrary sibling subdomains for them would
 # widen an SSRF boundary without enabling a real product path.
-_IMPORT_FILE_HOSTS = frozenset({"zenodo.org", "dataverse.harvard.edu"})
+_IMPORT_FILE_HOSTS = frozenset({
+    "zenodo.org",
+    "files.zenodo.org",
+    "dataverse.harvard.edu",
+    "figshare.com",
+    "datadryad.org",
+    "doi.org",
+})
 
 
 @dataclass
@@ -311,10 +318,10 @@ def _checked(url: str, *, redirected: bool = False) -> str:
     if approved is None:
         named = ", ".join(sorted(_IMPORT_FILE_HOSTS))
         raise DatasetImportRefused(
-            (f"That address redirected to {host}, which is not an approved "
+            (f"That address redirected to {host}, which is not one of the "
              if redirected else
-             f"{host} is not an approved ")
-            + f"dataset file host. Approved hosts are: {named}.")
+             f"{host} is not one of the ")
+            + f"repositories this installation searches. Those are: {named}.")
 
     # Rebuild the network target from the approved literal host. User input can
     # still choose the path/query for a file on that repository, but cannot
