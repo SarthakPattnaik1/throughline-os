@@ -10,9 +10,8 @@
 #   ./scripts/backup.sh [destination-directory]
 set -euo pipefail
 
-# A backup contains the research database and may also contain installation-level
-# credentials stored in it. Do not let the caller's permissive umask turn that
-# archive into a file other local accounts can read.
+# Backups contain private research. Do not let the caller's permissive umask turn
+# the archive into a file other local accounts can read.
 umask 077
 
 HOME_DIR="${THROUGHLINE_HOME:-$HOME/.throughline-os}"
@@ -32,6 +31,13 @@ echo "Backing up $HOME_DIR"
 # The database is dumped rather than copied: a file-level copy of a running
 # PostgreSQL data directory is not a consistent snapshot, and the failure only
 # shows up when you try to restore it.
+#
+# `installation_secrets` is deliberately schema-only in a backup. A saved hosted
+# model credential is machine configuration, not research, and backup archives
+# are precisely the files researchers copy to external disks or cloud storage.
+# Restoring the workspace should therefore require re-entering that credential
+# instead of reviving a usable API key from an archive.
+#
 # The venv's interpreter, not the system one: pgserver ships the PostgreSQL
 # binaries and only the venv can import it. Using `python3` here failed on the
 # first run, which is the argument for testing a backup script before trusting it.
@@ -81,7 +87,7 @@ binaries = pathlib.Path(pgserver.__file__).parent / 'pginstall' / 'bin'
 
 result = subprocess.run(
     [str(binaries / 'pg_dump'), '-Fc', '-f', os.environ['DUMP'],
-     server.get_uri()],
+     '--exclude-table-data=installation_secrets', server.get_uri()],
     capture_output=True, text=True,
 )
 if result.returncode != 0:
