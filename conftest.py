@@ -10,8 +10,7 @@ Important: this fixture intentionally does *not* depend on pytest's ``monkeypatc
 fixture. The suite already has an autouse provider-reset fixture in
 ``tests/conftest.py``. Making a second root autouse fixture depend on monkeypatch
 changes teardown ordering for every test and can leave temporary provider doubles
-installed while the reset fixture calls ``provider(refresh=True)``. That was the
-cause of the 125-error CI cascade this file replaces.
+installed while the reset fixture calls ``provider(refresh=True)``.
 """
 
 from __future__ import annotations
@@ -99,26 +98,28 @@ def _model_for_cross_account_id_sweep(request):
         return
 
     import throughline_model
-    from throughline_domain import claim_test, extraction, harmonize, interpret
+    from throughline_domain import extraction, harmonize, interpret
 
     fake = _OwnershipSweepModel()
     real_global_provider = throughline_model.provider
-    modules = (claim_test, extraction, harmonize, interpret)
-    originals = {module: module.provider for module in modules}
+
+    # Some domain modules import ``provider`` at module import time, while
+    # others (notably claim_test) import it inside the function that needs it.
+    # Patch only bindings that actually exist; function-local imports will see
+    # the global throughline_model.provider replacement below.
+    candidates = (extraction, harmonize, interpret)
+    patchable = tuple(module for module in candidates if hasattr(module, "provider"))
+    originals = {module: module.provider for module in patchable}
 
     def sweep_global_provider(*, refresh: bool = False):
-        # The suite's normal reset fixture probes with refresh=True. Preserve
-        # that contract even if its teardown happens while this fixture is live.
+        # Preserve the normal provider reset contract during teardown.
         if refresh:
             return real_global_provider(refresh=True)
         return fake
 
     try:
         throughline_model.provider = sweep_global_provider
-        for module in modules:
-            # These modules imported provider directly, so replace the bound name
-            # at the point of use. journal.ask imports provider inside the function
-            # and therefore sees throughline_model.provider above automatically.
+        for module in patchable:
             module.provider = lambda fake=fake: fake
         yield
     finally:
