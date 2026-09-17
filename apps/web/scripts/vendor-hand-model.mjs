@@ -29,8 +29,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { copyFile, mkdir, mkdtemp, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -69,7 +68,9 @@ const WASM_FILES = [
 
 async function vendorWasm() {
   const from = join(WEB, "node_modules", "@mediapipe", "tasks-vision", "wasm");
-  if (!existsSync(from)) {
+  try {
+    await readFile(join(from, WASM_FILES[0]));
+  } catch {
     throw new Error(
       "@mediapipe/tasks-vision is not installed. Run `npm install` first.");
   }
@@ -83,13 +84,18 @@ async function vendorWasm() {
 async function vendorModel() {
   const target = join(OUT, "hand_landmarker.task");
 
-  if (existsSync(target)) {
-    const hash = createHash("sha256").update(await readFile(target)).digest("hex");
+  try {
+    const existing = await readFile(target);
+    const hash = createHash("sha256").update(existing).digest("hex");
     if (hash === MODEL_SHA256) {
       console.log("model: already present and matches the expected hash");
       return;
     }
     console.log("model: present but does not match the expected hash, replacing");
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
   }
 
   console.log("model: downloading (7.5MB, once)…");
@@ -109,7 +115,22 @@ async function vendorModel() {
   }
 
   await mkdir(OUT, { recursive: true });
-  await writeFile(target, bytes);
+  const stagingDir = await mkdtemp(join(OUT, ".hand-model-"));
+  const staging = join(stagingDir, "hand_landmarker.task");
+  try {
+    const handle = await open(staging, "wx", 0o600);
+    try {
+      // The bytes crossed the network, but are written only after their pinned
+      // SHA-256 matched MODEL_SHA256 above. A substituted response never reaches disk.
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(staging, target);
+  } finally {
+    await rm(stagingDir, { recursive: true, force: true });
+  }
   console.log(`model: installed at public/mediapipe/hand_landmarker.task`);
 }
 
