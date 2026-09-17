@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 import shutil
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Iterator
@@ -74,17 +73,53 @@ def put(stream: BinaryIO) -> tuple[str, str, int]:
     return content_hash, key, size
 
 
+def _hex_token(value: str, width: int, *, label: str) -> str:
+    if len(value) != width:
+        raise StorageError(f"{label} has an invalid length")
+    try:
+        number = int(value, 16)
+    except ValueError as exc:
+        raise StorageError(f"{label} is not hexadecimal") from exc
+    return f"{number:0{width}x}"
+
+
 def _validated_key_parts(storage_key: str) -> tuple[str, ...]:
-    raw = storage_key.replace("\\", "/")
-    pure = PurePosixPath(raw)
+    """Reconstruct only storage-key shapes this server itself creates."""
+    if "\\" in storage_key:
+        raise StorageError("Storage key contains a platform path separator")
+    pure = PurePosixPath(storage_key)
     if pure.is_absolute() or not pure.parts:
         raise StorageError("Storage key is not relative to the object store")
     parts = tuple(pure.parts)
     if any(part in {"", ".", ".."} for part in parts):
         raise StorageError("Storage key contains an unsafe path component")
-    if any(not _SAFE_FILENAME.fullmatch(part) for part in parts):
-        raise StorageError("Storage key contains unsupported characters")
-    return parts
+
+    # Content-addressed blobs: aa/bb/<64-char sha256>. Rebuild every path
+    # component from parsed hexadecimal values so the caller's original string
+    # never reaches pathlib.
+    if len(parts) == 3 and len(parts[0]) == 2 and len(parts[1]) == 2:
+        first = _hex_token(parts[0], 2, label="Hash prefix")
+        second = _hex_token(parts[1], 2, label="Hash prefix")
+        digest = _hex_token(parts[2], 64, label="Content hash")
+        if first != digest[:2] or second != digest[2:4]:
+            raise StorageError("Storage hash prefixes do not match the content hash")
+        return first, second, digest
+
+    # Render exports: figures/vis_<id>/vren_<id>.<ext> or
+    # artifacts/art_<id>/ren_<id>.<ext>. Again, the returned components are
+    # canonical values rebuilt from typed IDs and literal extensions.
+    if len(parts) == 3 and parts[0] in {"figures", "artifacts"}:
+        table = "visuals" if parts[0] == "figures" else "communication_artifacts"
+        folder = "figures" if table == "visuals" else "artifacts"
+        object_id = _canonical_export_id(table, parts[1])
+        stem, dot, extension = parts[2].rpartition(".")
+        if not dot:
+            raise StorageError("Export storage key has no extension")
+        render_id = _canonical_render_id(table, stem)
+        safe_extension = _canonical_extension(extension)
+        return folder, object_id, f"{render_id}.{safe_extension}"
+
+    raise StorageError("Storage key has an unsupported shape")
 
 
 def path_for(storage_key: str) -> Path:
