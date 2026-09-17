@@ -44,7 +44,7 @@
     "next": "15.5.23",
     "pdfjs-dist": "^6.2.108",
     "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "react-dom": "19.3.0",
     "react-resizable-panels": "^4.12.3",
     "topojson-client": "^3.1.0",
     "world-atlas": "^2.0.2"
