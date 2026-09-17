@@ -23,37 +23,31 @@ Two rules carry most of the value: **a claim you have not pushed does not
 exist**, and **`done` is not `verified`** — the author says `done`, someone
 else says `verified` and names what they ran.
 
-## CI does not run by itself — you have to ask for it
+## CI and security checks run automatically
 
-There is **no push trigger and no pull-request trigger** on this repository. A
-green tick is not waiting for you, and **an absence of red is not a pass** — it
-usually means nothing ran at all. Never report a branch as verified on GitHub
-because no check has failed.
+This repository has automatic GitHub Actions coverage. Do not assume that an
+absence of red means a pass; inspect the checks attached to the exact commit or
+pull request.
 
-Why: the repo is private, so Actions minutes are metered and macOS bills at
-**10x**. A full run is ~82 billed minutes, 66 of them macOS. Automatic runs
-exhausted the monthly allowance in a week and every job stopped.
+`CI` runs automatically on every pull request targeting `main` and every push
+to `main`. It also supports manual dispatch. Its current matrix verifies:
 
-**Dispatch a run when — and only when — one of these is true:**
+- Ubuntu + Python 3.12 using the documented bootstrap path and full backend suite
+- macOS + Python 3.12 using the documented bootstrap path and full backend suite
+- the Windows sandbox tests
+- web install, tests, lint and production build
+- a Docker image build plus loopback health check
 
-- something is about to be merged to `main`, or published
-- the change is platform-shaped: a new dependency, a `Dockerfile` edit, a
-  changed path or filename, sandbox code, a committed binary fixture, or
-  `ci.yml` itself
-- the user asks
+Every backend skip must be accounted for by `scripts/check_test_skips.py`.
 
-```bash
-gh workflow run ci.yml --ref <branch>      # ~82 billed minutes; do not fire casually
-gh run watch $(gh run list --branch <branch> --limit 1 --json databaseId --jq '.[0].databaseId')
-```
+`CodeQL` also runs automatically on pull requests and pushes to `main`, plus a
+weekly scheduled scan. It analyzes Python and JavaScript/TypeScript with the
+security-extended query suite.
 
-**Do not dispatch after every push.** That is the behaviour that caused the
-outage. Local `pytest` and `vitest` are the fast loop; a dispatch is the
-cross-platform check before something lands.
+Do not manually dispatch duplicate CI runs while an automatic run for the same
+head is already active. If a check fails, inspect the failing job and logs;
+distinguish a product failure from a transient runner/network failure before
+rerunning anything.
 
-Say plainly which one a result came from. "898 Python and 223 web pass locally,
-not yet dispatched" is honest; "tests pass" is not, because it hides that macOS,
-Windows and the Docker build have not seen the change.
-
-Billing is on the repository owner's account (`SarthakPattnaik1`), so a
-collaborator cannot see usage or raise the limit.
+When reporting verification, name the exact evidence: local tests, CI jobs,
+CodeQL, or all three. A change is not verified merely because it was pushed.
