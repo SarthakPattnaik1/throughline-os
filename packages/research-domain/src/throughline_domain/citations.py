@@ -428,8 +428,11 @@ def verify_project(cur, project_id: str) -> dict[str, Any]:
     for citation_id in ids:
         try:
             citation = resolve(cur, citation_id)
-        except DanglingCitation as exc:
-            dangling.append({"citation_id": citation_id, "reason": str(exc)})
+        except DanglingCitation:
+            dangling.append({
+                "citation_id": citation_id,
+                "reason": "The citation target no longer exists.",
+            })
             continue
         state = citation["entailment"]
         by_entailment[state] = by_entailment.get(state, 0) + 1
