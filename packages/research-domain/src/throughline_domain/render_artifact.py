@@ -22,7 +22,7 @@ from typing import Any
 from . import citations as citations_mod
 from . import communication
 from .ids import new_id
-from .storage import storage_root
+from .storage import export_directory, export_path, storage_root
 
 FORMATS = ("markdown", "html", "docx", "pptx")
 
@@ -81,9 +81,10 @@ def render(cur, *, artifact_id: str, fmt: str) -> dict[str, Any]:
     # export said, and an export whose bytes were silently replaced cannot
     # answer it.
     render_id = new_id("ren")
-    directory = storage_root() / "artifacts" / artifact_id
+    directory = export_directory("communication_artifacts", artifact_id)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{render_id}.{suffix}"
+    path = export_path(
+        "communication_artifacts", artifact_id, f"{render_id}.{suffix}")
     path.write_bytes(payload)
     storage_key = str(path.relative_to(storage_root()))
 
