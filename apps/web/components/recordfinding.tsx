@@ -31,7 +31,7 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { Failure } from "./primitives";
+import { Failure, Fold } from "./primitives";
 
 type Created = { finding_id: string; lifecycle_status: string };
 
@@ -114,16 +114,21 @@ export function RecordFinding({ projectId, connectionId, defaultTitle, validated
         candidate — so blocking the button here would be a second, weaker
         enforcement of a rule that is already structural, in a place where it
         only removes the researcher's judgement.
+
+        The caveat matters, but it is secondary to the act. Keeping the full
+        sentence open on every connection made this screen exceed its own
+        readability budget after the action band and provenance controls were
+        added. The closed summary states the consequence before the researcher
+        chooses to read the explanation, preserving the warning without making
+        every visitor process it up front.
       */}
-      {/* One line (T139). It was three sentences saying one thing, and a fold
-          for a fifteen-word clause is a control that earns less than it
-          costs — so the clause stays on the line and the sentence that only
-          restated it is gone. Nothing it said has moved anywhere. */}
       {!validated && (
-        <p className="note one-line" style={{ marginTop: 0 }}>
-          This connection has not survived a validation run yet — recorded now,
-          it sits as a candidate, which is what an untested result is.
-        </p>
+        <Fold summary="Why this stays a candidate" count={1}>
+          <p className="note" style={{ margin: 0 }}>
+            This connection has not survived a validation run yet — recorded now,
+            it sits as a candidate, which is what an untested result is.
+          </p>
+        </Fold>
       )}
 
       {error != null && <Failure error={error} retry={record} />}
