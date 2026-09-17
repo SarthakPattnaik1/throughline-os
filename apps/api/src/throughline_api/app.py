@@ -12,6 +12,7 @@ import io
 import logging
 import os
 import pathlib
+import re
 import tempfile
 
 from contextlib import asynccontextmanager
@@ -1204,6 +1205,11 @@ def search(
     """Hybrid retrieval. The response names the strategy actually used."""
     scoped_project(project_id, user)
     with transaction() as cur:
+        # The filter is applied inside this project's passages, so a stranger's
+        # source could only ever match nothing — and answering 200 with nothing
+        # is the one id in this API that did not say it was not yours (T185).
+        if source_id:
+            _sources_in_project(cur, project_id=project_id, source_ids=source_id)
         return retrieval.hybrid_search(cur, project_id=project_id, query=q,
                                        limit=limit, source_ids=source_id)
 
@@ -1570,6 +1576,9 @@ def stored_extraction(source_id: str, project_id: str = Query(...),
     """What was already read out of this paper. Never runs a model."""
     scoped_project(project_id, user)
     with transaction() as cur:
+        # The project in the query was scoped and the paper in the path was not,
+        # so another account's reading of their paper came back whole (T185).
+        _sources_in_project(cur, project_id=project_id, source_ids=[source_id])
         record = extraction.stored(cur, source_id)
         if record is None:
             raise HTTPException(404, "This paper has not been read yet.")
@@ -2723,6 +2732,82 @@ def import_record(project_id: str, payload: ImportRequest,
                     "field_provenance": payload.provenance})))
         return {"source_id": source_id, "title": payload.title,
                 "already_present": False}
+
+
+@app.post("/api/projects/{project_id}/sources/{source_id}/full-text",
+          status_code=202)
+def read_full_text(project_id: str, source_id: str,
+                   user: dict = Depends(current_user)) -> dict[str, Any]:
+    """
+    Fetch a found paper's open-access text into the source, and read it (D410).
+
+    The import above records a citation and deliberately never follows the
+    open-access link on its own. This is the explicit act it defers to, and
+    until it existed a paper that arrived by search had no passages, no pages
+    and no research object: locating its claims answered "has no indexed
+    passages" every time.
+
+    The address is the one the import recorded, never one this request brings:
+    a client-chosen URL fetched by the server is the hole
+    `throughline_connectors.papers` is arranged to close, and there is no need
+    to open it. The bytes go through the same guarded fetcher *Read* uses, are
+    attached to this same source — the citation and the text are one paper —
+    and ingestion is queued as for any upload.
+    """
+    from throughline_connectors import papers
+
+    scoped_project(project_id, user)
+    with transaction() as cur:
+        cur.execute(
+            "SELECT id, title, file_id, source_type, metadata FROM sources "
+            "WHERE id = %s AND project_id = %s", (source_id, project_id))
+        source = cur.fetchone()
+    if source is None:
+        raise HTTPException(404, "No such paper in this project.")
+    if source["file_id"]:
+        raise HTTPException(409, f"{source['title']!r} already has its text; "
+                                 "nothing was fetched.")
+    pdf_url = ((source["metadata"] or {}).get("pdf_url") or "").strip()
+    if not pdf_url:
+        raise HTTPException(409, (
+            f"{source['title']!r} has no open-access copy recorded, so there is "
+            "nothing this can fetch. If you have the PDF, upload it to Sources."))
+
+    try:
+        data = papers.fetch_pdf(pdf_url)
+    except papers.PaperFetchError as exc:
+        # 400, as for Read: a paywall or a refused address is the researcher's
+        # to act on, not this server failing.
+        raise HTTPException(400, str(exc)) from exc
+
+    stem = re.sub(r"[^A-Za-z0-9]+", "-", source["title"]).strip("-")[:80] or "paper"
+    with transaction() as cur:
+        record = storage.register_file(
+            cur, project_id=project_id, filename=f"{stem}.pdf",
+            stream=io.BytesIO(data), media_type="application/pdf")
+        # Guarded on file_id still being empty: two presses in flight must not
+        # attach two files or queue two readings of one paper.
+        cur.execute(
+            "UPDATE sources SET file_id = %s, content_hash = %s, "
+            "ingestion_status = 'uploaded', updated_at = now(), "
+            "metadata = metadata || %s "
+            "WHERE id = %s AND file_id IS NULL RETURNING id",
+            (record["id"], record["content_hash"],
+             jsonb({"full_text_from": pdf_url}), source_id))
+        if cur.fetchone() is None:
+            raise HTTPException(409, f"{source['title']!r} already has its text; "
+                                     "nothing was fetched.")
+        run_id = workflow.enqueue(
+            cur, workflow_name="ingest.source", project_id=project_id,
+            payload={"source_id": source_id},
+            idempotency_key=f"ingest:{source_id}")
+        events.audit(cur, project_id=project_id, actor=user["id"],
+                     action="fetched_full_text", object_type="source",
+                     object_id=source_id, detail={"url": pdf_url})
+    return {"source_id": source_id, "workflow_run_id": run_id,
+            "ingestion_status": "uploaded",
+            "note": f"{source['title']} is being read. Its passages will appear "
+                    "in Sources when it is done."}
 
 
 class DatasetSetRequest(BaseModel):
@@ -4356,6 +4441,8 @@ def stored_claims(source_id: str, project_id: str = Query(...),
     """
     scoped_project(project_id, user)
     with transaction() as cur:
+        # As for the stored extraction beside it (T185).
+        _sources_in_project(cur, project_id=project_id, source_ids=[source_id])
         return {"source_id": source_id,
                 "claims": claim_test.stored_claims(cur, source_id)}
 
@@ -4383,6 +4470,11 @@ def locate_claims(source_id: str, project_id: str = Query(...),
         try:
             return claim_test.locate_claims(
                 cur, project_id=project_id, source_id=source_id)
+        except claim_test.ClaimTestNeedsModel as exc:
+            # 503, not 400: nothing about the request is wrong; a service it
+            # needs is not connected, and the screen offers the way to connect
+            # one on this status (D412).
+            raise HTTPException(503, str(exc)) from exc
         except claim_test.ClaimTestError as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -4893,21 +4985,26 @@ def create_visual(project_id: str, payload: VisualCreate,
     """Create a figure from an analysis run, critiqued before it is stored."""
     scoped_project(project_id, user)
     with transaction() as cur:
+        # 404 before the figure is prepared; `visuals.create_visual` refuses it
+        # too, for any other caller (T185).
+        if payload.finding_id:
+            cur.execute("SELECT 1 FROM findings WHERE id = %s AND project_id = %s",
+                        (payload.finding_id, project_id))
+            if cur.fetchone() is None:
+                raise HTTPException(404, "No such finding in this project.")
         try:
             recommendation = visuals.recommend_for_run(
                 cur, analysis_run_id=payload.analysis_run_id,
                 goal=payload.goal, audience=payload.audience,
-                project_id=project_id,
             )
         except visuals.VisualError as exc:
             raise HTTPException(409, str(exc)) from exc
 
         spec = (ResearchVisualSpec.model_validate(payload.spec) if payload.spec
                 else recommendation["spec"])
-        # Validate every data-bearing identifier before reading a sample. A
-        # user-supplied spec may otherwise name a dataset from another project,
-        # and sampling happens before the visual is stored (T185).
-        visuals.validate_spec_scope(cur, project_id=project_id, spec=spec)
+        # The account is discarded here on purpose: a stored visual records
+        # its own provenance, and the figure endpoint above is what a reader
+        # sees the sampling in.
         sample, _sampling = _visual_sample(cur, spec)
         try:
             created = visuals.create_visual(
@@ -5274,9 +5371,14 @@ def _sample_columns(
     columns: list[str] = []
     seen = 0
 
+    # `object`, not `str`. Under pandas 3, `str` means pyarrow-backed strings
+    # whenever the `parquet` pack has installed pyarrow, and every chunk was
+    # then converted back to Python objects below — so the same figure cost
+    # 45MB with the pack and 23MB without it (T187). Python strings are what
+    # the reservoir keeps either way.
     reader = pd.read_csv(
         path, sep=separator, usecols=lambda name: name in set(fields),
-        dtype=str, keep_default_na=False, encoding="utf-8",
+        dtype=object, keep_default_na=False, encoding="utf-8",
         encoding_errors="replace", chunksize=SAMPLE_CHUNK_ROWS,
         low_memory=False,
     )

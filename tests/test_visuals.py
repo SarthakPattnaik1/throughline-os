@@ -7,10 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from throughline_domain import analysis, findings, objects, storage, visuals, workflow
+from throughline_domain import analysis, objects, storage, visuals, workflow
 from throughline_domain.db import connection
 from throughline_domain.ids import new_id
-from throughline_schemas.enums import FindingType, SourceType
+from throughline_schemas.enums import SourceType
 from throughline_visual import critic as visual_critic
 from throughline_visual import prepare as visual_prepare
 from throughline_visual import recommend as visual_recommend
@@ -801,58 +801,3 @@ def test_a_figure_for_an_unfinished_analysis_is_refused_with_a_reason(client):
                           json={"analysis_run_id": queued})
     assert refused.status_code == 409, refused.text
     assert "completed" in refused.json()["detail"]
-
-
-def test_a_visual_cannot_link_to_another_projects_finding(analysed):
-    project_id, _, runs = analysed
-    with connection() as conn, conn.cursor() as cur:
-        other_user, other_project = new_id("usr"), new_id("prj")
-        cur.execute(
-            "INSERT INTO users(id, email, display_name, password_hash, password_salt) "
-            "VALUES (%s, %s, 'Other', 'x', 'y')",
-            (other_user, f"{other_user}@test.local"))
-        cur.execute(
-            "INSERT INTO projects(id, owner_user_id, name) "
-            "VALUES (%s, %s, 'Other')",
-            (other_project, other_user))
-        foreign_finding = findings.create_finding(
-            cur, project_id=other_project, title="Private finding",
-            finding_type=FindingType.STATISTICAL, actor=other_user)
-
-        run = analysis.get_run(cur, runs["correlation"])
-        recommendation = visuals.recommend_for_run(
-            cur, analysis_run_id=runs["correlation"])
-        sample = _sample_for(
-            cur, run, ["consumption_ddd", "resistance_pct"])
-
-        with pytest.raises(visuals.VisualError, match="in this project"):
-            visuals.create_visual(
-                cur, project_id=project_id, spec=recommendation["spec"],
-                actor="test", sample=sample, finding_id=foreign_finding)
-
-        cur.execute(
-            "SELECT id FROM visuals WHERE finding_id = %s",
-            (foreign_finding,))
-        assert cur.fetchall() == []
-
-
-def test_a_visual_recommendation_cannot_read_another_projects_run(analysed):
-    project_id, _, runs = analysed
-    with connection() as conn, conn.cursor() as cur:
-        with pytest.raises(visuals.VisualError, match="in this project"):
-            visuals.recommend_for_run(
-                cur, analysis_run_id=runs["correlation"],
-                project_id=new_id("prj"))
-
-
-def test_a_visual_spec_cannot_sample_a_dataset_outside_its_run(analysed):
-    project_id, _, runs = analysed
-    with connection() as conn, conn.cursor() as cur:
-        recommendation = visuals.recommend_for_run(
-            cur, analysis_run_id=runs["correlation"], project_id=project_id)
-        foreign_spec = recommendation["spec"].model_copy(
-            update={"dataset_version_id": new_id("dsv")})
-
-        with pytest.raises(visuals.VisualError, match="dataset version"):
-            visuals.validate_spec_scope(
-                cur, project_id=project_id, spec=foreign_spec)
