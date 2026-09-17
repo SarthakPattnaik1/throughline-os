@@ -5,8 +5,14 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
+    groups:
+      deck-gl:
+        patterns:
+          - "@deck.gl/*"
+    ignore:
+      - dependency-name: eslint
+        versions:
+          - ">=10.0.0"
     commit-message:
       prefix: deps
 
@@ -15,7 +21,5 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
     commit-message:
       prefix: ci
