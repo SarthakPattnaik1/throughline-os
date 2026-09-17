@@ -1,65 +1,33 @@
 # Clean-environment verification.
 #
-# The point of this file is narrow and worth stating: every defect this project
-# has shipped so far was invisible because nothing ever installed it or ran it
-# anywhere but the machine it was written on. A broken bootstrap script, a Docker
-# build referencing a directory that never existed, two libraries imported but
-# never declared, and the one test covering the whole §137 workflow skipping
-# itself everywhere else — all of it survives a developer's own laptop and none of
-# it survives a fresh checkout.
-#
-# So this job does the least clever thing available: clones, installs the way the
-# README tells a researcher to install, and runs the suite.
+# This workflow deliberately exercises documented install and release paths,
+# not just unit tests from an already-prepared developer machine.
 
 name: CI
 
 on:
-  # Manual only. Nothing here runs on a push or a pull request.
-  #
-  # This repository is private, so Actions minutes are metered and the
-  # multipliers are steep: Linux 1x, Windows 2x, macOS 10x. A full run billed
-  # ~82 minutes, 66 of them macOS. Twenty-nine runs in a week exhausted the
-  # monthly allowance and every job stopped mid-work. With two people both
-  # pushing often, automatic runs cost more than they return: the same commit
-  # gets verified five times on its way to being merged once.
-  #
-  # So this runs when somebody decides it should:
-  #
-  #     gh workflow run ci.yml --ref <branch>
-  #
-  # or the "Run workflow" button on the Actions tab.
-  #
-  # **What this gives up, stated plainly.** The header above says every defect
-  # this project shipped was invisible because nothing ever ran it anywhere but
-  # the machine it was written on. That is still true, and this file was the
-  # answer to it. Making it manual moves the guarantee from the tooling to a
-  # habit — and habits lapse in a way triggers do not.
-  #
-  # The habit that replaces it: run this before merging anything to `main`, and
-  # before publishing. A branch that has never been dispatched has been tested
-  # on exactly one machine, whatever its tests say locally.
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
-  # A superseded run tells you about code nobody is looking at any more.
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   suite:
     name: ${{ matrix.os }} · python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
-      # One failing platform must not hide the others: knowing whether a break is
-      # universal or platform-specific is most of the diagnosis.
       fail-fast: false
       matrix:
-        # 3.12 exactly, for the reason bootstrap.sh states — the packages need
-        # >= 3.12 and pgserver publishes no wheel past cp312.
         python: ["3.12"]
-        # Both platforms, because a manual run is asked for deliberately and
-        # is the only cross-platform check there now is. macOS bills at 10x, so
-        # a dispatch costs ~82 minutes — worth knowing before firing several.
         os: [ubuntu-latest, macos-latest]
 
     steps:
@@ -69,71 +37,21 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Install the way the README says to
-        # Deliberately ./scripts/bootstrap.sh rather than a hand-written pip
-        # invocation. A CI job that installs differently from the documented path
-        # verifies a route no researcher takes, and the documented one is exactly
-        # what was broken.
+      - name: Install the documented way
         run: ./scripts/bootstrap.sh
 
-      - name: Run the suite
+      - name: Run backend suite
         run: |
           set -o pipefail
           ./.venv/bin/python -m pytest -q -rs | tee pytest.out
 
       - name: Every skip must be accounted for
-        # A skipped test renders as passing. Three tests skipped themselves on
-        # every machine but one for months, which is how the §137 workflow came to
-        # be advertised as working end to end while missing its final step.
-        #
-        # The allowlist is every skip reason this project accepts, and each one is
-        # an optional capability the product already reports as unavailable at
-        # runtime rather than a test that stopped working:
-        #
-        #   Neo4j            — a derived projection (ADR 0002), extra: [graph]
-        #   cv2              — figure digitising, extra: [digitise]
-        #   embedding model  — semantic search; /api/system/capabilities says so
-        #   openai-whisper   — local transcription (§38), extra: [speech]
-        #
-        # Anything else fails the build. Adding a line here should feel like a
-        # decision, because that is what it is.
-        #
-        # The whisper line was added after this step was found failing on a run
-        # nobody had fired: the speech tests landed with a skip reason, and
-        # because CI is dispatch-only there was no run to catch it. It belongs
-        # here on the same grounds as the other three — `[speech]` is a declared
-        # optional extra that pulls in torch, gigabytes of it, and the extra's
-        # own docstring says a clone that never installs it "still runs the whole
-        # suite, with the transcription tests skipped rather than failed". That
-        # was the intent; it simply never reached this list. Recorded as D030.
-        #
-        # Five more, found the same way on 2026-09-05 when the first dispatch in
-        # weeks failed here while every test passed (D214). Each is a reason the
-        # suite had been skipping on for a while with nobody to notice:
-        #
-        #   digitise pack    — the same `[digitise]` extra as cv2, worded from
-        #                      the pack's side ("the digitise pack is not
-        #                      installed here")
-        #   feature packs    — "no pack installed in this environment to check
-        #                      against": the pack survey has nothing to survey
-        #                      on a clean runner
-        #   Main.dc.html     — the landing page is generated by
-        #                      frontend/assemble.mjs, which a clean checkout has
-        #                      not run
-        #   session-free     — tests/test_mutating_routes_require_a_session.py
-        #                      skips its own parametrised cases for the four
-        #                      routes that legitimately need no session (sign
-        #                      in, sign out, register, first-run setup) and the
-        #                      haptics buzz; the skip reason IS the record of
-        #                      the exception, so the file is allowlisted, not a
-        #                      phrase
-        #   Blender          — rendering through Blender needs Blender
-        run: |
-          ./.venv/bin/python scripts/check_test_skips.py pytest.out
+        run: ./.venv/bin/python scripts/check_test_skips.py pytest.out
 
   windows-sandbox:
     name: windows · sandbox
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -144,28 +62,16 @@ jobs:
       - name: Install
         run: python scripts/manage.py bootstrap
 
-      # Scoped to the sandbox rather than running the whole suite, on purpose.
-      #
-      # This job exists to exercise the code that only runs on Windows — the Job
-      # Object limits, the process-tree kill, the read-only-attribute cleanup, and
-      # the policy report that must describe this platform rather than POSIX. That
-      # is what a Windows runner is uniquely able to check.
-      #
-      # The full suite is deliberately not run here. It spawns a sandboxed
-      # subprocess per analysis and Windows process creation is several times more
-      # expensive, so 541 tests take long enough to be a poor gate. Two platforms
-      # run the whole thing already; this one covers what they cannot reach.
-      #
-      # Known fragility, seen while porting: if a previous pgserver instance is
-      # killed rather than shut down, the stale data directory makes the next
-      # `pg_ctl start` time out, and without a per-test timeout that reads as an
-      # indefinite hang. A fresh runner never has that state.
-      - name: The Windows sandbox actually confines
+      - name: Verify Windows sandbox confinement
         run: .venv\Scripts\python -m pytest tests/test_sandbox.py -q
 
   web:
     name: web interface
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
 
@@ -176,43 +82,34 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
 
       - run: npm ci --no-audit --no-fund
-        working-directory: apps/web
-
       - run: npm test
-        working-directory: apps/web
-
-      # The build catches what unit tests cannot: a type error or a bad import in
-      # a component no test renders.
+      - run: npm run lint
       - run: npm run build
-        working-directory: apps/web
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
   container:
     name: docker build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
-      # `docker compose up` is the install route offered to anyone not on Linux
-      # or macOS, so it needs the same protection as the script. It was broken by
-      # a single path in the Dockerfile that had never existed in this repository.
       - name: Build the image
         run: docker build -t throughline-os:ci .
 
       - name: The API answers in the built image
         run: |
-          docker run -d --name throughline -p 8080:8080 throughline-os:ci
+          docker run -d --name throughline -p 127.0.0.1:8080:8080 throughline-os:ci
+          cleanup() { docker rm -f throughline >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
           for _ in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
               echo "healthy"
-              docker rm -f throughline
               exit 0
             fi
             sleep 5
           done
           echo "::error::The API never became healthy."
           docker logs throughline
-          docker rm -f throughline
           exit 1
-
