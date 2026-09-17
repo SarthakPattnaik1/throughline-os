@@ -126,7 +126,7 @@ def test_a_harvest_stops_at_its_ceiling():
 
     assert len(result["records"]) == 3
     assert result["truncated"] is True
-    assert "there is more" in result["note"]
+    assert "harvest safety limit" in result["note"]
 
 
 # ---------------------------------------------------------------------------
