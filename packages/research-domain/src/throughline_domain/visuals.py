@@ -33,7 +33,7 @@ from .events import audit, emit
 from .ids import new_id
 from .lineage import add_edge
 from .objects import create_object
-from .storage import storage_root
+from .storage import export_directory, export_path, storage_root
 
 
 class VisualError(RuntimeError):
@@ -321,9 +321,11 @@ def render_visual(cur, *, visual_id: str, fmt: str,
     # a file as out of date while pointing at the one that had replaced it.
     # Adding a size without this would collide again: 720px and 1080px are the
     # same name.
-    directory = storage_root() / "figures" / visual_id
+    directory = export_directory("visuals", visual_id)
+    directory.mkdir(parents=True, exist_ok=True)
     size = "" if height_px is None else f"-{height_px}"
-    path = directory / f"{visual_id}-{current_hash[:12]}{size}.{fmt}"
+    filename = f"{visual_id}-{current_hash[:12]}{size}.{fmt}"
+    path = export_path("visuals", visual_id, filename)
     publication.render(
         spec, data, path=path, fmt=fmt, height_px=height_px,
         # Provenance travels inside the file, because a figure that leaves the
