@@ -312,21 +312,13 @@ def render_visual(cur, *, visual_id: str, fmt: str,
         return {"visual_id": visual_id, "format": fmt, "payload": payload,
                 "render_id": cur.fetchone()["id"]}
 
-    # The filename carries the spec hash and the size, not just the format.
-    #
-    # It used to be `{visual_id}.{fmt}` while the row was keyed on
-    # (visual_id, format, spec_hash) — so editing a figure and re-rendering
-    # produced a second row pointing at the same file, and the first row's
-    # content_hash described bytes that were gone. `stale_renders` then reported
-    # a file as out of date while pointing at the one that had replaced it.
-    # Adding a size without this would collide again: 720px and 1080px are the
-    # same name.
+    # Every render gets a server-generated filename. The spec hash and size
+    # remain in the database uniqueness key and metadata; they do not need to be
+    # copied into a filesystem path.
     directory = export_directory("visuals", visual_id)
     directory.mkdir(parents=True, exist_ok=True)
     render_id = new_id("vren")
-    size = "" if height_px is None else f"-{height_px}"
-    filename = f"{render_id}-{current_hash[:12]}{size}.{fmt}"
-    path = export_path("visuals", visual_id, filename)
+    path = export_path("visuals", visual_id, render_id, fmt)
     publication.render(
         spec, data, path=path, fmt=fmt, height_px=height_px,
         # Provenance travels inside the file, because a figure that leaves the
