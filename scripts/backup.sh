@@ -10,6 +10,11 @@
 #   ./scripts/backup.sh [destination-directory]
 set -euo pipefail
 
+# A backup contains the research database and may also contain installation-level
+# credentials stored in it. Do not let the caller's permissive umask turn that
+# archive into a file other local accounts can read.
+umask 077
+
 HOME_DIR="${THROUGHLINE_HOME:-$HOME/.throughline-os}"
 DEST="${1:-$HOME/throughline-backups}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -103,6 +108,10 @@ EOF
 
 ARCHIVE="$DEST/throughline-$STAMP.tar"
 tar -cf "$ARCHIVE" -C "$WORK" manifest.txt database.dump objects.tar.gz
+# Belt-and-suspenders with the restrictive umask above: a future refactor that
+# creates the archive through another tool should still leave the final file
+# private to its owner.
+chmod 600 "$ARCHIVE"
 echo "Wrote $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
 echo
 echo "Restore with: ./scripts/restore.sh $ARCHIVE"
