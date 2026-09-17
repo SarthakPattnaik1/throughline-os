@@ -97,8 +97,14 @@ function score(command: Command, query: string): number | null {
   return Math.min(byText, byId);
 }
 
-/** Score every command against the query and return the survivors, best first. */
-function rank(commands: Command[], query: string): Command[] {
+/**
+ * Score every command against the query and return the survivors, best first.
+ *
+ * Exported since T189: the one bar shows the same name matches under its verb
+ * matches, and two rankers would mean the palette and the bar disagreed about
+ * what "rsp" finds.
+ */
+export function rank(commands: Command[], query: string): Command[] {
   return commands
     .map((c) => ({ c, score: score(c, query) }))
     .filter((m): m is { c: Command; score: number } => m.score !== null)

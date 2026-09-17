@@ -76,8 +76,16 @@ type Capability = {
   note: string | null;
 };
 
-export function Literature({ projectId }: { projectId: string }) {
-  const [query, setQuery] = useState("");
+export function Literature({ projectId, initialQuery }: {
+  projectId: string;
+  /**
+   * A topic the caller already knows, so "find papers about soil" arrives with
+   * the box filled in (T189). `DataSearch` has taken one since D413; this is
+   * the same door on the other search, and the bar reaches both.
+   */
+  initialQuery?: string;
+}) {
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [capabilities, setCapabilities] = useState<Capability[] | null>(null);
   const [results, setResults] = useState<Results | null>(null);
   const [busy, setBusy] = useState(false);

@@ -337,7 +337,7 @@ function useRoomForInspector(): boolean {
 }
 
 export function Shell({
-  section, onSection, map, children, inspector, rail, onCommand, projectName,
+  section, onSection, map, children, inspector, rail, onCommand, bar, projectName,
   crumbs, onDropFiles, projectMenu, account, strip,
 }: {
   section: Section;
@@ -356,6 +356,13 @@ export function Shell({
    */
   rail?: ReactNode;
   onCommand: () => void;
+  /**
+   * The header's bar, when the caller has one.
+   *
+   * Optional so a mounting site that has not been wired for it still gets the
+   * palette button rather than a header with a hole in it.
+   */
+  bar?: ReactNode;
   projectName: string;
   crumbs: Crumb[];
   onDropFiles: (files: FileList) => void;
@@ -485,11 +492,17 @@ export function Shell({
             bar across the middle of the identity row, which is the size of a
             thing you are meant to use constantly; the masters give it a
             quarter of that, on the right, beside the account. */}
-        <button className="command" onClick={onCommand} aria-label="Open the command bar">
-          <span className="command-icon" aria-hidden><IconSearch size={15} /></span>
-          <span>Search project…</span>
-          <kbd>⌘K</kbd>
-        </button>
+        {/* The bar itself when the workspace hands one down (T189), and the
+            button that opens the modal palette when it does not. The bar is
+            the front door — it does verbs as well as names — and ⌘K still
+            opens the palette for anyone who reaches for it. */}
+        {bar ?? (
+          <button className="command" onClick={onCommand} aria-label="Open the command bar">
+            <span className="command-icon" aria-hidden><IconSearch size={15} /></span>
+            <span>Search project…</span>
+            <kbd>⌘K</kbd>
+          </button>
+        )}
         {/*
           One control at the right, for the two questions that are about the
           *session* rather than about any research object: who am I, and which

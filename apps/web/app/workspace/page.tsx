@@ -21,6 +21,8 @@ import { ViewTabs } from "@/components/ViewTabs";
 import { Centered, Failure, Fold, Loading } from "@/components/primitives";
 import { Crumb, PAGES, SECTIONS, Section, Shell } from "@/components/Shell";
 import { CommandPalette, buildCommands } from "@/components/CommandPalette";
+import { OneBar } from "@/components/onebar";
+import type { Destination } from "@/components/verbs";
 import { AnalysisRail } from "@/components/AnalysisRail";
 import { humanMethod,
   AnalysisDetail, ConnectionDetail, ConnectionsTable, Discover, EvidenceGraphView,
@@ -560,6 +562,33 @@ function Workspace({ user }: { user: SignedInUser }) {
     />
   ) : null;
 
+  /**
+   * Run a verb from the one bar (T189).
+   *
+   * Three shapes, and only three: open the file chooser, follow the loop's own
+   * next step, or go to a screen — carrying the rest of the typed line as a
+   * search term where the screen takes one. Nothing here starts a sweep or a
+   * validation: those are real compute and real claims, and the bar takes you
+   * to the control rather than pressing it for you.
+   */
+  /* A plain function, not a `useCallback`: everything from here down sits
+     below this component's early returns (`if (!project) return …`), so a hook
+     here changes the hook count between renders. `takeStep` just above is a
+     plain function for the same reason. */
+  const runVerb = (to: Destination, argument: string) => {
+    if (to.act === "next") { takeStep(); return; }
+    if (argument) setDataQuery(argument);
+    go({ section: to.section, item: null },
+       to.view ? { view: to.view as View } : {});
+    if (to.act === "upload") {
+      // After paint: the input belongs to the screen being navigated to, so it
+      // does not exist until that screen has rendered.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.getElementById("add-sources-input")?.click();
+      }));
+    }
+  };
+
   const commands = buildCommands({
     labels: variables.data?.labels ?? {},
     sections: SECTIONS,
@@ -582,6 +611,10 @@ function Workspace({ user }: { user: SignedInUser }) {
         crumbs={crumbs}
         onDropFiles={upload}
         onCommand={() => setPaletteOpen(true)}
+        bar={
+          <OneBar commands={commands} onVerb={runVerb} size="compact"
+                  placeholder="Ask for anything…" />
+        }
         projectMenu={
           <ProjectMenu
             projects={projects.data}
@@ -648,6 +681,40 @@ function Workspace({ user }: { user: SignedInUser }) {
 
         {section === "overview" && (
           <>
+            {/*
+              The front door (T189). Overview is where the workspace lands, so
+              the first thing on it is one box — the shape a person already
+              knows from every other product they use — with the project's own
+              next step as the first chip beside it. Everything below stays:
+              this is an additional way in, not a replacement for the screen.
+            */}
+            <div className="asklanding">
+              <h1 className="asklanding-greet">What do you want to do?</h1>
+              <p className="asklanding-sub">
+                Type it, or press one of these. Everything in {project.name} is
+                reachable from here.
+              </p>
+              <OneBar
+                commands={commands}
+                onVerb={runVerb}
+                size="home"
+                suggestions={[
+                  // The loop's own answer to "what next", first and filled.
+                  ...(target?.label
+                    ? [{ label: target.label.replace(/\s*→\s*$/, ""),
+                         run: takeStep, primary: true }]
+                    : []),
+                  { label: "Add data", run: () => runVerb(
+                      { section: "sources", view: "library", act: "upload" }, "") },
+                  { label: "Find papers", run: () => runVerb(
+                      { section: "sources", view: "papers" }, "") },
+                  { label: "Test every pair", run: () => runVerb(
+                      { section: "discover" }, "") },
+                  { label: "Draft a report", run: () => runVerb(
+                      { section: "reports" }, "") },
+                ]}
+              />
+            </div>
             <Overview project={project} map={map.data} onGo={goSection}
                       onOpen={(kind, id) => open(kind, id)} onAddSources={upload}
                       onLineage={() => go({ section: "graph", item: null },

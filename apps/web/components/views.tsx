@@ -531,6 +531,11 @@ export function Sources({ sources, onSelect, upload, uploading, uploadError,
                style={{ display: "inline-block" }}>
           {uploading ? "Uploading…" : "Add sources"}
           <input
+            /* Named so the one bar's "add a file" verb can press it: the bar
+               navigates here and opens the chooser, rather than landing the
+               researcher on a screen and leaving them to find the control
+               (T189). */
+            id="add-sources-input"
             type="file" multiple hidden disabled={uploading}
             /* Asked of the server rather than written down. The literal that
                was here offered eight formats while ingestion read twenty-two,
