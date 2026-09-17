@@ -16,14 +16,18 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Iterator
 
 from .db import data_root
 from .ids import new_id
 
 CHUNK = 1024 * 1024
+
+_SAFE_COMPONENT = re.compile(r"\A[A-Za-z0-9_-]{1,128}\Z")
+_SAFE_FILENAME = re.compile(r"\A[A-Za-z0-9_.-]{1,200}\Z")
 
 
 class StorageError(RuntimeError):
@@ -72,13 +76,56 @@ def put(stream: BinaryIO) -> tuple[str, str, int]:
     return content_hash, key, size
 
 
+def _validated_key_parts(storage_key: str) -> tuple[str, ...]:
+    raw = storage_key.replace("\\", "/")
+    pure = PurePosixPath(raw)
+    if pure.is_absolute() or not pure.parts:
+        raise StorageError("Storage key is not relative to the object store")
+    parts = tuple(pure.parts)
+    if any(part in {"", ".", ".."} for part in parts):
+        raise StorageError("Storage key contains an unsafe path component")
+    if any(not _SAFE_FILENAME.fullmatch(part) for part in parts):
+        raise StorageError("Storage key contains unsupported characters")
+    return parts
+
+
 def path_for(storage_key: str) -> Path:
-    path = storage_root() / storage_key
-    # Refuse to resolve outside the store even if a key was tampered with.
-    if not path.resolve().is_relative_to(storage_root().resolve()):
+    root = storage_root().resolve()
+    path = root.joinpath(*_validated_key_parts(storage_key)).resolve()
+    if not path.is_relative_to(root):
         raise StorageError("Storage key escapes the object store")
     if not path.exists():
-        raise StorageError(f"Missing object: {storage_key}")
+        raise StorageError("Stored object is missing")
+    return path
+
+
+def _safe_component(value: str, *, label: str) -> str:
+    if not _SAFE_COMPONENT.fullmatch(value):
+        raise StorageError(f"{label} is not a safe storage identifier")
+    return value
+
+
+def export_directory(table: str, object_id: str) -> Path:
+    try:
+        folder = EXPORT_DIRECTORIES[table]
+    except KeyError as exc:
+        raise StorageError("Unknown export directory") from exc
+    safe_id = _safe_component(object_id, label="Object id")
+    root = storage_root().resolve()
+    parent = (root / folder).resolve()
+    directory = (parent / safe_id).resolve()
+    if directory.parent != parent:
+        raise StorageError("Export directory escapes storage root")
+    return directory
+
+
+def export_path(table: str, object_id: str, filename: str) -> Path:
+    if not _SAFE_FILENAME.fullmatch(filename) or filename in {".", ".."}:
+        raise StorageError("Unsafe export filename")
+    directory = export_directory(table, object_id)
+    path = (directory / filename).resolve()
+    if path.parent != directory:
+        raise StorageError("Export path escapes its object directory")
     return path
 
 
@@ -136,16 +183,11 @@ def collect_exports(ids_by_table: dict[str, list[str]]) -> dict[str, int]:
         folder = EXPORT_DIRECTORIES[table]
         for object_id in ids:
             try:
-                directory = (storage_root() / folder / object_id).resolve()
-                # An id is a name, never a path: refuse anything that would
-                # resolve outside its own folder, however it got into a row.
-                if directory.parent != root / folder:
-                    failed += 1
-                    continue
+                directory = export_directory(table, object_id)
                 if directory.is_dir():
                     shutil.rmtree(directory)
                     removed += 1
-            except OSError:
+            except (OSError, StorageError):
                 failed += 1
     return {"removed": removed, "failed": failed}
 
