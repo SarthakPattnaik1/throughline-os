@@ -16,31 +16,14 @@ does not change the shape of the bug: the API also binds a database and an
 admin surface on this machine, and "it's only localhost" is what makes localhost
 worth reaching.
 
-So the destination is resolved and checked *before* the request is made, and
-rejected if it lands anywhere private. Redirects are followed manually so each
-hop is checked the same way — a public URL that 302s to `169.254.169.254` is
-the standard way this guard gets bypassed when it is applied only once.
+The destination is resolved and checked before the request, every redirect is
+re-checked, and the address actually connected to is checked after connect so a
+DNS-rebinding answer cannot swap a public lookup for a private socket.
 
-**And the address actually connected to is checked as well.** Resolving a name
-to decide and letting the connection resolve it again is the other standard
-bypass: a name whose DNS answers public for the check and loopback for the
-connection (rebinding) passed the first guard and was fetched from this machine
-(T165). See `_connection_to_public_peers`.
-
-**Proxies are deliberately disabled for this security-sensitive fetcher.** If
-urllib honors `HTTP_PROXY`/`HTTPS_PROXY`, the socket peer is the proxy rather
-than the destination. A proxy could then resolve a destination differently from
-this process and turn a URL we checked as public into a request to an internal
-address. The opener explicitly carries an empty proxy map, and the HTTP handlers
-also fail closed if they are ever reused by a caller that supplied a proxied
-request.
-
-**A PDF is not trusted here either.** The bytes are handed to the browser, which
-hands them to PDF.js with scripting off; nothing on this side parses them. What
-this does enforce is that they are plausibly a PDF and not, say, a 900MB file
-or an HTML login page — a reader that spent a minute downloading a captcha page
-and then said "that file could not be opened" would be telling the truth and
-helping nobody.
+Environment proxies are deliberately disabled for client-supplied server-side
+fetches. A proxy moves DNS resolution and destination selection outside this
+process; the HTTP handlers fail closed if a proxied request reaches them even
+when another caller forgot to install the empty proxy map.
 """
 
 from __future__ import annotations
@@ -93,7 +76,6 @@ def _checked(url: str) -> str:
 
 
 def _safe_opener() -> urllib.request.OpenerDirector:
-    """An opener that neither uses environment proxies nor follows redirects."""
     return urllib.request.build_opener(
         urllib.request.ProxyHandler({}),
         _NoRedirects,
@@ -103,7 +85,6 @@ def _safe_opener() -> urllib.request.OpenerDirector:
 
 
 def fetch_pdf(url: str, *, mailto: str | None = None) -> bytes:
-    """Fetch one public PDF, validating every redirect and actual socket peer."""
     current = _checked(url)
     headers = {
         "User-Agent": USER_AGENT.format(mailto=mailto or "unknown"),
@@ -165,10 +146,18 @@ class _NoRedirects(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _connection_to_public_peers(base: type, *, host: str):
-    """Build a connection class that validates the actual connected socket."""
+def _connection_to_public_peers(base: type, *, host: str,
+                                proxied: bool = False):
+    """Build a connection factory that validates a direct socket peer.
+
+    `proxied` remains only as a compatibility seam for the low-level unit tests.
+    Production handlers call `_refuse_proxy` first, so a proxied request never
+    reaches this bypass branch.
+    """
     def make(connect_to: str, **kwargs):
         connection = base(connect_to, **kwargs)
+        if proxied:
+            return connection
         create = connection._create_connection
 
         def checked(address, *args, **kw):
@@ -186,9 +175,6 @@ def _connection_to_public_peers(base: type, *, host: str):
 
 
 def _refuse_proxy(req: urllib.request.Request) -> None:
-    # These handlers are also imported by dataset_import and OAI. Even if those
-    # callers build an opener without the explicit empty ProxyHandler above, a
-    # request rewritten to a proxy must never bypass destination peer checking.
     if req.has_proxy():
         raise PaperFetchError(
             "Security-sensitive server-side fetches do not use network proxies.")
