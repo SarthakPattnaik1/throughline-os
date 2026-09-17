@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a reproducible defect in Throughline
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a defect. Do not include credentials, session cookies, private datasets, unpublished research, database exports, or personal information. Security vulnerabilities belong in the private route described in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Release version or full commit SHA.
+      placeholder: v0.3.0 or 40-character commit SHA
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system, version, and CPU architecture.
+      placeholder: macOS 15 / arm64
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation route
+      options:
+        - Release installer
+        - Source checkout / bootstrap
+        - Docker
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic or public data when possible. Make the sequence exact enough for another person to follow.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Relevant doctor output or logs only after removing secrets, private paths, filenames, research content, and personal data.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I removed credentials, private research, personal data, and unrelated sensitive information.
+          required: true
+        - label: This is not a security vulnerability. If it is, I will use SECURITY.md instead.
+          required: true
