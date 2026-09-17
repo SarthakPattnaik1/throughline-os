@@ -28,8 +28,14 @@ def test_documented_docker_run_is_loopback_only():
 def test_backup_forces_private_permissions():
     backup = (ROOT / "scripts" / "backup.sh").read_text()
 
-    # The database dump includes installation_secrets, so a backup is a secret
-    # container as well as a research archive. It must not inherit a permissive
-    # shell umask on a shared workstation.
+    # Research archives must not inherit a permissive shell umask on a shared
+    # workstation even after the usable hosted-model credential is excluded.
     assert re.search(r"(?m)^umask 077\s*$", backup)
     assert 'chmod 600 "$ARCHIVE"' in backup
+
+
+def test_backup_excludes_saved_model_credentials():
+    backup = (ROOT / "scripts" / "backup.sh").read_text()
+    assert "--exclude-table-data=installation_secrets" in backup, (
+        "backup.sh would copy usable installation credentials into portable "
+        "backup archives")
