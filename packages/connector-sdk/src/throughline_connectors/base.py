@@ -163,7 +163,7 @@ def _public_url(url: str) -> str:
     for info in infos:
         peer = info[4][0].split("%", 1)[0]
         if not ipaddress.ip_address(peer).is_global:
-            raise ConnectorError("The connector host is not a public network address.")
+            raise ConnectorError("The connector host is not a public address.")
     return urllib.parse.urlunsplit(parsed)
 
 
@@ -185,7 +185,7 @@ def _peer_checked_connection(base: type, *, host: str):
             if not ipaddress.ip_address(peer).is_global:
                 sock.close()
                 raise ConnectorError(
-                    f"{host or 'That host'} is not a public network address.")
+                    f"{host or 'That host'} is not a public address.")
             return sock
 
         connection._create_connection = checked
@@ -277,7 +277,12 @@ class Connector:
                     continue
                 raise ConnectorError(
                     f"{self.name} returned {exc.code} for that query.") from exc
-            except (urllib.error.URLError, TimeoutError, ConnectorError) as exc:
+            except ConnectorError:
+                # Security-policy failures are deterministic, not transient
+                # network errors. Retrying would only hide the reason the URL
+                # was refused and could turn an SSRF guard into a generic error.
+                raise
+            except (urllib.error.URLError, TimeoutError) as exc:
                 last = exc
                 if attempt == attempts - 1:
                     break
@@ -318,9 +323,9 @@ class Connector:
                 return exc.code, None
         except (urllib.error.URLError, TimeoutError, ConnectorError) as exc:
             raise ConnectorError(
-                f"{self.name} could not be reached, and this was a write: its "
-                "outcome is unknown. Check the library before trying again — "
-                "retrying automatically could write it twice.") from exc
+                f"{self.name} could not be reached, and this was a write: it is "
+                "not known whether it took effect. Check the library before trying "
+                "again — retrying automatically could write it twice.") from exc
 
     def _json(self, url: str, **kwargs: Any) -> Any:
         raw = self._get(url, **kwargs)
