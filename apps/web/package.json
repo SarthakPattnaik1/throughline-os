@@ -14,7 +14,7 @@
     "vendor:pdf-worker": "node scripts/vendor-pdf-worker.mjs"
   },
   "dependencies": {
-    "@deck.gl/core": "^9.3.10",
+    "@deck.gl/core": "^9.4.0",
     "@deck.gl/geo-layers": "^9.3.10",
     "@deck.gl/layers": "^9.3.10",
     "@deck.gl/react": "^9.3.10",
