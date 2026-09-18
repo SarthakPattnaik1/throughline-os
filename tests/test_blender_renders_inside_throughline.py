@@ -186,7 +186,7 @@ def test_a_failed_re_render_is_not_reported_with_the_last_picture(analysed,
     old.write_bytes(b"\x89PNG the previous render")
 
     def produces_nothing(*, obj_path: Path, ply_path: Path, out_path: Path,
-                         samples: int = 64):
+                         samples: int = 64, **_look):
         if out_path.exists():
             return {"path": str(out_path), "renderer": "blender",
                     "renderer_version": "5.2.1", "deterministic": False,

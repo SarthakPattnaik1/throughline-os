@@ -17,6 +17,8 @@ the band's colour and z-order, and PostScript text is a poor way to read that.
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 from matplotlib.collections import PathCollection, PolyCollection
@@ -89,9 +91,17 @@ def test_the_band_sits_beneath_the_points(drawn):
 
 
 def test_the_grid_does_not_depend_on_transparency():
-    style = publication.PUBLICATION_STYLE
-    assert style.get("grid.alpha", 1.0) == 1.0
-    assert style["grid.color"].lower() == "#ebebeb"
+    """On either ground the grid is a solid colour, never a translucent grey
+    that EPS would draw at full strength (T191 moved the colour into the
+    per-ground tokens)."""
+    from throughline_visual import tokens
+
+    assert publication.PUBLICATION_STYLE.get("grid.alpha", 1.0) == 1.0
+    for ground in tokens.GROUNDS:
+        style = publication.style_for(publication.Look(ground=ground))
+        assert style["grid.alpha"] == 1.0
+        assert re.fullmatch(r"#[0-9a-f]{6}", style["grid.color"].lower())
+        assert style["grid.color"] == tokens.ink(ground)["grid"]
 
 
 def test_choosing_eps_says_what_it_still_cannot_draw():

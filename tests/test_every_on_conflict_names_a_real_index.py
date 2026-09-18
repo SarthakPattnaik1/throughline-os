@@ -191,8 +191,13 @@ def test_it_notices_the_target_that_actually_broke():
     unique = unique_indexes()
     before = frozenset(["visual_id", "format", "spec_hash"])
     assert not matches("visual_renders", before, unique)
-    after = frozenset(["visual_id", "format", "spec_hash",
-                       "coalesce(height_px,-1)", "renderer"])
+    # Widened twice since: by the renderer (0045) and by the ground (0047).
+    # Each widening makes the narrower target a broken one, which is exactly
+    # what this check exists to see.
+    without_ground = frozenset(["visual_id", "format", "spec_hash",
+                                "coalesce(height_px,-1)", "renderer"])
+    assert not matches("visual_renders", without_ground, unique)
+    after = without_ground | {"ground", "transparent"}
     assert matches("visual_renders", after, unique)
 
 
