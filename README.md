@@ -2,9 +2,9 @@
 
 # Throughline
 
-### Turn research material into evidence you can trace, challenge, and reproduce.
+### AI-assisted research where every conclusion stays connected to its evidence.
 
-**Local-first research software for papers, datasets, analysis, validation, findings, figures, and reports.**
+**Papers → datasets → analysis → validation → findings → figures → reports**
 
 <br />
 
@@ -17,24 +17,88 @@
 
 <br />
 
-[**Download Throughline**](https://throughline-research.pages.dev) · [**Quick start**](#quick-start) · [**Capabilities**](#what-throughline-can-do-today) · [**Architecture**](#system-design--engineering-architecture) · [**Security**](#security-tenancy--trust-boundaries) · [**Contribute**](CONTRIBUTING.md)
+[**Download Throughline**](https://throughline-research.pages.dev) · [**Quick start**](#quick-start) · [**See what it does**](#what-throughline-can-do-today) · [**Architecture**](#system-design--engineering-architecture) · [**Contribute**](CONTRIBUTING.md)
 
 </div>
 
 ---
 
-## Research should have a throughline
+## Research software should be able to show its work
 
-A paper, dataset, analysis, figure, and conclusion should not become five disconnected files—or disappear into a chat transcript.
+Most research workflows break the chain somewhere.
 
-**Throughline keeps the chain of evidence intact.** Sources stay connected to datasets; datasets stay connected to analyses; analyses stay connected to validation; findings stay connected to the evidence that supports them; and reports preserve those links instead of flattening everything into detached prose.
+A paper lives in one app. A dataset lives somewhere else. An analysis runs in a notebook. A chart gets copied into a slide. Then an AI summary turns all of that into prose with no durable path back to what actually produced the claim.
 
-| **Evidence stays attached** | **Computation stays deterministic** | **Your machine stays in control** |
+**Throughline is built to keep that chain intact.**
+
+| **Traceable** | **Reproducible** | **Local-first** |
 |---|---|---|
-| Findings preserve links to sources, analyses, lineage, and validation. | Numerical research results come from recorded scientific computation, not generated text. | Core workflows run locally. Hosted AI is optional, explicit, and never a silent fallback. |
+| Findings stay linked to sources, datasets, analyses, lineage, and validation. | Numerical results come from recorded scientific computation—not generated text. | Core workflows run on your machine. Hosted AI is optional and explicit. |
 
-> [!IMPORTANT]
-> **Throughline is an early research release.** It is not medical or clinical decision software. Review statistical conclusions independently, and use synthetic or non-sensitive data when evaluating a new installation.
+> **The model can help read and reason. It does not get to silently invent the math.**
+
+---
+
+## What the workflow looks like
+
+```text
+Paper / source
+      ↓
+Dataset / evidence
+      ↓
+Recorded analysis
+      ↓
+Validation + sensitivity checks
+      ↓
+Finding
+      ↓
+Figure / report / export
+      ↓
+Trace back to the exact evidence and computation
+```
+
+A finding in Throughline is not just a sentence. It is a research object connected to the evidence and computation that support it.
+
+---
+
+## Try it
+
+### macOS / Linux
+
+```bash
+curl -fsSL https://throughline-research.pages.dev/install.sh | sh
+```
+
+### Windows
+
+```powershell
+irm https://throughline-research.pages.dev/install.ps1 | iex
+```
+
+Then open:
+
+```text
+http://localhost:8080
+```
+
+Prefer to inspect everything first? The full source, installer, architecture, security model, tests, and release process are all in this repository.
+
+---
+
+## Why this exists
+
+AI research tools are getting better at finding and summarizing information. That is useful—but summarization is not the same thing as evidence.
+
+Throughline is trying to make a different promise:
+
+- **AI can assist with reading, interpretation, classification, and comparison.**
+- **Scientific computation stays deterministic and recorded.**
+- **Missing evidence stays missing instead of being smoothed over.**
+- **Validation is part of the research object, not an afterthought.**
+- **Reports and figures remain connected to what produced them.**
+- **The system can run without a hosted language model at all.**
+
+This is an early research release. It is not medical or clinical decision software, and statistical conclusions should still be independently reviewed.
 
 <div align="center">
 
