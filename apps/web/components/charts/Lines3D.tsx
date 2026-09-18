@@ -30,6 +30,7 @@
  * measured on.
  */
 
+import { selectionColour } from "@/lib/charts/theme";
 import {
   useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 } from "react";
@@ -45,7 +46,7 @@ import {
   DEFAULT_PATHS, Path, PathSettings, Paths, Polyline, describePaths,
   preparePaths,
 } from "@/lib/charts3d/paths";
-import { categorical } from "@/lib/tokens";
+import { categorical, seriesStroke } from "@/lib/tokens";
 
 export type Lines3DProps = {
   paths: Path[];
@@ -384,6 +385,7 @@ export function paintLines(
 ): void {
   if (!canvas) return;
   const context = canvas.getContext("2d");
+  const selection = selectionColour(canvas);
   if (!context) return;
 
   const { width, height } = size;
@@ -456,7 +458,8 @@ export function paintLines(
      */
     const emphasis = isSelected ? 1 : isHovered ? 0.9 : 0.8;
     context.globalAlpha = (0.55 + 0.45 * piece.along) * emphasis;
-    context.strokeStyle = isSelected ? "rgba(20,67,184,1)" : piece.colour;
+    // The theme's selection colour; a pale series as a line in its edge (D416).
+    context.strokeStyle = isSelected ? selection : seriesStroke(piece.colour);
     context.lineWidth = isSelected ? 2.6 : isHovered ? 2 : 1.6;
     context.lineCap = "round";
     context.beginPath();

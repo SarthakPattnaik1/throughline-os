@@ -26,7 +26,7 @@ import { useId, useMemo } from "react";
 import { max } from "d3-array";
 import { scaleLinear } from "d3-scale";
 import { area as d3area, curveBasis } from "d3-shape";
-import { categorical } from "@/lib/tokens";
+import { categorical, seriesEdge, seriesStroke } from "@/lib/tokens";
 import { ChartTable } from "./ChartTable";
 import { ChartTooltip, readable, useChartHover } from "./interaction";
 
@@ -144,13 +144,13 @@ export function Density({
                    style={{ opacity: hover.emphasis(curve.id) }}
                    {...hover.markProps(curve.id)}>
                   <path className="chart-density" d={shape(points) ?? undefined}
-                        style={{ fill: colour, stroke: colour }} />
+                        style={{ fill: colour, stroke: seriesStroke(colour) }} />
                   {/* The median, so the eye has an anchor the smoother cannot move. */}
                   {curve.quartiles?.[1] !== undefined && (
                     <line className="chart-median"
                           x1={xScale(curve.quartiles[1])} x2={xScale(curve.quartiles[1])}
                           y1={inner.h} y2={yScale(max(curve.density) ?? 0)}
-                          style={{ stroke: colour }} />
+                          style={{ stroke: seriesStroke(colour) }} />
                   )}
                 </g>
               );
@@ -165,7 +165,7 @@ export function Density({
                 <line key={i} className="chart-rug"
                       x1={xScale(value)} x2={xScale(value)}
                       y1={inner.h} y2={inner.h + 6}
-                      style={{ stroke: categorical[index % categorical.length] }} />
+                      style={{ stroke: seriesStroke(categorical[index % categorical.length]) }} />
               ))}
             </g>
           ))}
@@ -189,7 +189,10 @@ export function Density({
         <div className="chart-legend">
           {curves.map((curve, index) => (
             <span key={curve.id}>
-              <i style={{ background: categorical[index % categorical.length] }} aria-hidden />
+              <i style={{ background: categorical[index % categorical.length],
+                          boxShadow: seriesEdge(categorical[index % categorical.length])
+                            ? `inset 0 0 0 1px ${seriesEdge(categorical[index % categorical.length])}`
+                            : undefined }} aria-hidden />
               {curve.label}
             </span>
           ))}

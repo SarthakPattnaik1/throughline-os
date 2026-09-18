@@ -34,6 +34,7 @@
  * instruction to consult a scale nothing on the page carried.
  */
 
+import { selectionColour } from "@/lib/charts/theme";
 import {
   useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 } from "react";
@@ -438,6 +439,8 @@ export function paintField(
 ): void {
   if (!canvas) return;
   const context = canvas.getContext("2d");
+  // The theme's selection colour: the fixed blue was 2.3:1 on the dark canvas.
+  const selection = selectionColour(canvas);
   if (!context) return;
 
   const { width, height } = size;
@@ -467,7 +470,7 @@ export function paintField(
     const isHovered = index === hovered;
     context.save();
     context.strokeStyle = isSelected
-      ? "rgba(20,67,184,0.95)" : magnitudeColour(glyph.level, 0.85);
+      ? selection : magnitudeColour(glyph.level, 0.85);
     context.fillStyle = context.strokeStyle;
     context.lineWidth = isSelected ? 2.4 : isHovered ? 1.8 : 1.1;
 

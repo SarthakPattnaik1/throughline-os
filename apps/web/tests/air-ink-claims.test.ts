@@ -35,3 +35,21 @@ describe("the stabilisation help", () => {
     expect(STABILISATION.steady.gain).toBeGreaterThan(STABILISATION.handwriting.gain);
   });
 });
+
+describe("the page leads with the pen, not its settings (T194)", () => {
+  it("folds the set-once settings behind a summary that names their values", () => {
+    const fold = page.match(/<Fold summary=\{([\s\S]*?)\}\s*count=\{2\}[\s\S]*?<\/Fold>/);
+    expect(fold, "a Fold around the pen settings").not.toBeNull();
+    // A folded setting must never be a hidden one: both current values show.
+    expect(fold![1]).toMatch(/STRAIGHTEDGE_LABEL\[edge\]/);
+    expect(fold![1]).toMatch(/STABILISATION_LABEL\[level\]/);
+    expect(fold![0]).toMatch(/>Straightedge</);
+    expect(fold![0]).toMatch(/>Stabilisation</);
+  });
+
+  it("draws every border in the theme's colours, which the dark theme follows", () => {
+    // #12203a ringed the selected ink colour and vanished on the dark page.
+    const code = page.split("\n").filter((l) => !/^\s*(\*|\/\*|\/\/)/.test(l)).join("\n");
+    expect(code).not.toMatch(/solid #[0-9a-fA-F]{3,6}\b/);
+  });
+});

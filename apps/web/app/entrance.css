@@ -9,8 +9,6 @@
  *
  * Values are the handoff's homepage scope, unchanged.
  */
-
-.entrance-scope,
 body:has(.entrance-header) {
   --e-bg: #06070a;
   --e-text: #f4f2ee;
@@ -200,7 +198,6 @@ body:has(.entrance-header) {
 /* The tour's own heading is a chapter heading too — without it, `.display`
    sets only the family and the colour and the size falls back to the browser's
    h2, which left the section title smaller than the sentence under it. */
-.tour-head .display,
 .panel-d .display { font-size: clamp(34px, 4.4vw, 68px); }
 /* The italic continuation is the design's central typographic device. It is a
    real face, not a synthesised slant — see fonts.css. */

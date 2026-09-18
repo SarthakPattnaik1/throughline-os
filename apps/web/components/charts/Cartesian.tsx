@@ -26,7 +26,7 @@ import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { extent, max } from "d3-array";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { line as d3line, area as d3area, curveMonotoneX } from "d3-shape";
-import { categorical } from "@/lib/tokens";
+import { categorical, seriesEdge, seriesStroke } from "@/lib/tokens";
 import { densityNote, densityOf } from "@/lib/charts/density";
 import { sequential } from "@/lib/charts/sequential";
 import { ChartTooltip, readable, useChartHover } from "./interaction";
@@ -347,7 +347,8 @@ export function Cartesian({
               <path
                 d={path}
                 className={mark === "area" ? "chart-area" : "chart-line"}
-                style={{ stroke: colourOf(), fill: mark === "area" ? colourOf() : "none" }}
+                style={{ stroke: seriesStroke(colourOf()),
+                         fill: mark === "area" ? colourOf() : "none" }}
               />
             )}
 
@@ -355,7 +356,7 @@ export function Cartesian({
             {data.map((d) => d.lo !== undefined && d.hi !== undefined && (
               <line key={`ci-${d.id}`} className="chart-interval"
                     x1={px(d)} x2={px(d)} y1={yScale(d.lo)} y2={yScale(d.hi)}
-                    style={{ stroke: colourOf(d.group) }} />
+                    style={{ stroke: seriesStroke(colourOf(d.group)) }} />
             ))}
 
             {mark === "rect" && data.map((d) => {
@@ -371,7 +372,10 @@ export function Cartesian({
                   width={categorical_x ? band.bandwidth() : 8}
                   y={Math.min(yScale(d.y), zero)}
                   height={Math.abs(zero - yScale(d.y))}
-                  style={{ fill: colourOf(d.group), opacity: hover.emphasis(d.id) }}
+                  style={{ fill: colourOf(d.group), opacity: hover.emphasis(d.id),
+                           // A pale series is outlined so the bar stays findable (D416).
+                           stroke: seriesEdge(colourOf(d.group)) ?? undefined,
+                           strokeWidth: seriesEdge(colourOf(d.group)) ? 1 : undefined }}
                   {...hover.markProps(d.id)}
                 />
               );
@@ -394,6 +398,9 @@ export function Cartesian({
                         ? `color-mix(in oklab, var(--density-dense) ${Math.round(density.levels[index] * 100)}%, var(--density-sparse))`
                         : sequential(density.levels[index]))
                     : colourOf(d.group),
+                  // A pale series is outlined so the point stays findable (D416).
+                  ...(!density && seriesEdge(colourOf(d.group))
+                    ? { stroke: seriesEdge(colourOf(d.group))!, strokeWidth: 1 } : {}),
                   // Two reasons a mark dims: the pointer is on another
                   // one, or a selection elsewhere excludes it. The lower wins,
                   // so neither can quietly undo the other.
@@ -487,7 +494,10 @@ export function Cartesian({
           {groups.map((g) => (
             <span key={g}>
               {/* Never colour alone: a swatch and its word (Part A). */}
-              <i style={{ background: colourOf(g) }} aria-hidden />{g}
+              <i style={{ background: colourOf(g),
+                          boxShadow: seriesEdge(colourOf(g))
+                            ? `inset 0 0 0 1px ${seriesEdge(colourOf(g))}` : undefined }}
+                 aria-hidden />{g}
             </span>
           ))}
         </div>

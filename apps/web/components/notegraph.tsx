@@ -177,8 +177,8 @@ export function NoteGraph({ projectId }: { projectId: string }) {
         {/* Part P — the canvas has no DOM, so the same content exists as a real
             table. Without it this view is invisible to a screen reader and
             unreachable by keyboard, and it is the one I forgot when I built it. */}
-        <details className="kg-table">
-          <summary>Everything in this graph ({nodes.length})</summary>
+        <details className="fold kg-table">
+          <summary>Everything in this graph<span className="fold-count">· {nodes.length}</span></summary>
           <table>
             <thead>
               <tr><th style={{ width: "62%" }}>Object</th><th>Type</th>

@@ -53,6 +53,28 @@ export const INK_COLOURS = [
 ] as const;
 
 /**
+ * The colour a recorded ink colour is *shown* in on a dark page.
+ *
+ * The four inks were chosen against a light page. On the dark canvas the
+ * default blue measured 2.3:1 and the red 2.9:1 — a researcher's annotation
+ * all but disappeared the moment the theme changed. The recorded colour is
+ * data and is never rewritten; only its display takes a lighter step of the
+ * same hue (within 3°, 7:1 or better on the dark canvas and surface), so an
+ * annotation reads as the same colour in either theme and exports as it was
+ * drawn. A colour not in this list is shown as recorded.
+ */
+const ON_DARK: Record<string, string> = {
+  "#1443B8": "#8FB0F5",
+  "#B3261E": "#F2877F",
+  "#1B7A3E": "#5CC98A",
+  "#9A6400": "#E0A94A",
+};
+
+export function displayInk(colour: string, dark: boolean): string {
+  return dark ? ON_DARK[colour.toUpperCase()] ?? colour : colour;
+}
+
+/**
  * How an AI annotation is always drawn, whatever style it was given.
  *
  * Dashed, because it survives everything: a greyscale print, a colour-blind

@@ -42,6 +42,7 @@
  *     conventions for reading the same kind of picture.
  */
 
+import { selectionColour } from "@/lib/charts/theme";
 import {
   useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 } from "react";
@@ -375,6 +376,7 @@ export function Surface({
      * because the answer changes without React being told.
      */
     const palette = getComputedStyle(canvas);
+    const selection = selectionColour(canvas);
     const colours = {
       line: palette.getPropertyValue("--line-strong").trim(),
       grid: palette.getPropertyValue("--line").trim(),
@@ -487,10 +489,14 @@ export function Surface({
       if (point.id === selectedRef.current || point.id === hoveredRef.current) {
         context.beginPath();
         context.arc(at.x, at.y, radius + 4, 0, Math.PI * 2);
-        context.strokeStyle = point.id === selectedRef.current
-          ? "#1443B8" : "rgba(20,67,184,0.55)";
+        // The theme's selection colour: the hard-coded blue was 2.3:1 on the
+        // dark canvas. Hover is the same colour, fainter.
+        context.save();
+        context.strokeStyle = selection;
+        context.globalAlpha = point.id === selectedRef.current ? 1 : 0.55;
         context.lineWidth = point.id === selectedRef.current ? 2 : 1.25;
         context.stroke();
+        context.restore();
       }
     }
 
@@ -505,8 +511,10 @@ export function Surface({
 
     if (focusedRef.current) {
       const cx = width / 2, cy = height / 2;
-      context.strokeStyle = "rgba(20,67,184,0.55)";
-      context.lineWidth = 1;
+      // The keyboard's aim, in the theme's selection colour: the fixed blue
+      // at 55% was all but invisible on the dark canvas.
+      context.strokeStyle = selection;
+      context.lineWidth = 1.25;
       context.beginPath();
       context.moveTo(cx - 7, cy); context.lineTo(cx - 2, cy);
       context.moveTo(cx + 2, cy); context.lineTo(cx + 7, cy);

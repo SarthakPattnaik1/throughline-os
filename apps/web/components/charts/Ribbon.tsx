@@ -29,7 +29,7 @@
 
 import { useId, useMemo } from "react";
 import { sankey, sankeyLinkHorizontal, sankeyJustify } from "d3-sankey";
-import { categorical } from "@/lib/tokens";
+import { categorical, seriesEdge, seriesStroke } from "@/lib/tokens";
 import { ChartTable } from "./ChartTable";
 import { ChartTooltip, readable, useChartHover } from "./interaction";
 
@@ -241,7 +241,7 @@ export function Ribbon({
               className="ribbon-link"
               d={sankeyLinkHorizontal()(l as never) ?? undefined}
               fill="none"
-              stroke={categorical[l.source.index % categorical.length]}
+              stroke={seriesStroke(categorical[l.source.index % categorical.length])}
               strokeOpacity={0.9}
               strokeWidth={Math.max(1, l.width)}
             >
@@ -256,7 +256,8 @@ export function Ribbon({
                 {...hoverUI.markProps(n.id)} style={{ opacity: hoverUI.emphasis(n.id) }}>
               <rect x={n.x0} y={n.y0} width={n.x1 - n.x0}
                     height={Math.max(1, n.y1 - n.y0)}
-                    fill={categorical[n.index % categorical.length]} rx={1} />
+                    fill={categorical[n.index % categorical.length]} rx={1}
+                    stroke={seriesEdge(categorical[n.index % categorical.length]) ?? undefined} />
               <text
                 x={n.x0 < width / 2 ? n.x1 + 6 : n.x0 - 6}
                 y={(n.y0 + n.y1) / 2} dy="0.32em"

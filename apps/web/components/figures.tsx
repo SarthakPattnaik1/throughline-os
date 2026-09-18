@@ -412,8 +412,8 @@ function SpreadView({ projectId, column, onColumn }: {
             />
           </div>
 
-          <details className="kg-table">
-            <summary>The values behind this figure ({density.data.n} observations)</summary>
+          <details className="fold kg-table">
+            <summary>The values behind this figure<span className="fold-count">· {density.data.n} observations</span></summary>
             <table>
               <thead><tr><th>Quartile</th><th style={{ textAlign: "right" }}>Value</th></tr></thead>
               <tbody>
@@ -469,8 +469,8 @@ function MatrixView({ state }: {
       </div>
       <p className="note">{note}</p>
 
-      <details className="kg-table">
-        <summary>The numbers behind this figure ({cells.length / 2} tested pairs)</summary>
+      <details className="fold kg-table">
+        <summary>The numbers behind this figure<span className="fold-count">· {cells.length / 2} tested pairs</span></summary>
         <table>
           <thead><tr><th>Row</th><th>Column</th>
                      <th style={{ textAlign: "right" }}>Value</th></tr></thead>
@@ -524,8 +524,8 @@ function ForestView({ state }: { state: ApiState<EstimatePayload> }) {
       </Fold>
 
       {/* Part P — the same figure as a table. */}
-      <details className="kg-table">
-        <summary>The numbers behind this figure ({estimates.length} rows)</summary>
+      <details className="fold kg-table">
+        <summary>The numbers behind this figure<span className="fold-count">· {estimates.length} rows</span></summary>
         <table>
           <thead>
             <tr><th style={{ width: "46%" }}>Relationship</th>
@@ -856,8 +856,8 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
       </div>
 
       {/* Part P — an always-available table alternative. */}
-      <details className="kg-table">
-        <summary>The numbers behind this figure ({data.length} rows)</summary>
+      <details className="fold kg-table">
+        <summary>The numbers behind this figure<span className="fold-count">· {data.length} rows</span></summary>
         <table>
           <thead><tr><th>{xLabel}</th><th>{yLabel}</th></tr></thead>
           <tbody>

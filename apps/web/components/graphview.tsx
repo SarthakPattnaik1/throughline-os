@@ -236,8 +236,8 @@ function GraphCanvas({ projectId, onSelect, focus = null }: {
       {/* Part P — the graph's contents as a real table. The canvas has no DOM,
           so without this the whole view is invisible to a screen reader and
           unreachable by keyboard. */}
-      <details className="kg-table">
-        <summary>Objects in this graph ({nodes.length})</summary>
+      <details className="fold kg-table">
+        <summary>Objects in this graph<span className="fold-count">· {nodes.length}</span></summary>
         <table>
           <thead>
             <tr><th style={{ width: "58%" }}>Object</th><th>Type</th>

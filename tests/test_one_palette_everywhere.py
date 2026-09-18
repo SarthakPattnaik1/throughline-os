@@ -103,10 +103,11 @@ def test_no_chart_colour_disappears_on_any_web_ground():
     chart is drawn on, in both themes, is checked here."""
     grounds = [_ts_neutral(theme)[step] for theme in ("light", "dark")
                for step in (0, 25, 50)]
-    # D416, open and named rather than hidden: Okabe-Ito yellow on the light
-    # grounds is 1.2-1.3:1. Darkening it to show on white costs the lightness
-    # that separates it from orange under deuteranopia — a design decision,
-    # not a fix, so it is the one recorded exception and nothing else may join.
+    # D416: Okabe-Ito yellow's *fill* stays 1.2-1.3:1 on the light grounds —
+    # darkening it would cost the lightness that separates it from orange under
+    # deuteranopia — so every web chart outlines it in `PALE_SERIES_EDGE` and
+    # draws it as a line in that colour (pale-series-stay-findable.test.tsx).
+    # It is the one recorded exception, and nothing else may join it.
     known = {("#F0E442", _ts_neutral("light")[step]) for step in (0, 25, 50)}
     for hue in tokens.CATEGORICAL:
         for ground in grounds:

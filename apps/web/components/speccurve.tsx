@@ -227,8 +227,8 @@ function CurveChart({ curve }: { curve: Curve }) {
       </svg>
 
       {/* Part P — the figure as a table, in the same fixed order. */}
-      <details className="kg-table">
-        <summary>Every specification ({specs.length})</summary>
+      <details className="fold kg-table">
+        <summary>Every specification<span className="fold-count">· {specs.length}</span></summary>
         <table>
           <thead>
             <tr><th>Adjusted for</th>

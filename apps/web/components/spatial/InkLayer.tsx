@@ -26,6 +26,7 @@
  * ink is drawn over as well as the ink.
  */
 
+import { pageIsDark } from "@/lib/charts/theme";
 import {
   forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState,
 } from "react";
@@ -41,7 +42,7 @@ import { Straightedge } from "@/lib/ink/straightedge";
 // overlay and the annotation group are different things that happen to share a
 // word.
 import {
-  InkLayer as AnnotationLayer, dashFor, isShowing,
+  InkLayer as AnnotationLayer, dashFor, isShowing, displayInk,
 } from "@/lib/ink/layers";
 import { ReferenceTimeline } from "@/lib/voice/timeline";
 import { deviceFeedback } from "@/lib/spatial/feedback";
@@ -421,6 +422,7 @@ export function paint(canvas: HTMLCanvasElement | null,
                       layers: readonly AnnotationLayer[] = []): void {
   if (!canvas) return;
   const context = canvas.getContext("2d");
+  const dark = pageIsDark();
   if (!context) return;
 
   const dpr = canvas.width && size.width ? canvas.width / size.width : 1;
@@ -452,7 +454,8 @@ export function paint(canvas: HTMLCanvasElement | null,
       continue;
     }
     context.lineWidth = stroke.style.width;
-    context.strokeStyle = stroke.style.colour;
+    // Shown in the dark theme's step of the same ink; recorded as drawn.
+    context.strokeStyle = displayInk(stroke.style.colour, dark);
     context.globalAlpha = stroke.style.opacity;
     context.lineCap = "round";
     context.lineJoin = "round";

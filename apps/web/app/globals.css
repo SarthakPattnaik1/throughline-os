@@ -90,7 +90,9 @@
    * *where I am* from *what I picked* — [[D355]], the half that stayed open
    * after the light palette went gold.
    *
-   * #1D4ED8 on the near-white panel is 7.4:1, and its tint is the ground a
+   * #355F9D on the near-white canvas measures 6.1:1 (6.4:1 on white; the
+   * note said #1D4ED8 at 7.4:1, a value and a number neither of which is this
+   * token — canvas-selection-follows-the-theme.test.ts measures it now), and its tint is the ground a
    * selected row sits on. The tint is deliberately weak: a chosen row is
    * marked, not highlighted, and a list of twenty with one picked should read
    * as a list and not as a warning.
@@ -1690,6 +1692,12 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
   text-decoration: none;
 }
 .gate-back:hover { color: var(--gate-ink); }
+/* A touch target, not a footnote: the link was 18px tall on a phone. The
+   padding is taken back by the margin so the desktop layout does not move. */
+@media (pointer: coarse) {
+  .gate-back { min-height: 44px; display: inline-flex; align-items: center;
+               padding: 0 12px; margin-left: -12px; margin-top: 11px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .gate-submit, .gate-field input, .l-btn { transition: none; }
@@ -1909,7 +1917,9 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
 }
 .pick-option:hover { border-color: var(--line-strong); }
 /* Selected reads as a border, a background *and* the checkbox itself (§118). */
-.pick-option[data-on="true"] { border-color: var(--accent); background: var(--hover); }
+/* A picked column is data selected, not a place: it takes --select, not the
+   navigation gold (D355). */
+.pick-option[data-on="true"] { border-color: var(--select); background: var(--select-soft); }
 .pick-option input { margin: 0; grid-row: span 2; }
 .pick-option-name { font-family: var(--mono); font-size: 12.5px; color: var(--ink); word-break: break-word; }
 .pick-option-meta { grid-column: 2; font-size: 11px; color: var(--ink-faint); }
@@ -2210,14 +2220,10 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
 .kg-tip span { color: var(--ink-faint); font-size: 11px; font-family: var(--mono); }
 
 /* The accessible equivalent, not an afterthought: canvas has no DOM, so this
-   is the only path for a screen reader or a keyboard. */
-.kg-table summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--ink-faint);
-  padding: 6px 0;
-}
-.kg-table summary:hover { color: var(--ink); }
+   is the only path for a screen reader or a keyboard. It is a `details.fold`
+   like every other disclosure (D216) — the count in `data-count`, with its
+   unit, rather than written into the label — and only the table is its own. */
+.kg-table > table { margin: 8px 0 6px; }
 
 @media (prefers-reduced-motion: reduce) {
   .kg { background-image: none; }
@@ -2716,9 +2722,10 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
               background var(--micro) var(--ease-out-quad);
 }
 .cmp-choice:hover { border-color: var(--line-strong); }
+/* Papers picked for comparison are data selected (D355). */
 .cmp-choice[data-chosen="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--select);
+  background: var(--select-soft);
 }
 
 .cmp-slot {
@@ -2966,51 +2973,6 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
 }
 
 /* --- The claim test ------------------------------------------------------ */
-
-.ct-claims { margin-top: 24px; }
-
-.ct-claim {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 16px 18px;
-  margin-top: 12px;
-  background: var(--panel);
-  transition: border-color var(--micro) var(--ease-out-expo);
-}
-.ct-claim[data-chosen="true"] { border-color: var(--accent); }
-
-/* The paper's own words, marked as a quotation so they are never mistaken for
-   the system's assertion. */
-.ct-claim blockquote {
-  margin: 0;
-  padding-left: 12px;
-  border-left: 2px solid var(--line-strong);
-  font-size: 15px;
-  line-height: 1.55;
-  color: var(--ink-strong);
-}
-
-.ct-constructs {
-  margin: 12px 0 0;
-  font-size: 13px;
-  color: var(--ink-soft);
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-}
-.ct-design {
-  margin-left: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--n-50);
-  font-size: 12px;
-  color: var(--ink-faint);
-}
-
-.ct-against {
-  margin-top: 14px;
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  font-size: 13px; color: var(--ink-faint);
-}
-.ct-provenance { margin-top: 14px; font-size: 12px; color: var(--ink-faint); }
 
 /* Recording what a dataset observes, offered from the refusal that needed it.
    Sits under the steps rather than beside them: it is the continuation of the
@@ -3558,8 +3520,9 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
               border-color var(--micro) var(--ease-out-expo);
 }
 .sc-chip:hover { background: var(--hover); }
+/* A covariate chosen for the specification curve is data selected (D355). */
 .sc-chip[data-on="true"] {
-  background: var(--accent-soft); border-color: var(--accent); color: var(--on-accent-soft);
+  background: var(--select-soft); border-color: var(--select); color: var(--on-select-soft);
 }
 
 .sc-headline { margin: 28px 0 8px; font-size: 15px; color: var(--ink-strong); }
@@ -4349,24 +4312,6 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
 }
 
 
-/* The sign-in / sign-up switch. A link in prose, not a second button competing
-   with the primary action above it. */
-.gate-switch {
-  margin: 14px 0 0; font-size: 12.5px; color: var(--gate-ink-soft, rgba(244,242,238,0.6));
-}
-.gate-switch button {
-  background: none; border: 0; padding: 0;
-  font: inherit; font-weight: 600;
-  color: var(--gate-ink, #f4f2ee);
-  text-decoration: underline; text-underline-offset: 3px;
-  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
-  cursor: pointer;
-  transition: text-decoration-color var(--fast) linear;
-}
-.gate-switch button:hover { text-decoration-color: currentColor; }
-.gate-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
-
-
 /* --- connector marks ------------------------------------------------------
  *
  * Not the sources' own logos: those are their trademarks, and the workspace
@@ -4505,14 +4450,7 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
   border-top: 1px solid var(--line);
 }
 
-.chart-table > summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--ink-faint);
-  padding: 8px 0;
-  list-style-position: outside;
-}
-.chart-table > summary:hover { color: var(--ink); }
+/* The summary is a `details.fold` summary (D216); only the table is its own. */
 
 .chart-table table {
   width: 100%;
@@ -4887,11 +4825,8 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
 .gc-waiting { border-left-color: var(--line-strong); color: var(--ink-soft); }
 
 /* --- Literature sheet (§204, §205) --------------------------------------- */
-
-.reader-main { padding: 1.5rem 2rem 4rem; }
 /* The reader itself is a plain column; the page canvas sets its own width. */
 .reader { display: flex; flex-direction: column; }
-.reader-main h1 { font-size: 1.4rem; margin-bottom: 1rem; }
 
 .reader-bar {
   display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;
@@ -5624,14 +5559,6 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
    height and then keying it would describe the picture with itself. Beside the
    figure in the DOM, so it reads at any text size and follows the theme — a
    bar painted into the canvas is a picture of a legend. */
-.surface-legend { display: grid; gap: 4px; margin: 6px 0 0; max-width: 300px; }
-.surface-legend-name { color: var(--ink-faint); font-size: 12px;
-                       letter-spacing: 0.02em; }
-.surface-legend-bar { display: block; height: 12px; border-radius: 3px;
-                      border: 1px solid var(--line); }
-.surface-legend-ends { display: flex; justify-content: space-between;
-                       color: var(--ink-faint); font-size: 12px;
-                       font-variant-numeric: tabular-nums; }
 
 /* --- saving a chart (§75) --------------------------------------------------
    Beneath the figure and above the caption: it belongs to the picture rather
@@ -6104,10 +6031,6 @@ button.step-strip-where:hover b { color: var(--accent); }
 .status-phrase { text-transform: none; letter-spacing: 0; font-size: 11.5px; }
 .status-word { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); text-transform: none; }
 
-/* A transition button states its direction on a second, quieter line. */
-.btn-direction { display: block; font-size: 11.5px; font-weight: 400; color: var(--ink-faint); margin-top: 2px; }
-.btn:has(.btn-direction) { text-align: left; }
-
 /* A text-weight control, for the demoted "Save this view" beside the real
    export. */
 .btn-text { background: none; border: 0; padding: 0; font: inherit; color: var(--ink-faint); cursor: pointer; text-decoration: underline dotted; }
@@ -6119,10 +6042,6 @@ button.step-strip-where:hover b { color: var(--accent); }
 .status-superseded { color: var(--ink-faint); }
 .status-not_checkable { color: var(--ink-faint); }
 
-/* The one-line provenance footer under a traceable report block: the
-   note's size and colour without its rule, which would repeat down a page. */
-.block-prov-line { font-size: 12px; color: var(--ink-soft); margin: 3px 0 4px; }
-
 /* The three take-away exports, stacked in one card. */
 .take-away .bib:first-child { margin-top: 0; }
 .take-away .bib:last-child { margin-bottom: 0; }
@@ -6131,23 +6050,12 @@ button.step-strip-where:hover b { color: var(--accent); }
 .disclosure > summary { cursor: pointer; font-size: 12px; color: var(--ink-faint); padding: 8px 0; list-style-position: outside; }
 .disclosure > summary:hover { color: var(--ink); }
 
-/* An in-list opener used inside a sentence. */
-.pick-inline { display: inline; width: auto; }
-
-/* The topbar's visible "New project": `flex: none` is load-bearing, since
-   `.crumbs > *` may shrink and this must not be what gets squeezed out. */
-.pm-new-inline { flex: none; margin-left: 6px; }
-
 /* A source whose failed ingestion still offers importable tables. */
 .status-importable { color: var(--candidate); }
 
 /* The profiled-schema row a subset jumped to; the scroll margin keeps it out
    from under the step strip. */
 tr[data-lit="true"] { background: var(--hover); scroll-margin-block: 80px; }
-
-/* NodeJournal embedded in a detail screen: no second frame, no second
-   scroller inside a column that already scrolls. */
-.nj-embedded { max-height: none; overflow: visible; border: 0; padding: 0; background: none; }
 
 /* A cohort name is a control only when something answers it. */
 .cohort-tree .name[data-static] { cursor: default; }
@@ -6212,6 +6120,13 @@ details.fold[open] > summary::before { transform: rotate(45deg); }
 
 /* The count, drawn from the attribute. `--ink-faint` is `--n-500` in light and
    one step brighter in dark, for the reason the token block gives. */
+/* The same count as text, where it has to be findable and copyable — a data
+   table's "10 of 60 rows" says how complete it is (D216). */
+.fold-count {
+  /* The summary's flex gap is the space before the dot. */
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
 summary[data-count]::after {
   content: " · " attr(data-count);
   color: var(--ink-faint);
@@ -6220,6 +6135,10 @@ summary[data-count]::after {
 
 /* Open, the summary becomes the head of something, so it takes a rule. */
 details.fold[open] > summary { border-bottom: 1px solid var(--line); }
+/* Air Ink's pen settings: a fold between the toolbar and the chart, so it takes
+   the toolbar's width and a gap above the figure rather than the list styling. */
+details.fold.ink-settings { max-width: 720px; margin: 0 0 16px; border-top: 1px solid var(--line); }
+details.fold.ink-settings > .fold-body { display: grid; gap: 8px; }
 details.fold > *:not(summary) { padding: 8px 2px 10px; }
 /* Named as well as positional, because a fold whose body is a fragment of
    several elements has nowhere for the padding to land otherwise. */
@@ -6663,12 +6582,6 @@ details.fold > *:not(summary) { padding: 8px 2px 10px; }
   padding: 9px 14px; border-top: 1px solid var(--line);
   font-size: 11.5px; color: var(--ink-faint);
 }
-.river-key { display: inline-flex; align-items: center; gap: 6px; }
-.river-key::before {
-  content: ""; width: 22px; height: 0;
-  border-top: 1.5px solid var(--line-strong);
-}
-.river-key[data-lineage="false"]::before { border-top-style: dashed; }
 .river-zoom { display: inline-flex; align-items: center; gap: 6px; }
 .river-zoom .btn { padding: 2px 8px; font-size: 11.5px; }
 /* Pushed to the end of the strip, because it qualifies the whole canvas. */
@@ -6816,9 +6729,6 @@ details.fold > *:not(summary) { padding: 8px 2px 10px; }
   .rsn-field-human path, .rsn-field-model path { opacity: 0.07; }
   .rsn-mote, .rsn-mote-model { opacity: 0.18; }
 }
-
-.rsn-stage { position: relative; }
-
 .rsn-columns {
   position: relative;
   display: grid; grid-template-columns: 1fr 1.35fr 1fr; gap: 16px;
@@ -6843,7 +6753,8 @@ details.fold > *:not(summary) { padding: 8px 2px 10px; }
   padding: 12px 14px; border: 1px solid var(--line);
   border-radius: var(--r-card); background: var(--panel);
 }
-.rsn-claim[data-chosen="true"] { border-color: var(--accent); }
+/* The claim chosen to test is data selected, not a place (D355). */
+.rsn-claim[data-chosen="true"] { border-color: var(--select); }
 .rsn-claim blockquote {
   margin: 8px 0; padding-left: 11px; border-left: 2px solid var(--line-strong);
   font-family: var(--serif); font-size: 17px; line-height: 1.45; color: var(--ink);
@@ -6971,18 +6882,6 @@ details.fold > *:not(summary) { padding: 8px 2px 10px; }
 
 /* The four judgements, kept apart by column rather than by tile. Tabular
    figures so two runs read side by side line up digit for digit. */
-.ckpt-figures {
-  display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 10px;
-  padding-bottom: 10px; border-bottom: 1px solid var(--line);
-}
-.ckpt-figures span { display: flex; flex-direction: column; gap: 1px; }
-.ckpt-figures b {
-  font-size: 19px; font-weight: 560; font-variant-numeric: tabular-nums;
-}
-.ckpt-figures em {
-  font-style: normal; font-size: 10.5px; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--ink-faint);
-}
 
 .ckpt-checks { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ckpt-checks th, .ckpt-checks td {
@@ -7151,9 +7050,6 @@ details.fold > *:not(summary) { padding: 8px 2px 10px; }
   margin: 0 0 6px; font-size: 11px; letter-spacing: 0.05em;
   text-transform: uppercase; color: var(--ink-faint); font-weight: 600;
 }
-.ax-links { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
-.ax-links li { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ax-flat { font-size: 13px; color: var(--ink); }
 .ax-meta {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-size: 11px; color: var(--ink-faint);
@@ -7239,8 +7135,6 @@ details.fold > *:not(summary) { padding: 8px 2px 10px; }
    cell or card." No shadow here; a shadow belongs to elevated menus only.
 */
 :root { --panel-pad-x: 13px; --panel-pad-y: 11px; }
-
-.panel-name,
 .ckpt-panel-name {
   margin: calc(var(--panel-pad-y) * -1) calc(var(--panel-pad-x) * -1) var(--panel-pad-y);
   padding: 7px var(--panel-pad-x);
@@ -7259,7 +7153,6 @@ details.fold > *:not(summary) { padding: 8px 2px 10px; }
 
 /* A panel whose header carries a control (a count, a toggle) keeps the control
    at the secondary size — the header names the panel, it is not a toolbar. */
-.panel-name .note,
 .ckpt-panel-name .note { margin: 0; font-size: 11.5px; font-weight: 400; }
 
 .ckpt-panel { padding: var(--panel-pad-y) var(--panel-pad-x); overflow: hidden; }
@@ -7578,7 +7471,6 @@ button.ax-object:hover .ax-object-go { color: var(--select); }
    The warm canvas around each panel is what separates it; a grey strip on top
    of that is a second separation doing the first one's job, and it made eight
    panels read heavy. */
-.panel-name,
 .ckpt-panel-name,
 .workspace .card > h2:first-child,
 .workspace .card > h3:first-child {

@@ -25,6 +25,7 @@
  * in the data.
  */
 
+import { selectionColour } from "@/lib/charts/theme";
 import {
   useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 } from "react";
@@ -42,7 +43,7 @@ import {
   Graph, Layout, Placed, describeLayout,
   neighboursOf,
 } from "@/lib/charts3d/network";
-import { categorical } from "@/lib/tokens";
+import { categorical, seriesEdge } from "@/lib/tokens";
 
 export type Network3DProps = {
   graph: Graph;
@@ -422,6 +423,7 @@ export function paintNetwork(
    * the chart follows the theme rather than assuming a light one.
    */
   const ground = groundColour(canvas);
+  const selection = selectionColour(canvas);
 
   /*
    * Back to front. Without it an edge passing behind a node is drawn over it
@@ -444,8 +446,8 @@ export function paintNetwork(
     // point halfway along is where it actually is.
     context.globalAlpha = touchesSelection
       ? 1 : hazeFor((from.depth + to.depth) / 2, near, far);
-    context.strokeStyle = touchesSelection
-      ? "rgba(20,67,184,0.75)" : "rgba(120,130,150,0.30)";
+    // The theme's selection colour (the fixed blue was 2.3:1 on the dark canvas).
+    context.strokeStyle = touchesSelection ? selection : "rgba(120,130,150,0.30)";
     context.lineWidth = touchesSelection ? 1.8 : 1;
     context.beginPath();
     context.moveTo(from.x, from.y);
@@ -493,6 +495,15 @@ export function paintNetwork(
       ? categorical[hashOf(node.group) % categorical.length]
       : "rgba(90,105,135,0.9)";
     drawLitSphere(context, at.x, at.y, isSelected ? radius + 2 : radius, fill);
+    // A pale group is ringed so its beads stay findable on a light page (D416).
+    const pale = node.group ? seriesEdge(fill) : null;
+    if (pale && !isSelected && !isHovered) {
+      context.beginPath();
+      context.arc(at.x, at.y, radius, 0, Math.PI * 2);
+      context.strokeStyle = pale;
+      context.lineWidth = 1;
+      context.stroke();
+    }
 
     if (isSelected || isHovered) {
       // The path has to be laid down here: `drawLitSphere` stamps an image and
@@ -503,8 +514,7 @@ export function paintNetwork(
       context.arc(at.x, at.y, isSelected ? radius + 2 : radius, 0, Math.PI * 2);
       // An outline as well as a colour, because §82 forbids state carried by
       // colour alone.
-      context.strokeStyle = isSelected
-        ? "rgba(20,67,184,1)" : "rgba(60,70,90,0.8)";
+      context.strokeStyle = isSelected ? selection : "rgba(60,70,90,0.8)";
       context.lineWidth = isSelected ? 2.5 : 1.5;
       context.stroke();
     }

@@ -37,7 +37,7 @@
 import { useId, useMemo, useState } from "react";
 import { extent } from "d3-array";
 import { scaleLinear } from "d3-scale";
-import { categorical } from "@/lib/tokens";
+import { categorical, seriesEdge } from "@/lib/tokens";
 import { ChartTable } from "./ChartTable";
 import { ChartTooltip, readable, useChartHover } from "./interaction";
 
@@ -176,6 +176,9 @@ export function Projection({
                     ? categorical[groups.indexOf(p.group) % categorical.length]
                     : categorical[0]}
                   fillOpacity={dim ? 0.14 : 1}
+                  stroke={seriesEdge(p.group
+                    ? categorical[groups.indexOf(p.group) % categorical.length]
+                    : categorical[0]) ?? undefined}
                   tabIndex={0}
                   role="button"
                   aria-label={`${p.label}${p.group ? `, ${p.group}` : ""}`}

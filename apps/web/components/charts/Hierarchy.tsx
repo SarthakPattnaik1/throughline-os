@@ -26,7 +26,7 @@
 
 import { useId, useMemo } from "react";
 import { hierarchy, treemap, partition, cluster, HierarchyNode } from "d3-hierarchy";
-import { categorical } from "@/lib/tokens";
+import { categorical, seriesEdge } from "@/lib/tokens";
 import { ChartTable } from "./ChartTable";
 import { ChartTooltip, readable, useChartHover } from "./interaction";
 
@@ -217,7 +217,7 @@ export function Hierarchy({
               {nodes.map((d) => (
                 <g key={d.data.id} className="tree-node"
                    transform={`translate(${d.y},${d.x})`}>
-                  <circle r={3.5} fill={colour(d)} />
+                  <circle r={3.5} fill={colour(d)} stroke={seriesEdge(colour(d)) ?? undefined} />
                   <text x={d.children ? -8 : 8} dy="0.32em"
                         textAnchor={d.children ? "end" : "start"}>
                     {d.data.label}
@@ -250,6 +250,7 @@ export function Hierarchy({
                     width={Math.max(0, box.w)} height={Math.max(0, box.h)}
                     fill={colour(d)}
                     fillOpacity={d.children ? 0.16 : 0.82}
+                    stroke={!d.children ? seriesEdge(colour(d)) ?? undefined : undefined}
                     rx={2}
                   />
                   {roomy && (

@@ -7,6 +7,7 @@
  * joined, and that a path's direction is visible at all.
  */
 
+import { SELECT_FALLBACK } from "@/lib/charts/theme";
 import { describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
 import { createRef } from "react";
@@ -217,7 +218,9 @@ describe("direction is visible", () => {
     const widest = (r: ReturnType<typeof paint>) =>
       Math.max(...r.calls.filter((c) => c.op === "stroke").map((c) => c.alpha));
     expect(widest(picked)).toBeGreaterThanOrEqual(widest(plain));
-    expect(picked.calls.some((c) => c.stroke.includes("20,67,184"))).toBe(true);
+    // In the theme's selection colour — the stand-in canvas has no styles, so
+    // the light theme's value — not the fixed blue that vanished on dark.
+    expect(picked.calls.some((c) => c.stroke === SELECT_FALLBACK)).toBe(true);
   });
 });
 
