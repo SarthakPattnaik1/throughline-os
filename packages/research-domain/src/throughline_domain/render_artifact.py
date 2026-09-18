@@ -22,7 +22,7 @@ from typing import Any
 from . import citations as citations_mod
 from . import communication
 from .ids import new_id
-from .storage import export_directory, export_path, storage_root
+from .storage import export_directory, export_path, storage_key_for
 
 FORMATS = ("markdown", "html", "docx", "pptx")
 
@@ -86,7 +86,7 @@ def render(cur, *, artifact_id: str, fmt: str) -> dict[str, Any]:
     path = export_path(
         "communication_artifacts", artifact_id, render_id, suffix)
     path.write_bytes(payload)
-    storage_key = str(path.relative_to(storage_root()))
+    storage_key = storage_key_for(path)
 
     cur.execute(
         "INSERT INTO artifact_renders(id, artifact_id, fmt, storage_key, byte_size, "

@@ -119,6 +119,18 @@ def _validated_key_parts(storage_key: str) -> tuple[str, ...]:
         safe_extension = _canonical_extension(extension)
         return folder, object_id, f"{render_id}.{safe_extension}"
 
+    # Blender renders: figures/vis_<id>/blender-<12 hex>/vis_<id>-<12 hex>-blender.png.
+    # The one four-part shape, rebuilt from the canonical id and the parsed
+    # spec-hash prefix, so a stored Blender render reads back through this
+    # function like every other export rather than around it.
+    if len(parts) == 4 and parts[0] == "figures" and parts[2].startswith("blender-"):
+        object_id = _canonical_export_id("visuals", parts[1])
+        tag = _hex_token(parts[2][len("blender-"):], 12, label="Spec hash")
+        filename = f"{object_id}-{tag}-blender.png"
+        if parts[3] != filename:
+            raise StorageError("Blender render key does not name its own figure")
+        return "figures", object_id, f"blender-{tag}", filename
+
     raise StorageError("Storage key has an unsupported shape")
 
 
@@ -194,6 +206,10 @@ def _canonical_extension(value: str) -> str:
     # a query parameter.
     if value == "md":
         return "md"
+    if value == "html":
+        # Reports render to HTML too; missing here, every HTML export raised
+        # and answered 500 (tests/test_every_export_format_can_be_stored.py).
+        return "html"
     if value == "docx":
         return "docx"
     if value == "pdf":
@@ -230,6 +246,28 @@ def export_path(
     if path.parent != directory:
         raise StorageError("Export path escapes its object directory")
     return path
+
+
+def blender_directory(visual_id: str, spec_hash: str) -> Path:
+    """Where a figure's Blender working files and render go, built from checked parts."""
+    tag = _hex_token(spec_hash[:12], 12, label="Spec hash")
+    return export_directory("visuals", visual_id) / f"blender-{tag}"
+
+
+def storage_key_for(path: Path) -> str:
+    """The storage key of a file this store wrote, as `path_for` will read it back.
+
+    Computed against the *resolved* root, because `export_path` returns a
+    resolved path. Taking `path.relative_to(storage_root())` mixed the two, and
+    wherever the root sits behind a symlink — macOS's temporary directory is
+    `/var` → `/private/var` — every figure and report render raised and answered
+    500. One helper, so the three writers cannot disagree about it again.
+    """
+    root = storage_root().resolve()
+    resolved = Path(path).resolve()
+    if not resolved.is_relative_to(root):
+        raise StorageError("That file is not inside the object store")
+    return resolved.relative_to(root).as_posix()
 
 
 def collect(orphan_keys: list[str]) -> dict[str, int]:

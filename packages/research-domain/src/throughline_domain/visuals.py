@@ -33,7 +33,10 @@ from .events import audit, emit
 from .ids import new_id
 from .lineage import add_edge
 from .objects import create_object
-from .storage import export_directory, export_path, storage_root
+from .storage import (
+    StorageError, blender_directory, export_directory, export_path, path_for,
+    storage_key_for,
+)
 
 
 class VisualError(RuntimeError):
@@ -330,7 +333,7 @@ def render_visual(cur, *, visual_id: str, fmt: str,
         })
     byte_size = path.stat().st_size
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    storage_key = str(path.relative_to(storage_root()))
+    storage_key = storage_key_for(path)
 
     cur.execute(
         "INSERT INTO visual_renders(id, visual_id, format, storage_key, content_hash, "
@@ -559,14 +562,15 @@ def render_through_blender(cur, *, visual_id: str,
     data = VisualData.model_validate(row["data"])
     current_hash = row["spec_hash"]
 
-    directory = (storage_root() / "figures" / visual_id
-                 / f"blender-{current_hash[:12]}")
+    # Built from the canonical id and a hex-checked hash, never the raw strings,
+    # so the key recorded below is one `path_for` reads back (CodeQL #6, #7).
+    directory = blender_directory(visual_id, current_hash)
     directory.mkdir(parents=True, exist_ok=True)
     obj_path = directory / "fitted_surface.obj"
     ply_path = directory / "observations.ply"
     obj_path.write_text(geometry.surface_obj(spec, data))
     ply_path.write_text(geometry.observations_ply(spec, data))
-    out_path = directory / f"{visual_id}-{current_hash[:12]}-blender.png"
+    out_path = directory / f"{directory.parent.name}-{directory.name[len('blender-'):]}-blender.png"
     out_path.unlink(missing_ok=True)
 
     try:
@@ -579,7 +583,7 @@ def render_through_blender(cur, *, visual_id: str,
 
     byte_size = out_path.stat().st_size
     digest = hashlib.sha256(out_path.read_bytes()).hexdigest()
-    storage_key = str(out_path.relative_to(storage_root()))
+    storage_key = storage_key_for(out_path)
 
     cur.execute(
         "INSERT INTO visual_renders(id, visual_id, format, storage_key, "
@@ -660,6 +664,10 @@ def blender_render_file(cur, *, visual_id: str) -> Path | None:
     found = cur.fetchone()
     if not found or not found["storage_key"]:
         return None
-    path = storage_root() / found["storage_key"]
-    return path if path.exists() else None
+    # Through the validated reader: the key came from a row, and a row is not
+    # a reason to build a path from a string.
+    try:
+        return path_for(found["storage_key"])
+    except StorageError:
+        return None
 
