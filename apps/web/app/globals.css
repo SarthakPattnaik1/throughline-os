@@ -90,7 +90,9 @@
    * *where I am* from *what I picked* — [[D355]], the half that stayed open
    * after the light palette went gold.
    *
-   * #1D4ED8 on the near-white panel is 7.4:1, and its tint is the ground a
+   * #355F9D on the near-white canvas measures 6.1:1 (6.4:1 on white; the
+   * note said #1D4ED8 at 7.4:1, a value and a number neither of which is this
+   * token — canvas-selection-follows-the-theme.test.ts measures it now), and its tint is the ground a
    * selected row sits on. The tint is deliberately weak: a chosen row is
    * marked, not highlighted, and a list of twenty with one picked should read
    * as a list and not as a warning.
