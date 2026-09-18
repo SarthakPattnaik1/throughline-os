@@ -44,6 +44,7 @@
  * makes the frame budget a permanent cost rather than one paid while dragging.
  */
 
+import { selectionColour } from "@/lib/charts/theme";
 import {
   useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 } from "react";
@@ -268,6 +269,7 @@ export function Volume({
      * not go through React.
      */
     const palette = getComputedStyle(canvas);
+    const selection = selectionColour(canvas);
     const colours = {
       line: palette.getPropertyValue("--line-strong").trim(),
       grid: palette.getPropertyValue("--line").trim(),
@@ -363,8 +365,10 @@ export function Volume({
     // permanent crosshair on a figure is a mark that means nothing to a reader
     // who is not using the keyboard — and this chart is also drawn into reports.
     if (focusedRef.current) {
-      context.strokeStyle = "rgba(20,67,184,0.55)";
-      context.lineWidth = 1;
+      // The keyboard's aim, in the theme's selection colour: the fixed blue
+      // at 55% was all but invisible on the dark canvas.
+      context.strokeStyle = selection;
+      context.lineWidth = 1.25;
       const arm = 7;
       context.beginPath();
       context.moveTo(cx - arm, cy); context.lineTo(cx - 2, cy);
@@ -392,17 +396,25 @@ export function Volume({
       if (inRegion && !isSelected && !isHovered) {
         context.beginPath();
         context.arc(m.x, m.y, m.r + 2.5, 0, Math.PI * 2);
-        context.strokeStyle = "rgba(20,67,184,0.30)";
+        context.save();
+        context.strokeStyle = selection;
+        context.globalAlpha = 0.3;
         context.lineWidth = 1;
         context.stroke();
+        context.restore();
         continue;
       }
       if (!isSelected && !isHovered) continue;
       context.beginPath();
       context.arc(m.x, m.y, m.r + (isSelected ? 5 : 3.5), 0, Math.PI * 2);
-      context.strokeStyle = isSelected ? "#1443B8" : "rgba(20,67,184,0.55)";
+      // The theme's selection colour; the hard-coded blue was 2.3:1 on the
+      // dark canvas. Hover is the same colour, fainter.
+      context.save();
+      context.strokeStyle = selection;
+      context.globalAlpha = isSelected ? 1 : 0.55;
       context.lineWidth = isSelected ? 2 : 1.25;
       context.stroke();
+      context.restore();
     }
 
     /*

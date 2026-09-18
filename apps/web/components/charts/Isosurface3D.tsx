@@ -534,7 +534,10 @@ export function paintSurface(
      * appearing to float in front of the shell.
      */
     if (index === selected) {
-      context.strokeStyle = "var(--accent, #d84315)";
+      // Orange rather than the theme's selection blue: the shell itself is
+      // drawn in blues, and the outline has to stand off it. 4.3:1 on both
+      // canvases. (A `var(--accent, …)` line above this did nothing — a canvas
+      // cannot resolve a CSS variable — and has gone.)
       context.strokeStyle = "#d84315";
       context.lineWidth = 2;
       context.stroke();
