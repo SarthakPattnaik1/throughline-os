@@ -75,6 +75,32 @@ export type Format = (typeof FORMATS)[number];
 
 const VECTOR: readonly string[] = ["svg", "pdf", "eps"];
 
+/**
+ * What a figure is drawn on. `-clear` paints nothing behind the marks, so the
+ * figure takes the page it is placed on; the ink is chosen for the page it is
+ * going onto, which is the one thing a transparent figure cannot work out.
+ */
+export const GROUNDS = [
+  ["light", "White"],
+  ["dark", "Dark"],
+  ["light-clear", "Transparent, for a light page"],
+  ["dark-clear", "Transparent, for a dark page"],
+] as const;
+export type Ground = (typeof GROUNDS)[number][0];
+
+/** Formats with no alpha channel, for which a transparent ground is refused. */
+const NO_ALPHA: readonly string[] = ["eps", "jpeg", "jpg"];
+
+/** The query that asks the server for a ground, and the filename suffix it names. */
+export function groundQuery(ground: Ground): { query: string; suffix: string } {
+  const dark = ground.startsWith("dark");
+  const clear = ground.endsWith("-clear");
+  return {
+    query: `&ground=${dark ? "dark" : "light"}${clear ? "&transparent=true" : ""}`,
+    suffix: `${dark ? "-dark" : ""}${clear ? "-transparent" : ""}`,
+  };
+}
+
 /** Whether a pixel height means anything for this format. */
 export function takesAHeight(format: string): boolean {
   return !VECTOR.includes(format.toLowerCase());
@@ -139,6 +165,7 @@ export function PublishFigure({ projectId, analysisRunId, spec, findingId,
   const [created, setCreated] = useState<Created | null>(null);
   const [format, setFormat] = useState<Format>("pdf");
   const [height, setHeight] = useState(1200);
+  const [ground, setGround] = useState<Ground>("light");
   const [busy, setBusy] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -189,6 +216,7 @@ export function PublishFigure({ projectId, analysisRunId, spec, findingId,
     setError(null);
     setWarning(null);
     const sized = takesAHeight(format) ? `&height=${height}` : "";
+    const look = groundQuery(ground);
     try {
       /*
        * Asked for before the file is fetched, so a warning about the format
@@ -196,13 +224,13 @@ export function PublishFigure({ projectId, analysisRunId, spec, findingId,
        * with the download has already lost.
        */
       const rendered = await api.post<{ warning?: string | null }>(
-        `/api/visuals/${created.visual_id}/render?format=${format}${sized}`);
+        `/api/visuals/${created.visual_id}/render?format=${format}${sized}${look.query}`);
       if (rendered.warning) setWarning(rendered.warning);
 
       const bytes = await api.getForBytes(
-        `/api/visuals/${created.visual_id}/download?format=${format}${sized}`);
+        `/api/visuals/${created.visual_id}/download?format=${format}${sized}${look.query}`);
       const size = takesAHeight(format) ? `-${height}px` : "";
-      save(bytes, `${created.visual_id}${size}.${format}`,
+      save(bytes, `${created.visual_id}${size}${look.suffix}.${format}`,
            format === "svg" ? "image/svg+xml" : "application/octet-stream");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
@@ -265,13 +293,30 @@ export function PublishFigure({ projectId, analysisRunId, spec, findingId,
               <select
                 value={format}
                 onChange={(event) => {
-                  setFormat(event.target.value as Format);
+                  const next = event.target.value as Format;
+                  setFormat(next);
+                  // A format with no alpha cannot keep a transparent ground.
+                  if (NO_ALPHA.includes(next) && ground.endsWith("-clear")) {
+                    setGround(ground.startsWith("dark") ? "dark" : "light");
+                  }
                   setWarning(null);
                 }}
               >
                 {FORMATS.map((f) => (
                   <option key={f} value={f}>{f.toUpperCase()}</option>
                 ))}
+              </select>
+            </label>
+
+            <label>
+              Background{" "}
+              <select value={ground}
+                      onChange={(event) => setGround(event.target.value as Ground)}>
+                {GROUNDS.filter(([value]) => !(NO_ALPHA.includes(format)
+                                              && value.endsWith("-clear")))
+                  .map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
               </select>
             </label>
 
@@ -348,6 +393,7 @@ export type BlenderState = {
   render: null | {
     render_id: string;
     renderer_version: string | null;
+    style?: string;
     deterministic: boolean;
     bytes: number;
     created_at: string;
@@ -382,6 +428,8 @@ export function BlenderRender({ visualId }: { visualId: string }) {
   const [image, setImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [style, setStyle] = useState<"figure" | "hero">("figure");
+  const [ground, setGround] = useState<"light" | "dark">("light");
   const poll = useRef<number | null>(null);
   const shown = useRef<string | null>(null);
 
@@ -392,6 +440,11 @@ export function BlenderRender({ visualId }: { visualId: string }) {
     return next;
   }, [visualId]);
 
+  /*
+   * Keyed on the render *and* when it was made. Rendering again updates the
+   * same row, so the id alone never changed and the panel went on showing
+   * the first picture after every later one had finished.
+   */
   const showImage = useCallback(async (renderId: string) => {
     if (shown.current === renderId) return;
     const bytes = await api.getForBytes(
@@ -415,7 +468,7 @@ export function BlenderRender({ visualId }: { visualId: string }) {
         const next = await load();
         if (!next.run || FINISHED.includes(next.run.state)) {
           stop();
-          if (next.render) await showImage(next.render.render_id);
+          if (next.render) await showImage(`${next.render.render_id}@${next.render.created_at}`);
         }
       } catch (err) {
         stop();
@@ -430,7 +483,7 @@ export function BlenderRender({ visualId }: { visualId: string }) {
       .then(async (first) => {
         if (!live) return;
         if (first.run && !FINISHED.includes(first.run.state)) watch();
-        else if (first.render) await showImage(first.render.render_id);
+        else if (first.render) await showImage(`${first.render.render_id}@${first.render.created_at}`);
       })
       .catch((err) => {
         if (live) setError(err instanceof ApiError ? err.message : String(err));
@@ -445,7 +498,8 @@ export function BlenderRender({ visualId }: { visualId: string }) {
     setStarting(true);
     setError(null);
     try {
-      await api.post(`/api/visuals/${visualId}/blender-render`);
+      await api.post(
+        `/api/visuals/${visualId}/blender-render?style=${style}&ground=${ground}`);
       await load();
       watch();
     } catch (err) {
@@ -487,6 +541,30 @@ export function BlenderRender({ visualId }: { visualId: string }) {
             Blender {state.version} on this machine renders the fitted surface
             with light and material. It runs in the background, and the picture
             appears here when it is done.
+          </p>
+          <div className="row" style={{ gap: "0.75rem", alignItems: "center" }}>
+            <label>
+              Look{" "}
+              <select value={style} disabled={running || starting}
+                      onChange={(event) => setStyle(event.target.value as "figure" | "hero")}>
+                <option value="figure">Figure — transparent, all in focus</option>
+                <option value="hero">Cover — backdrop and shallow focus</option>
+              </select>
+            </label>
+            <label>
+              Ground{" "}
+              <select value={ground} disabled={running || starting}
+                      onChange={(event) => setGround(event.target.value as "light" | "dark")}>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+          </div>
+          <p className="note">
+            The surface is coloured by its fitted value on the same scale as
+            every heatmap here: dark purple lowest, yellow highest.
+            {style === "hero" && " A cover render blurs what is out of focus — "
+              + "use the figure look for anything a reader will take values from."}
           </p>
           <button className="btn" disabled={running || starting}
                   onClick={() => void start()}>

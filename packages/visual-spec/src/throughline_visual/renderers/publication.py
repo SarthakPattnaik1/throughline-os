@@ -18,32 +18,115 @@ matplotlib.use("Agg")  # no display, no interactive backend
 
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+
 from matplotlib.colors import LogNorm, PowerNorm  # noqa: E402
 
+from .. import tokens  # noqa: E402
 from ..spec import (  # noqa: E402
     BinShape, ResearchVisualSpec, Scale, UncertaintyDisplay, VisualData, VisualType,
 )
 
-#:  — journal-style defaults. Restrained, legible at column width.
+#:  — journal-style defaults. Restrained, legible at column width. The
+#: colours and sizes are not here: they come from `tokens`, per ground, through
+#: `style_for` — this is only what does not change with the ground.
 PUBLICATION_STYLE: dict[str, Any] = {
     "figure.figsize": (6.5, 4.2),
     "figure.dpi": 100,
     "savefig.dpi": 300,
-    "font.size": 9,
-    "axes.titlesize": 10,
-    "axes.labelsize": 9,
+    "font.family": "sans-serif",
+    "font.sans-serif": list(tokens.FONT_STACK),
+    "font.size": tokens.TYPE["label"],
+    "axes.titlesize": tokens.TYPE["title"],
+    "axes.titleweight": "bold",
+    "axes.titlelocation": "left",
+    "axes.labelsize": tokens.TYPE["label"],
+    "xtick.labelsize": tokens.TYPE["tick"],
+    "ytick.labelsize": tokens.TYPE["tick"],
+    "legend.fontsize": tokens.TYPE["legend"],
+    "legend.title_fontsize": tokens.TYPE["legend"],
     "axes.spines.top": False,
     "axes.spines.right": False,
+    "axes.linewidth": 0.6,
+    "axes.axisbelow": True,
+    "xtick.major.width": 0.6,
+    "ytick.major.width": 0.6,
+    "xtick.major.size": 3,
+    "ytick.major.size": 3,
     "axes.grid": True,
-    # Solid, not transparent: `#ebebeb` is what `#b0b0b0` at 25% made over
-    # white. EPS has no transparency, so an alpha grid came out at full
+    # Solid, not transparent: the grid colour is what a 25% grey made over the
+    # ground. EPS has no transparency, so an alpha grid came out at full
     # strength there — visibly heavier than the same figure as PNG or PDF.
-    "grid.color": "#ebebeb",
     "grid.alpha": 1.0,
     "grid.linewidth": 0.5,
     "legend.frameon": False,
     "savefig.bbox": "tight",
+    "svg.fonttype": "none",   # text stays text in an SVG: searchable, editable
+    "pdf.fonttype": 42,       # TrueType in a PDF, which journals' checkers accept
 }
+
+#: Formats with no alpha channel. A transparent ground is refused for these
+#: rather than delivered as black or white — the thing the caller asked to avoid.
+OPAQUE_FORMATS = ("eps", "jpeg", "jpg")
+
+
+@dataclass(frozen=True)
+class Look:
+    """How one figure is drawn: its ground, and the colours that follow from it.
+
+    Passed to every drawer, so no drawer names a colour of its own — which is
+    how a dark export came to have white halos round every point.
+    """
+
+    ground: str = "light"
+    transparent: bool = False
+
+    @property
+    def ink(self) -> dict[str, str]:
+        return tokens.ink(self.ground)
+
+    @property
+    def palette(self) -> list[str]:
+        return tokens.categorical(self.ground)
+
+    def hue(self, index: int) -> str:
+        return self.palette[index % len(self.palette)]
+
+    def edge(self, hue: str) -> str:
+        """The halo round a mark: the ground, unless the mark would vanish into it.
+
+        Okabe-Ito yellow on white is 1.3:1 — a yellow point with a white halo
+        is a hole in the figure. Those marks are outlined in ink instead.
+        """
+        neutrals = self.ink
+        if tokens.contrast(hue, neutrals["ground"]) < 1.5:
+            return neutrals["ink"]
+        return neutrals["edge"]
+
+
+def style_for(look: Look) -> dict[str, Any]:
+    """The full matplotlib style for a look: the fixed defaults plus its colours."""
+    neutrals = look.ink
+    ground = "none" if look.transparent else neutrals["ground"]
+    return {
+        **PUBLICATION_STYLE,
+        "figure.facecolor": ground,
+        "axes.facecolor": ground,
+        "savefig.facecolor": ground,
+        "savefig.transparent": look.transparent,
+        "text.color": neutrals["ink"],
+        "axes.labelcolor": neutrals["ink"],
+        "axes.titlecolor": neutrals["ink"],
+        "axes.edgecolor": neutrals["muted"],
+        "xtick.color": neutrals["muted"],
+        "ytick.color": neutrals["muted"],
+        "xtick.labelcolor": neutrals["muted"],
+        "ytick.labelcolor": neutrals["muted"],
+        "grid.color": neutrals["grid"],
+        "legend.labelcolor": neutrals["ink"],
+        "axes.prop_cycle": matplotlib.cycler(color=look.palette),
+        "image.cmap": tokens.SEQUENTIAL,
+    }
 
 #: Formats a figure may be written in.
 #:
@@ -81,10 +164,10 @@ SUPPORTED_FORMATS = VECTOR_FORMATS + RASTER_FORMATS
 #: the figure.
 HEIGHTS = {"720p": 720, "1080p": 1080, "1440p": 1440, "4k": 2160}
 
-#: Colourblind-safe (Okabe-Ito).  — colour is never the only encoder, so
-#: markers vary too.
-PALETTE = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
-MARKERS = ["o", "s", "^", "D", "v", "P"]
+#: Colourblind-safe (Okabe-Ito), in the web charts' order, from `tokens` —
+#: colour is never the only encoder, so markers vary too.
+PALETTE = list(tokens.CATEGORICAL)
+MARKERS = list(tokens.MARKERS)
 
 
 class RenderError(ValueError):
@@ -123,6 +206,7 @@ def warn_about_format(fmt: str, *, has_photograph: bool = False) -> str | None:
 def render(
     spec: ResearchVisualSpec, data: VisualData, *, path: Path, fmt: str = "svg",
     height_px: int | None = None, metadata: dict[str, str] | None = None,
+    ground: str = "light", transparent: bool = False,
 ) -> Path:
     """
     Render to `path`. Returns the written path.
@@ -138,8 +222,13 @@ def render(
     caller asking for a height is trying to pin down. A constrained layout fits
     the labels *inside* the figure instead of growing it, so nothing is clipped
     and the height is the height that was asked for.
+
+    `ground` is `light` or `dark`: the neutrals the figure is drawn in. With
+    `transparent`, nothing is painted behind the marks, so the figure takes
+    whatever page it is placed on — the pair a README shows by theme.
     """
     fmt = fmt.lower()
+    look = _look(ground, transparent, fmt)
     if fmt not in SUPPORTED_FORMATS:
         raise RenderError(
             f"{fmt!r} is not a supported publication format. "
@@ -157,7 +246,7 @@ def render(
 
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    style = dict(PUBLICATION_STYLE)
+    style = style_for(look)
     saving: dict[str, Any] = {"format": fmt if fmt != "jpg" else "jpeg"}
 
     if height_px is not None:
@@ -187,12 +276,37 @@ def render(
         figure, axes = plt.subplots(
             layout="constrained" if height_px is not None else None)
         try:
-            _draw(spec, data, axes)
-            _decorate(spec, data, figure, axes)
+            draw_panel(spec, data, axes, look)
+            _caption(spec, figure, look)
             figure.savefig(path, **saving)
         finally:
             plt.close(figure)
     return path
+
+
+def _look(ground: str, transparent: bool, fmt: str) -> Look:
+    """The look asked for, refused when the format cannot carry it."""
+    if ground not in tokens.GROUNDS:
+        raise RenderError(
+            f"{ground!r} is not a figure ground. Grounds: {', '.join(tokens.GROUNDS)}")
+    if transparent and fmt in OPAQUE_FORMATS:
+        raise RenderError(
+            f"{fmt.upper()} has no transparency, so a transparent ground would "
+            "come out solid black or white. Use PNG, SVG or PDF for a figure "
+            "that takes the colour of the page it is placed on.")
+    return Look(ground=ground, transparent=transparent)
+
+
+def draw_panel(spec: ResearchVisualSpec, data: VisualData, axes,
+               look: Look | None = None) -> None:
+    """Draw one figure onto `axes`: its marks, axes and title — not its caption.
+
+    The unit a composed figure is built from. The caption belongs to the whole
+    figure, so `render` adds it and `compose` gathers them into one legend.
+    """
+    look = look or Look()
+    _draw(spec, data, axes, look)
+    _decorate(spec, data, axes, look)
 
 
 def _drawers() -> dict[VisualType, Any]:
@@ -231,14 +345,14 @@ def can_render(visual_type: VisualType | str) -> bool:
         return False
 
 
-def _draw(spec: ResearchVisualSpec, data: VisualData, axes) -> None:
+def _draw(spec: ResearchVisualSpec, data: VisualData, axes, look: Look) -> None:
     drawer = _drawers().get(spec.visual_type)
     if drawer is None:
         raise RenderError(f"No publication renderer for {spec.visual_type}")
-    drawer(spec, data, axes)
+    drawer(spec, data, axes, look)
 
 
-def _hexbin(spec, data: VisualData, axes) -> None:
+def _hexbin(spec, data: VisualData, axes, look: Look) -> None:
     """Density by cell, for sample sizes where marks would overplot.
 
     Hexagons rather than squares: a square grid produces horizontal and vertical
@@ -261,13 +375,13 @@ def _hexbin(spec, data: VisualData, axes) -> None:
     if spec.bin_shape is BinShape.SQUARE:
         norm = (LogNorm() if scale == "log"
                 else PowerNorm(0.5) if scale == "sqrt" else None)
-        counts, _, _, mesh = axes.hist2d(xs, ys, bins=bins, cmap="viridis",
+        counts, _, _, mesh = axes.hist2d(xs, ys, bins=bins, cmap=tokens.SEQUENTIAL,
                                          norm=norm, cmin=1)
     else:
         # matplotlib's own log binning for hexagons; sqrt via PowerNorm.
         mesh = axes.hexbin(
-            xs, ys, gridsize=bins, cmap="viridis", mincnt=1,
-            linewidths=0.2, edgecolors="white",
+            xs, ys, gridsize=bins, cmap=tokens.SEQUENTIAL, mincnt=1,
+            linewidths=0.2, edgecolors=look.ink["edge"],
             bins="log" if scale == "log" else None,
             norm=PowerNorm(0.5) if scale == "sqrt" else None,
         )
@@ -277,38 +391,39 @@ def _hexbin(spec, data: VisualData, axes) -> None:
     # logarithmic misjudges the ratio between two cells by an order of
     # magnitude — the same class of error as an unstated bin width.
     suffix = "" if scale == "linear" else f" ({scale} scale)"
-    bar.set_label(f"observations per cell{suffix}", fontsize=8)
-    bar.ax.tick_params(labelsize=7)
+    bar.set_label(f"observations per cell{suffix}", fontsize=tokens.TYPE["tick"])
+    bar.ax.tick_params(labelsize=tokens.TYPE["note"])
+    bar.outline.set_visible(False)
 
     # Empty cells are left unpainted (mincnt=1) rather than drawn as the lowest
     # colour, so "no data here" and "a little data here" stay distinguishable.
     if any(a.kind == "regression_line" for a in spec.annotations) and xs.size > 1:
         slope, intercept = np.polyfit(xs, ys, 1)
         line_x = np.linspace(xs.min(), xs.max(), 100)
-        axes.plot(line_x, slope * line_x + intercept, color="#B91C1C",
+        axes.plot(line_x, slope * line_x + intercept, color=look.ink["emphasis"],
                   linewidth=1.4, linestyle="--", label="_nolegend_")
 
 
-def _scatter(spec, data: VisualData, axes) -> None:
+def _scatter(spec, data: VisualData, axes, look: Look) -> None:
     xs = np.asarray(data.x_values, dtype=float)
     ys = np.asarray(data.y_values, dtype=float)
     groups = data.group_values
     if groups:
         for index, name in enumerate(sorted(set(groups))):
             mask = np.array([g == name for g in groups])
-            axes.scatter(xs[mask], ys[mask], s=22, alpha=0.8,
-                         color=PALETTE[index % len(PALETTE)],
+            hue = look.hue(index)
+            axes.scatter(xs[mask], ys[mask], s=22, alpha=0.8, color=hue,
                          marker=MARKERS[index % len(MARKERS)], label=str(name),
-                         edgecolors="white", linewidths=0.4)
-        axes.legend(title=spec.group.label if spec.group else None, fontsize=8)
+                         edgecolors=look.edge(hue), linewidths=0.4)
+        axes.legend(title=spec.group.label if spec.group else None)
     else:
-        axes.scatter(xs, ys, s=22, alpha=0.8, color=PALETTE[0],
-                     edgecolors="white", linewidths=0.4)
+        axes.scatter(xs, ys, s=22, alpha=0.8, color=look.hue(0),
+                     edgecolors=look.edge(look.hue(0)), linewidths=0.4)
 
     if any(a.kind == "regression_line" for a in spec.annotations) and len(xs) > 1:
         slope, intercept = np.polyfit(xs, ys, 1)
         line_x = np.linspace(xs.min(), xs.max(), 100)
-        axes.plot(line_x, slope * line_x + intercept, color="#333333",
+        axes.plot(line_x, slope * line_x + intercept, color=look.ink["ink"],
                   linewidth=1.2, linestyle="--",
                   label="_nolegend_")
         if spec.uncertainty is UncertaintyDisplay.BAND:
@@ -324,12 +439,13 @@ def _scatter(spec, data: VisualData, axes) -> None:
             # the recommender's default figure for any correlation. `#efefef`
             # is the colour the 8% wash made over white, so every other format
             # looks as it did, and z-order 0.5 puts it under the points (1)
-            # and the grid (1.5) rather than relying on drawing order.
+            # and the grid (1.5) rather than relying on drawing order. The
+            # band colour is the ground's, from `tokens`.
             axes.fill_between(line_x, fitted - 1.96 * spread, fitted + 1.96 * spread,
-                              color="#efefef", linewidth=0, zorder=0.5)
+                              color=look.ink["band"], linewidth=0, zorder=0.5)
 
 
-def _forest(spec, data: VisualData, axes) -> None:
+def _forest(spec, data: VisualData, axes, look: Look) -> None:
     positions = np.arange(len(data.categories))
     estimates = np.asarray(data.y_values, dtype=float)
     lows = np.asarray(data.ci_low, dtype=float)
@@ -337,18 +453,18 @@ def _forest(spec, data: VisualData, axes) -> None:
 
     axes.errorbar(estimates, positions,
                   xerr=[estimates - lows, highs - estimates],
-                  fmt="o", color=PALETTE[0], ecolor="#555555",
+                  fmt="o", color=look.hue(0), ecolor=look.ink["muted"],
                   capsize=3, markersize=5, linewidth=1.1)
     axes.set_yticks(positions)
     axes.set_yticklabels([_category_label(spec, c) for c in data.categories])
     axes.invert_yaxis()
     for annotation in spec.annotations:
         if annotation.kind == "reference_line" and annotation.value is not None:
-            axes.axvline(annotation.value, color="#999999", linewidth=1,
+            axes.axvline(annotation.value, color=look.ink["faint"], linewidth=1,
                          linestyle=":", zorder=0)
 
 
-def _box(spec, data: VisualData, axes) -> None:
+def _box(spec, data: VisualData, axes, look: Look) -> None:
     categories = data.categories or sorted(set(data.group_values))
     grouped = [
         [v for v, g in zip(data.y_values, data.group_values) if g == name]
@@ -356,11 +472,14 @@ def _box(spec, data: VisualData, axes) -> None:
     ]
     parts = axes.boxplot(grouped, tick_labels=[str(c) for c in categories],
                          patch_artist=True, widths=0.55,
-                         medianprops={"color": "#222222", "linewidth": 1.4})
+                         medianprops={"color": look.ink["ink"], "linewidth": 1.4},
+                         whiskerprops={"color": look.ink["muted"]},
+                         capprops={"color": look.ink["muted"]},
+                         flierprops={"markeredgecolor": look.ink["muted"]})
     for index, box in enumerate(parts["boxes"]):
-        box.set_facecolor(PALETTE[index % len(PALETTE)])
+        box.set_facecolor(look.hue(index))
         box.set_alpha(0.35)
-        box.set_edgecolor("#444444")
+        box.set_edgecolor(look.ink["muted"])
     # Individual points, jittered, so the reader sees the sample not just the box.
     rng = np.random.default_rng(0)
     for index, values in enumerate(grouped, start=1):
@@ -368,20 +487,20 @@ def _box(spec, data: VisualData, axes) -> None:
             continue
         jitter = rng.normal(0, 0.045, len(values))
         axes.scatter(np.full(len(values), index) + jitter, values, s=8, alpha=0.35,
-                     color="#333333", linewidths=0)
+                     color=look.ink["ink"], linewidths=0)
 
 
-def _bar(spec, data: VisualData, axes) -> None:
+def _bar(spec, data: VisualData, axes, look: Look) -> None:
     positions = np.arange(len(data.categories))
     axes.bar(positions, data.y_values, width=0.6,
-             color=[PALETTE[i % len(PALETTE)] for i in range(len(positions))],
-             alpha=0.85, edgecolor="#333333", linewidth=0.5)
+             color=[look.hue(i) for i in range(len(positions))],
+             alpha=0.85, edgecolor=look.ink["ink"], linewidth=0.5)
     if data.ci_low and data.ci_high and spec.uncertainty is not UncertaintyDisplay.NONE:
         values = np.asarray(data.y_values, dtype=float)
         axes.errorbar(positions, values,
                       yerr=[values - np.asarray(data.ci_low, dtype=float),
                             np.asarray(data.ci_high, dtype=float) - values],
-                      fmt="none", ecolor="#333333", capsize=3, linewidth=1)
+                      fmt="none", ecolor=look.ink["ink"], capsize=3, linewidth=1)
     axes.set_xticks(positions)
     axes.set_xticklabels([str(c) for c in data.categories])
     #  — bar length encodes magnitude, so the baseline is zero. The critic
@@ -390,16 +509,16 @@ def _bar(spec, data: VisualData, axes) -> None:
         axes.set_ylim(bottom=min(0.0, float(np.min(data.y_values))))
 
 
-def _histogram(spec, data: VisualData, axes) -> None:
-    axes.hist(data.y_values, bins="auto", color=PALETTE[0], alpha=0.8,
-              edgecolor="white", linewidth=0.5)
+def _histogram(spec, data: VisualData, axes, look: Look) -> None:
+    axes.hist(data.y_values, bins="auto", color=look.hue(0), alpha=0.8,
+              edgecolor=look.ink["edge"], linewidth=0.5)
     if spec.y is not None and spec.y.include_zero:
         axes.set_ylim(bottom=0)
 
 
-def _heatmap(spec, data: VisualData, axes) -> None:
+def _heatmap(spec, data: VisualData, axes, look: Look) -> None:
     matrix = np.asarray(data.matrix, dtype=float)
-    image = axes.imshow(matrix, cmap="viridis", aspect="auto")
+    image = axes.imshow(matrix, cmap=tokens.SEQUENTIAL, aspect="auto")
     axes.set_xticks(np.arange(len(data.categories)))
     axes.set_xticklabels([str(c) for c in data.categories], rotation=30, ha="right")
     axes.set_yticks(np.arange(len(data.group_values)))
@@ -408,13 +527,14 @@ def _heatmap(spec, data: VisualData, axes) -> None:
     for row in range(matrix.shape[0]):
         for column in range(matrix.shape[1]):
             value = matrix[row, column]
-            axes.text(column, row, f"{value:g}", ha="center", va="center", fontsize=8,
+            axes.text(column, row, f"{value:g}", ha="center", va="center",
+                      fontsize=tokens.TYPE["tick"],
                       color="white" if value < matrix.max() * 0.6 else "#111111")
     axes.figure.colorbar(image, ax=axes, shrink=0.8, label="count")
     axes.grid(False)
 
 
-def _decorate(spec: ResearchVisualSpec, data: VisualData, figure, axes) -> None:
+def _decorate(spec: ResearchVisualSpec, data: VisualData, axes, look: Look) -> None:
     if spec.x is not None and spec.visual_type is not VisualType.FOREST:
         axes.set_xlabel(_axis_label(spec.x))
     if spec.y is not None and spec.visual_type is not VisualType.FOREST:
@@ -426,17 +546,25 @@ def _decorate(spec: ResearchVisualSpec, data: VisualData, figure, axes) -> None:
 
     title = spec.title
     if spec.subtitle:
-        axes.set_title(f"{title}\n{spec.subtitle}", loc="left")
+        # The subtitle is a sentence under the title, not a second bold line.
+        axes.set_title(title, loc="left", pad=16 if title else 6)
+        axes.text(0.0, 1.0, spec.subtitle, transform=axes.transAxes,
+                  fontsize=tokens.TYPE["tick"], color=look.ink["muted"],
+                  ha="left", va="bottom")
     elif title:
         axes.set_title(title, loc="left")
 
+
+def _caption(spec: ResearchVisualSpec, figure, look: Look) -> None:
+    """The caption and sources, under the whole figure."""
     if spec.caption:
         #  — the caption travels with the figure, not in a separate document.
-        figure.text(0.0, -0.06, _wrap(spec.caption), fontsize=7.5,
-                    color="#333333", ha="left", va="top", wrap=True)
+        figure.text(0.0, -0.06, _wrap(spec.caption), fontsize=tokens.TYPE["caption"],
+                    color=look.ink["muted"], ha="left", va="top", wrap=True)
     if spec.citations:
         figure.text(1.0, -0.06, "Sources: " + "; ".join(spec.citations[:3]),
-                    fontsize=7, color="#666666", ha="right", va="top")
+                    fontsize=tokens.TYPE["note"], color=look.ink["faint"],
+                    ha="right", va="top")
 
 
 def _axis_label(encoding) -> str:

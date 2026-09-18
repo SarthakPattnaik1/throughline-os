@@ -5060,6 +5060,7 @@ def get_visual(visual_id: str, user: dict = Depends(current_user)) -> dict[str, 
 @app.post("/api/visuals/{visual_id}/render")
 def render_visual(visual_id: str, format: str = Query("svg"),
                   height: int | None = Query(None, ge=120, le=8000),
+                  ground: str = Query("light"), transparent: bool = Query(False),
                   user: dict = Depends(current_user)) -> dict[str, Any]:
     """
     One spec, rendered by whichever backend was asked for.
@@ -5080,7 +5081,8 @@ def render_visual(visual_id: str, format: str = Query("svg"),
         scoped_project(row["project_id"], user)
         try:
             return visuals.render_visual(cur, visual_id=visual_id, fmt=format,
-                                         height_px=height)
+                                         height_px=height, ground=ground,
+                                         transparent=transparent)
         except visuals.VisualError as exc:
             # A figure that failed the critic is refused, not quietly drawn.
             raise HTTPException(409, str(exc)) from exc
@@ -5103,6 +5105,7 @@ FIGURE_MEDIA_TYPES = {
 @app.get("/api/visuals/{visual_id}/download")
 def download_visual(visual_id: str, format: str = Query("png"),
                     height: int | None = Query(None, ge=120, le=8000),
+                    ground: str = Query("light"), transparent: bool = Query(False),
                     user: dict = Depends(current_user)) -> FileResponse:
     """
     The rendered file itself, as a download.
@@ -5125,7 +5128,8 @@ def download_visual(visual_id: str, format: str = Query("png"),
         scoped_project(row["project_id"], user)
         try:
             rendered = visuals.render_visual(cur, visual_id=visual_id,
-                                             fmt=format, height_px=height)
+                                             fmt=format, height_px=height,
+                                             ground=ground, transparent=transparent)
         except visuals.VisualError as exc:
             raise HTTPException(409, str(exc)) from exc
         except publication_render.RenderError as exc:
@@ -5144,10 +5148,13 @@ def download_visual(visual_id: str, format: str = Query("png"),
             500, "The figure was recorded but its file is unavailable.") from exc
 
     size = "" if height is None else f"-{height}px"
+    # The ground is in the name too: a light and a dark copy of one figure in
+    # the same folder must not be told apart by opening them.
+    look = ("" if ground == "light" else "-dark") + ("-transparent" if transparent else "")
     return FileResponse(
         path,
         media_type=FIGURE_MEDIA_TYPES.get(format.lower(), "application/octet-stream"),
-        filename=f"{visual_id}{size}.{format.lower()}")
+        filename=f"{visual_id}{size}{look}.{format.lower()}")
 
 
 @app.get("/api/visuals/{visual_id}/scene.zip")
@@ -5191,7 +5198,8 @@ def download_visual_geometry(visual_id: str,
 
 
 @app.post("/api/visuals/{visual_id}/blender-render", status_code=202)
-def start_blender_render(visual_id: str,
+def start_blender_render(visual_id: str, style: str = Query("figure"),
+                         ground: str = Query("light"),
                          user: dict = Depends(current_user)) -> dict[str, Any]:
     """
     Render this figure through Blender, on this machine, in the background.
@@ -5212,8 +5220,9 @@ def start_blender_render(visual_id: str,
             raise HTTPException(404, str(exc)) from exc
         scoped_project(row["project_id"], user)
         try:
-            return visuals.request_blender_render(cur, visual_id=visual_id)
-        except visuals.NotASurface as exc:
+            return visuals.request_blender_render(cur, visual_id=visual_id,
+                                                  style=style, ground=ground)
+        except (visuals.NotASurface, visuals.NotALook) as exc:
             raise HTTPException(400, str(exc)) from exc
         except visuals.BlenderUnavailable as exc:
             raise HTTPException(503, str(exc)) from exc

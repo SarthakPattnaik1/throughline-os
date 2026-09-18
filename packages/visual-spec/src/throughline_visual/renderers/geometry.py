@@ -134,12 +134,17 @@ def surface_obj(spec: ResearchVisualSpec, data: VisualData) -> str:
     # Y is up in Blender, so the fitted value takes the vertical axis above and
     # the two predictors lie in the ground plane. A surface exported with the
     # outcome on a horizontal axis arrives on its side.
+    #
+    # Counter-clockwise seen from above, so each face's normal points up the
+    # value axis. It was wound the other way: every normal pointed down, and
+    # Blender lit the surface as its underside — the slope facing the key
+    # light rendered in shadow, and the peak came out darker than the valleys.
     width = len(xs)
     for row_index in range(len(ys) - 1):
         for column_index in range(width - 1):
             base = row_index * width + column_index + 1
             lines.append(
-                f"f {base} {base + 1} {base + width + 1} {base + width}")
+                f"f {base} {base + width} {base + width + 1} {base + 1}")
 
     return "\n".join(lines) + "\n"
 

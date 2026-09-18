@@ -88,6 +88,19 @@ def test_the_grid_is_closed_into_quads():
     assert all(len(face) == 4 for face in faces)
 
 
+def test_every_face_faces_up_the_value_axis():
+    """The value is the file's Y. A face wound the other way is lit as the
+    underside: Blender rendered the slope facing the light in shadow."""
+    obj = geometry.surface_obj(_spec(), _data())
+    vertices = _vertices(obj)
+    for face in _faces(obj):
+        a, b, c = (vertices[i - 1] for i in face[:3])
+        u = [b[k] - a[k] for k in range(3)]
+        v = [c[k] - a[k] for k in range(3)]
+        normal_y = u[2] * v[0] - u[0] * v[2]
+        assert normal_y > 0, face
+
+
 def test_no_face_refers_to_a_vertex_that_is_not_there():
     """OBJ indexes from 1, so an off-by-one here is a mesh that will not open."""
     obj = geometry.surface_obj(_spec(), _data())

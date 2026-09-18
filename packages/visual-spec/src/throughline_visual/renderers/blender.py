@@ -28,12 +28,15 @@ all the researcher's content, and Blender only ever reads them as data.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+
+from .. import tokens
 
 #: Where Blender puts itself, per platform. Checked in order, after `PATH`.
 KNOWN_LOCATIONS = (
@@ -151,13 +154,19 @@ def availability() -> dict[str, Any]:
 #: researcher-supplied text is ever interpolated into executable code.
 RENDER_SCRIPT = '''
 """Render a Throughline scene. Written by throughline_visual, not by hand."""
+import json
 import sys
 
 import bpy
 import mathutils
+from bpy_extras.object_utils import world_to_camera_view
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 obj_path, ply_path, out_path, samples = argv[0], argv[1], argv[2], int(argv[3])
+# The look: colours, size and style, written by `scene_arguments` from the
+# design tokens. Numbers and colour triples only; no researcher text.
+with open(argv[4]) as handle:
+    look = json.load(handle)
 
 # Start from nothing: the default cube would appear in the figure.
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -220,12 +229,41 @@ camera = bpy.data.objects.new("camera", camera_data)
 bpy.context.scene.collection.objects.link(camera)
 # Three-quarter view: high enough to read the surface as a surface, low enough
 # that a fold does not hide behind the one in front of it.
-camera.location = centre + mathutils.Vector((2.5, -2.9, 2.0)) * radius * 1.5
+direction = mathutils.Vector((2.5, -2.9, 2.0)).normalized()
+distance = 4.4 * radius
+camera.location = centre + direction * distance
 constraint = camera.constraints.new(type="TRACK_TO")
 constraint.target = target
 constraint.track_axis = "TRACK_NEGATIVE_Z"
 constraint.up_axis = "UP_Y"
 bpy.context.scene.camera = camera
+bpy.context.scene.render.resolution_x = look["width"]
+bpy.context.scene.render.resolution_y = look["height"]
+if look["style"] == "hero":
+    camera_data.lens = 60
+
+# Then fit it: project the surface's own vertices into the frame and move the
+# camera until the widest reaches 85% of it. A distance from the bounds left
+# the first renders using 40% of the frame — a surface fills its cube
+# unevenly, and the cube's empty corners still set the distance.
+corners = []
+for obj in surface:
+    if obj.type == "MESH":
+        vertices = obj.data.vertices
+        step = max(1, len(vertices) // 4000)
+        corners += [obj.matrix_world @ vertices[i].co
+                    for i in range(0, len(vertices), step)]
+if not corners:
+    corners = [mathutils.Vector((x, y, z)) for x in (lo[0], hi[0])
+               for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]
+for _ in range(4):
+    bpy.context.view_layer.update()
+    spread = 0.0
+    for corner in corners:
+        seen = world_to_camera_view(bpy.context.scene, camera, corner)
+        spread = max(spread, abs(seen.x - 0.5), abs(seen.y - 0.5))
+    distance *= (spread * 2) / 0.85
+    camera.location = centre + direction * distance
 
 # A key light and a fill. Soft, because hard shadows on a data surface read as
 # features of the data.
@@ -238,31 +276,113 @@ key_obj.rotation_euler = (0.6, 0.2, 0.8)
 bpy.context.scene.collection.objects.link(key_obj)
 
 fill = bpy.data.lights.new("fill", type="AREA")
-fill.energy = 220
+# On a dark ground there is no bounce light from the backdrop, so the side
+# the key misses needs more fill to stay readable as the same ramp.
+fill.energy = look["fill"]
 fill.size = 8
 fill_obj = bpy.data.objects.new("fill", fill)
 fill_obj.location = centre + mathutils.Vector((-5, -3, 2)) * radius
 fill_obj.rotation_euler = (1.2, 0.0, -0.8)
 bpy.context.scene.collection.objects.link(fill_obj)
 
+# A rim from behind, so the far edge of the surface separates from the ground
+# instead of sinking into it — on a dark ground the unlit side was lost.
+rim = bpy.data.lights.new("rim", type="AREA")
+rim.energy = 600
+rim.size = 5
+rim_obj = bpy.data.objects.new("rim", rim)
+rim_obj.location = centre + mathutils.Vector((-2, 5, 4)) * radius
+rim_constraint = rim_obj.constraints.new(type="TRACK_TO")
+rim_constraint.target = target
+rim_constraint.track_axis = "TRACK_NEGATIVE_Z"
+rim_constraint.up_axis = "UP_Y"
+bpy.context.scene.collection.objects.link(rim_obj)
+
+# The surface is coloured by its height, on the shared sequential ramp — the
+# same viridis the heatmaps and density figures use. It was one flat blue, so
+# the only cue to the fitted value was shading, which a light moves; colour by
+# value is a second, lighting-independent reading of the same axis.
 material = bpy.data.materials.new("surface")
 material.use_nodes = True
-principled = material.node_tree.nodes.get("Principled BSDF")
+nodes = material.node_tree.nodes
+links = material.node_tree.links
+principled = nodes.get("Principled BSDF")
+position = nodes.new("ShaderNodeNewGeometry")
+separate = nodes.new("ShaderNodeSeparateXYZ")
+height = nodes.new("ShaderNodeMapRange")
+ramp = nodes.new("ShaderNodeValToRGB")
+# World-space height, mapped from the measured bounds: the bottom of the
+# fitted range is the ramp's first stop and the top its last. Object-space
+# coordinates are not the value axis — the importer turns the object to put
+# the file's Y up, so they ran along a predictor instead.
+links.new(position.outputs["Position"], separate.inputs[0])
+links.new(separate.outputs["Z"], height.inputs["Value"])
+height.inputs["From Min"].default_value = lo[2]
+height.inputs["From Max"].default_value = hi[2]
+links.new(height.outputs["Result"], ramp.inputs["Fac"])
+stops = look["ramp_linear"]
+elements = ramp.color_ramp.elements
+while len(elements) < len(stops):
+    elements.new(0.5)
+for index, stop in enumerate(stops):
+    elements[index].position = index / (len(stops) - 1)
+    elements[index].color = (stop[0], stop[1], stop[2], 1.0)
 if principled:
-    principled.inputs["Base Color"].default_value = (0.25, 0.45, 0.75, 1.0)
+    links.new(ramp.outputs["Color"], principled.inputs["Base Color"])
     if "Roughness" in principled.inputs:
-        principled.inputs["Roughness"].default_value = 0.45
+        principled.inputs["Roughness"].default_value = 0.55
+    # A soft sheen, not a mirror: a bright highlight is white, and white is
+    # not on the ramp — it reads as a value the surface does not have.
+    if "Specular IOR Level" in principled.inputs:
+        principled.inputs["Specular IOR Level"].default_value = 0.25
 for obj in surface:
     if obj.type == "MESH":
         obj.data.materials.clear()
         obj.data.materials.append(material)
 
 scene = bpy.context.scene
-scene.render.resolution_x = 1600
-scene.render.resolution_y = 1200
-scene.render.film_transparent = True
 scene.render.image_settings.file_format = "PNG"
+scene.render.image_settings.color_mode = "RGBA"
 scene.render.filepath = out_path
+
+# Colours as the tokens name them. Blender's default view transform (AgX,
+# Filmic before it) compresses and desaturates for photographic highlights,
+# which turned the ramp's yellow end beige — the figure's colours stopped
+# matching the colour bar every other figure uses.
+scene.view_settings.view_transform = "Standard"
+scene.view_settings.look = "None"
+
+world = bpy.data.worlds.new("backdrop")
+scene.world = world
+world.use_nodes = True
+background = world.node_tree.nodes.get("Background")
+if look["style"] == "hero":
+    # A soft vertical gradient behind the figure, in the ground's tones, seen
+    # only by the camera: `Window` coordinates run top to bottom of the frame.
+    scene.render.film_transparent = False
+    window = world.node_tree.nodes.new("ShaderNodeTexCoord")
+    split = world.node_tree.nodes.new("ShaderNodeSeparateXYZ")
+    wash = world.node_tree.nodes.new("ShaderNodeValToRGB")
+    world.node_tree.links.new(window.outputs["Window"], split.inputs[0])
+    world.node_tree.links.new(split.outputs["Y"], wash.inputs["Fac"])
+    low, high = look["backdrop_linear"]
+    wash.color_ramp.elements[0].color = (low[0], low[1], low[2], 1.0)
+    wash.color_ramp.elements[1].color = (high[0], high[1], high[2], 1.0)
+    world.node_tree.links.new(wash.outputs["Color"], background.inputs["Color"])
+    background.inputs["Strength"].default_value = 1.0
+    # Shallow depth of field, focused on the centre of the surface: the eye
+    # goes where the figure is sharp. Never in the plain figure, where every
+    # part of the surface must be equally legible.
+    camera_data.dof.use_dof = True
+    camera_data.dof.focus_object = target
+    camera_data.dof.aperture_fstop = look["fstop"]
+else:
+    # A figure is placed on a page or a slide, so it carries no ground of its
+    # own; the world only lights it, dimly, in the ground's tone.
+    scene.render.film_transparent = True
+    ambient = look["backdrop_linear"][1]
+    background.inputs["Color"].default_value = (ambient[0], ambient[1], ambient[2], 1.0)
+    background.inputs["Strength"].default_value = 0.35
 
 # Prefer the fast rasteriser; fall back to whatever this build has. The engine
 # identifiers have changed between releases, so this asks rather than assumes.
@@ -281,8 +401,57 @@ print("throughline: rendered to", out_path)
 '''
 
 
+#: The two looks a render can take. `figure` is for a page: transparent, every
+#: part in focus. `hero` is for a cover or a slide: a backdrop and a shallow
+#: focus, and not for reading values off.
+STYLES = ("figure", "hero")
+
+
+def _linear(hex_colour: str) -> list[float]:
+    """sRGB `#RRGGBB` to the linear triple Blender's colour inputs expect."""
+    value = hex_colour.lstrip("#")
+    channels = (int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return [round(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4, 6)
+            for c in channels]
+
+
+def _mix(a: str, b: str, amount: float) -> str:
+    """`amount` of `a` over `b`, in sRGB."""
+    pa = [int(a.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    pb = [int(b.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    return "#" + "".join(f"{round(x * amount + y * (1 - amount)):02X}" for x, y in zip(pa, pb))
+
+
+def scene_arguments(*, ground: str = "light", style: str = "figure") -> dict[str, Any]:
+    """Everything the render script needs to know about the look, from the tokens.
+
+    Written to a JSON file the script reads, so no colour — and nothing else —
+    is ever interpolated into the script's source.
+    """
+    if style not in STYLES:
+        raise BlenderError(f"{style!r} is not a render style. Styles: {', '.join(STYLES)}")
+    neutrals = tokens.ink(ground)
+    # The backdrop runs from the ground to a faint wash of the palette's first
+    # hue: the page's own tone, lifted just enough to separate the figure.
+    wash = _mix(tokens.CATEGORICAL[0], neutrals["ground"], 0.10 if ground == "light" else 0.18)
+    hero = style == "hero"
+    return {
+        "style": style,
+        "ground": ground,
+        "ramp": list(tokens.SEQUENTIAL_STOPS),
+        "ramp_linear": [_linear(stop) for stop in tokens.SEQUENTIAL_STOPS],
+        "backdrop": [neutrals["ground"], wash],
+        "backdrop_linear": [_linear(neutrals["ground"]), _linear(wash)],
+        "width": 2560 if hero else 2400,
+        "height": 1440 if hero else 1800,
+        "fstop": 0.35,
+        "fill": 220 if ground == "light" else 520,
+    }
+
+
 def render(*, obj_path: Path, ply_path: Path, out_path: Path,
-           samples: int = 64) -> dict[str, Any]:
+           samples: int = 64, ground: str = "light",
+           style: str = "figure") -> dict[str, Any]:
     """Render the geometry, returning what made the picture.
 
     Refuses rather than falling back to a lesser picture: a researcher who
@@ -294,14 +463,18 @@ def render(*, obj_path: Path, ply_path: Path, out_path: Path,
     if not executable:
         raise BlenderError(INSTALL_HINT)
 
+    arguments = scene_arguments(ground=ground, style=style)
     found_version = version_of(executable)
     script = out_path.parent / "render.py"
     script.write_text(RENDER_SCRIPT)
+    look_path = out_path.parent / "look.json"
+    look_path.write_text(json.dumps(arguments))
 
     command = [
         executable, "--background", "--factory-startup",
         "--python", str(script), "--",
         str(obj_path), str(ply_path), str(out_path), str(int(samples)),
+        str(look_path),
     ]
     try:
         done = subprocess.run(command, capture_output=True, text=True,
@@ -324,6 +497,8 @@ def render(*, obj_path: Path, ply_path: Path, out_path: Path,
         "renderer": "blender",
         "renderer_version": found_version,
         "deterministic": False,
+        "style": style,
+        "ground": ground,
         "note": ("Rendered with Blender "
                  f"{found_version}. A render is not reproducible byte for "
                  "byte; the geometry it was made from is, and exports "
@@ -332,5 +507,5 @@ def render(*, obj_path: Path, ply_path: Path, out_path: Path,
 
 
 __all__ = ["BlenderError", "ENV_VAR", "INSTALL_HINT", "KNOWN_LOCATIONS",
-           "RENDER_SCRIPT", "TIMEOUT_SECONDS", "availability", "find_blender",
-           "render", "version_of"]
+           "RENDER_SCRIPT", "STYLES", "TIMEOUT_SECONDS", "availability",
+           "find_blender", "render", "scene_arguments", "version_of"]

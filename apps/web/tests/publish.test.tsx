@@ -135,7 +135,7 @@ describe("the format", () => {
     render(<PublishFigure projectId="prj_1" analysisRunId="arun_1" />);
     await userEvent.click(await screen.findByRole("button", { name: /Export for/ }));
 
-    await userEvent.selectOptions(screen.getByRole("combobox"), "jpeg");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /Format/ }), "jpeg");
     await userEvent.click(screen.getByRole("button", { name: /Download/ }));
 
     expect(await screen.findByText(/JPEG is lossy/)).toBeTruthy();
@@ -167,10 +167,35 @@ describe("the format", () => {
     await waitFor(() => expect(bytes).toHaveBeenCalled());
     expect(bytes.mock.calls[0][0]).not.toContain("height");
 
-    await userEvent.selectOptions(screen.getByRole("combobox"), "png");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /Format/ }), "png");
     await userEvent.click(screen.getByRole("button", { name: /Download/ }));
     await waitFor(() => expect(bytes).toHaveBeenCalledTimes(2));
     expect(bytes.mock.calls[1][0]).toContain("height=1200");
+  });
+
+  it("draws the figure on the ground asked for, and offers no transparency a format cannot hold (T191)", async () => {
+    vi.spyOn(api, "post")
+      .mockResolvedValueOnce(clean)
+      .mockResolvedValue({ warning: null });
+    const bytes = vi.spyOn(api, "getForBytes")
+      .mockResolvedValue(new Uint8Array([1]));
+    render(<PublishFigure projectId="prj_1" analysisRunId="arun_1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /Export for/ }));
+
+    const background = screen.getByRole("combobox", { name: /Background/ });
+    await userEvent.selectOptions(background, "dark-clear");
+    await userEvent.click(screen.getByRole("button", { name: /Download/ }));
+    await waitFor(() => expect(bytes).toHaveBeenCalled());
+    expect(bytes.mock.calls[0][0]).toContain("ground=dark&transparent=true");
+
+    // EPS has no alpha: the transparent grounds go, and the choice falls back
+    // to the opaque one with the same ink rather than failing on Download.
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /Format/ }), "eps");
+    const options = [...screen.getByRole("combobox", { name: /Background/ })
+      .querySelectorAll("option")].map((o) => o.value);
+    expect(options).toEqual(["light", "dark"]);
+    expect((screen.getByRole("combobox", { name: /Background/ }) as HTMLSelectElement)
+      .value).toBe("dark");
   });
 
   it("names the saved file by the figure id, not by the variables", async () => {
@@ -244,7 +269,7 @@ describe("a figure with no publication export", () => {
 
     expect(await screen.findByText(/has no flat publication export/)).toBeVisible();
     expect(screen.queryByRole("button", { name: /^Download$/ })).toBeNull();
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: /Format/ })).toBeNull();
     // What a surface *can* leave as is still offered.
     expect(screen.getByRole("button", { name: /Download 3D scene/ })).toBeVisible();
     expect(await screen.findByRole("button", { name: "Render with Blender" }))

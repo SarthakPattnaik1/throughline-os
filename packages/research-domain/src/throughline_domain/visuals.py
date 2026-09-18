@@ -281,7 +281,8 @@ def _refuse_if_unpublishable(row: dict[str, Any]) -> None:
 
 
 def render_visual(cur, *, visual_id: str, fmt: str,
-                  height_px: int | None = None) -> dict[str, Any]:
+                  height_px: int | None = None, ground: str = "light",
+                  transparent: bool = False) -> dict[str, Any]:
     """
     Render a stored figure. Publication formats plus the web spec, one source.
 
@@ -289,6 +290,10 @@ def render_visual(cur, *, visual_id: str, fmt: str,
     follows from the figure's own proportions rather than from a video frame.
     It is refused for a vector format by the renderer, because an SVG has no
     pixel height and a silent no-op would leave the caller believing otherwise.
+
+    `ground` (light or dark) and `transparent` choose what the figure is drawn
+    on. Each combination is its own file and its own row: asking for the dark
+    version must not replace the light one a manuscript already links to.
     """
     row = load_visual(cur, visual_id)
     _refuse_if_unpublishable(row)
@@ -308,7 +313,7 @@ def render_visual(cur, *, visual_id: str, fmt: str,
             # was moved to the new index and this one was not. Nothing in the
             # interface asks for vega-lite, which is why nobody saw it.
             "ON CONFLICT (visual_id, format, spec_hash, COALESCE(height_px, -1), "
-            "renderer) DO UPDATE SET payload = EXCLUDED.payload "
+            "renderer, ground, transparent) DO UPDATE SET payload = EXCLUDED.payload "
             "RETURNING id",
             (new_id("vren"), visual_id, fmt, current_hash, jsonb(payload)),
         )
@@ -324,6 +329,7 @@ def render_visual(cur, *, visual_id: str, fmt: str,
     path = export_path("visuals", visual_id, render_id, fmt)
     publication.render(
         spec, data, path=path, fmt=fmt, height_px=height_px,
+        ground=ground, transparent=transparent,
         # Provenance travels inside the file, because a figure that leaves the
         # building is the one output whose link back cannot be a foreign key.
         metadata={
@@ -337,16 +343,18 @@ def render_visual(cur, *, visual_id: str, fmt: str,
 
     cur.execute(
         "INSERT INTO visual_renders(id, visual_id, format, storage_key, content_hash, "
-        "spec_hash, bytes, height_px) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-        "ON CONFLICT (visual_id, format, spec_hash, COALESCE(height_px, -1), renderer) "
-        "DO UPDATE "
+        "spec_hash, bytes, height_px, ground, transparent) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (visual_id, format, spec_hash, COALESCE(height_px, -1), renderer, "
+        "ground, transparent) DO UPDATE "
         "SET storage_key = EXCLUDED.storage_key, content_hash = EXCLUDED.content_hash, "
         "bytes = EXCLUDED.bytes RETURNING id",
         (render_id, visual_id, fmt, storage_key, digest, current_hash,
-         byte_size, height_px),
+         byte_size, height_px, ground, transparent),
     )
     return {"visual_id": visual_id, "format": fmt, "storage_key": storage_key,
             "content_hash": digest, "bytes": byte_size, "height_px": height_px,
+            "ground": ground, "transparent": transparent,
             "warning": publication.warn_about_format(fmt),
             "render_id": cur.fetchone()["id"]}
 
@@ -402,7 +410,7 @@ def stale_renders(cur, visual_id: str) -> list[dict[str, Any]]:
         # are listed, and without them a Blender render read as one more PNG
         # export of the same figure — the conflation migration 0045 exists to
         # prevent, repeated one layer up.
-        "SELECT id, format, renderer, deterministic, spec_hash, created_at "
+        "SELECT id, format, renderer, deterministic, spec_hash, ground, transparent, created_at "
         "FROM visual_renders WHERE visual_id = %s",
         (visual_id,),
     )
@@ -423,6 +431,10 @@ def stale_renders(cur, visual_id: str) -> list[dict[str, Any]]:
 
 #: The worker job that runs Blender.
 BLENDER_RENDER_WORKFLOW = "visual.render_blender"
+
+
+class NotALook(VisualError):
+    """A render style or ground that does not exist. Answered 400."""
 
 
 class NotASurface(VisualError):
@@ -484,7 +496,8 @@ def _plain_error(error: str | None) -> str | None:
     return error
 
 
-def request_blender_render(cur, *, visual_id: str) -> dict[str, Any]:
+def request_blender_render(cur, *, visual_id: str, style: str = "figure",
+                           ground: str = "light") -> dict[str, Any]:
     """
     Queue a Blender render of this figure, or return the one already running.
 
@@ -506,6 +519,17 @@ def request_blender_render(cur, *, visual_id: str) -> dict[str, Any]:
     from throughline_schemas.enums import TERMINAL_WORKFLOW_STATES
 
     from . import workflow
+
+    from throughline_visual import tokens
+    from throughline_visual.renderers import blender
+
+    # Refused on the click, like every other known-in-advance failure.
+    if style not in blender.STYLES:
+        raise NotALook(f"{style!r} is not a render style. "
+                          f"Styles: {', '.join(blender.STYLES)}")
+    if ground not in tokens.GROUNDS:
+        raise NotALook(f"{ground!r} is not a figure ground. "
+                          f"Grounds: {', '.join(tokens.GROUNDS)}")
 
     row = load_visual(cur, visual_id)
     _refuse_if_not_a_surface(row)
@@ -531,13 +555,15 @@ def request_blender_render(cur, *, visual_id: str) -> dict[str, Any]:
 
     run_id = workflow.enqueue(
         cur, workflow_name=BLENDER_RENDER_WORKFLOW,
-        project_id=row["project_id"], payload={"visual_id": visual_id},
+        project_id=row["project_id"],
+        payload={"visual_id": visual_id, "style": style, "ground": ground},
         max_attempts=1)
     return {"run_id": run_id, "state": "queued", "reused": False}
 
 
-def render_through_blender(cur, *, visual_id: str,
-                           samples: int = 64) -> dict[str, Any]:
+def render_through_blender(cur, *, visual_id: str, samples: int = 64,
+                           style: str = "figure",
+                           ground: str = "light") -> dict[str, Any]:
     """
     Render this figure through Blender, and record it as a render.
 
@@ -575,7 +601,8 @@ def render_through_blender(cur, *, visual_id: str,
 
     try:
         made = blender.render(obj_path=obj_path, ply_path=ply_path,
-                              out_path=out_path, samples=samples)
+                              out_path=out_path, samples=samples,
+                              style=style, ground=ground)
     except blender.BlenderError as exc:
         if blender.find_blender() is None:
             raise BlenderUnavailable(str(exc)) from exc
@@ -591,7 +618,7 @@ def render_through_blender(cur, *, visual_id: str,
         "deterministic) VALUES (%s, %s, 'png', %s, %s, %s, %s, 'blender', %s, "
         "FALSE) "
         "ON CONFLICT (visual_id, format, spec_hash, COALESCE(height_px, -1), "
-        "renderer) DO UPDATE SET storage_key = EXCLUDED.storage_key, "
+        "renderer, ground, transparent) DO UPDATE SET storage_key = EXCLUDED.storage_key, "
         "content_hash = EXCLUDED.content_hash, bytes = EXCLUDED.bytes, "
         "renderer_version = EXCLUDED.renderer_version, created_at = now() "
         "RETURNING id",
@@ -602,11 +629,13 @@ def render_through_blender(cur, *, visual_id: str,
           action="render", object_type="visual", object_id=visual_id,
           detail={"renderer": "blender",
                   "renderer_version": made["renderer_version"],
+                  "style": style, "ground": ground,
                   "render_id": render_id})
 
     return {"visual_id": visual_id, "render_id": render_id,
             "renderer": "blender", "renderer_version": made["renderer_version"],
-            "deterministic": False, "bytes": byte_size, "note": made["note"]}
+            "deterministic": False, "bytes": byte_size, "note": made["note"],
+            "style": style, "ground": ground}
 
 
 def blender_render_state(cur, *, visual_id: str) -> dict[str, Any]:

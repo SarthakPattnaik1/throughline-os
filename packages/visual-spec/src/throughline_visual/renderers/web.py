@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .. import tokens
 from ..spec import ResearchVisualSpec, UncertaintyDisplay, VisualData, VisualType
 
 VEGA_LITE_SCHEMA = "https://vega.github.io/schema/vega-lite/v5.json"
@@ -38,6 +39,7 @@ def render(spec: ResearchVisualSpec, data: VisualData) -> dict[str, Any]:
     chart = builder(spec, data)
     chart = _make_interactive(chart, spec, data)
     chart["$schema"] = VEGA_LITE_SCHEMA
+    chart["config"] = config()
     chart["title"] = {"text": spec.title, "subtitle": spec.subtitle or None,
                       "anchor": "start"}
     # the rendered figure keeps its link to the computation behind it.
@@ -51,6 +53,42 @@ def render(spec: ResearchVisualSpec, data: VisualData) -> dict[str, Any]:
         "interaction": spec.interaction,
     }
     return chart
+
+
+def _px(points: float) -> float:
+    """A type-scale size in CSS pixels: 1pt is 4/3px."""
+    return round(points * 4 / 3, 1)
+
+
+def config(ground: str = "light") -> dict[str, Any]:
+    """The Vega-Lite config that draws a chart in the shared tokens.
+
+    Without it, Vega-Lite coloured groups from its own `tableau10` scheme — a
+    third palette, beside the web charts' and the export's — and set every label
+    in its default font and size.
+    """
+    neutrals = tokens.ink(ground)
+    font = ", ".join(f'"{name}"' if " " in name else name for name in tokens.FONT_STACK)
+    return {
+        "font": font + ", sans-serif",
+        "background": neutrals["ground"],
+        "range": {"category": tokens.categorical(ground),
+                  "ramp": {"scheme": tokens.SEQUENTIAL},
+                  "heatmap": {"scheme": tokens.SEQUENTIAL}},
+        "title": {"fontSize": _px(tokens.TYPE["title"]), "fontWeight": "bold",
+                  "color": neutrals["ink"], "subtitleColor": neutrals["muted"],
+                  "subtitleFontSize": _px(tokens.TYPE["tick"]), "anchor": "start"},
+        "axis": {"labelFontSize": _px(tokens.TYPE["tick"]),
+                 "titleFontSize": _px(tokens.TYPE["label"]),
+                 "titleFontWeight": "normal",
+                 "labelColor": neutrals["muted"], "titleColor": neutrals["ink"],
+                 "domainColor": neutrals["muted"], "tickColor": neutrals["muted"],
+                 "gridColor": neutrals["grid"]},
+        "legend": {"labelFontSize": _px(tokens.TYPE["legend"]),
+                   "titleFontSize": _px(tokens.TYPE["legend"]),
+                   "labelColor": neutrals["ink"], "titleColor": neutrals["ink"]},
+        "view": {"stroke": None},
+    }
 
 
 def _make_interactive(chart: dict[str, Any], spec: ResearchVisualSpec,
@@ -170,7 +208,7 @@ def _scatter(spec, data: VisualData) -> dict[str, Any]:
     ]
     if any(a.kind == "regression_line" for a in spec.annotations):
         layers.append({
-            "mark": {"type": "line", "color": "#333333", "strokeDash": [4, 3]},
+            "mark": {"type": "line", "color": tokens.INK["light"]["ink"], "strokeDash": [4, 3]},
             "transform": [{"regression": "y", "on": "x"}],
             "encoding": {"x": {"field": "x", "type": "quantitative"},
                          "y": {"field": "y", "type": "quantitative"}},
@@ -190,7 +228,7 @@ def _forest(spec, data: VisualData) -> dict[str, Any]:
     return {
         "data": {"values": rows},
         "layer": [
-            {"mark": {"type": "rule", "color": "#999999", "strokeDash": [2, 2]},
+            {"mark": {"type": "rule", "color": tokens.INK["light"]["faint"], "strokeDash": [2, 2]},
              "encoding": {"x": {"datum": 0}}},
             {"mark": {"type": "rule", "size": 1.5},
              "encoding": {"y": {"field": "predictor", "type": "nominal", "title": None},
@@ -238,7 +276,7 @@ def _bar(spec, data: VisualData) -> dict[str, Any]:
     }]
     if data.ci_low and spec.uncertainty is not UncertaintyDisplay.NONE:
         layers.append({
-            "mark": {"type": "rule", "color": "#333333"},
+            "mark": {"type": "rule", "color": tokens.INK["light"]["ink"]},
             "encoding": {"x": {"field": "category", "type": "nominal"},
                          "y": {"field": "low", "type": "quantitative"},
                          "y2": {"field": "high"}},

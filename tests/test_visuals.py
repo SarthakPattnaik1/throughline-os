@@ -754,6 +754,49 @@ def test_the_download_a_researcher_asks_for_arrives_as_that_format(client):
     assert "600px" in png.headers["content-disposition"]
 
 
+def test_a_figure_comes_on_the_ground_it_is_asked_for_and_keeps_the_other(client):
+    """T191: a dark copy is its own file, and does not replace the light one a
+    manuscript already links to. Every export used to be opaque white."""
+    from matplotlib import image as mpimg
+    import io
+
+    project_id, run_id = _http_project_with_analysis(client)
+    visual_id = client.post(f"/api/projects/{project_id}/visuals",
+                            json={"analysis_run_id": run_id}).json()["visual_id"]
+
+    light = client.post(f"/api/visuals/{visual_id}/render?format=png")
+    dark = client.post(f"/api/visuals/{visual_id}/render?format=png&ground=dark")
+    clear = client.post(
+        f"/api/visuals/{visual_id}/render?format=png&ground=dark&transparent=true")
+    for response in (light, dark, clear):
+        assert response.status_code == 200, response.text
+    keys = {light.json()["storage_key"], dark.json()["storage_key"],
+            clear.json()["storage_key"]}
+    assert len(keys) == 3, "each ground is its own file"
+
+    again = client.post(f"/api/visuals/{visual_id}/render?format=png")
+    assert again.json()["render_id"] == light.json()["render_id"]
+
+    download = client.get(
+        f"/api/visuals/{visual_id}/download?format=png&ground=dark&transparent=true")
+    assert download.status_code == 200, download.text
+    assert "-dark-transparent.png" in download.headers["content-disposition"]
+    corner = mpimg.imread(io.BytesIO(download.content))[2, 2]
+    assert corner.shape[0] == 4 and corner[3] == 0
+
+
+def test_a_ground_that_does_not_exist_is_refused_with_the_ones_that_do(client):
+    project_id, run_id = _http_project_with_analysis(client)
+    visual_id = client.post(f"/api/projects/{project_id}/visuals",
+                            json={"analysis_run_id": run_id}).json()["visual_id"]
+
+    sepia = client.post(f"/api/visuals/{visual_id}/render?format=png&ground=sepia")
+    assert sepia.status_code == 400, sepia.text
+    assert "light, dark" in sepia.json()["detail"]
+    eps = client.post(f"/api/visuals/{visual_id}/render?format=eps&transparent=true")
+    assert eps.status_code == 400 and "no transparency" in eps.json()["detail"]
+
+
 def test_the_format_warning_is_available_before_the_file_is(client):
     """
     The render step exists so the interface can warn *before* the download. A

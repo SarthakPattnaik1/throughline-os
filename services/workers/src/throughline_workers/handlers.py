@@ -815,4 +815,8 @@ def render_blender(run: dict[str, Any], cur: Any) -> dict[str, Any]:
     """
     from throughline_domain import visuals
 
-    return visuals.render_through_blender(cur, visual_id=run["input"]["visual_id"])
+    given = run["input"]
+    # Runs queued before the look was chosen carry only the figure's id.
+    return visuals.render_through_blender(
+        cur, visual_id=given["visual_id"], style=given.get("style", "figure"),
+        ground=given.get("ground", "light"))

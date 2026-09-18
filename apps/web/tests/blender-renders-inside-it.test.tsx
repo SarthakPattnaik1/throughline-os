@@ -96,7 +96,7 @@ describe("a render, from the click to the picture", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Render with Blender" }));
     await waitFor(() => expect(post).toHaveBeenCalledWith(
-      "/api/visuals/vis_1/blender-render"));
+      "/api/visuals/vis_1/blender-render?style=figure&ground=light"));
     // Watched, not awaited: the request came back at once and the button says
     // the work is still going.
     expect(await screen.findByRole("button", { name: "Rendering in Blender…" }))
