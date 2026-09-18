@@ -8192,6 +8192,12 @@ button.ax-object:hover .ax-object-go { color: var(--select); }
 /* A Blender render, labelled as a render wherever it appears — beside the
    reproducible export, never in its place. */
 .blender-render { margin-top: 16px; display: grid; gap: 8px; }
+/* A composed figure's panel list: the letter in the one bold size every panel
+   carries in the file, then the title and its recorded numbers. */
+.compose-panels { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 10px; }
+.compose-panels li { display: grid; grid-template-columns: 2ch 1fr auto; gap: 12px; align-items: start; }
+.compose-letter { font-size: 16px; line-height: 1.3; }
+.compose-metrics { color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }
 .blender-render figure { margin: 6px 0 0; display: grid; gap: 8px; }
 .blender-render img {
   width: 100%; max-width: 640px; height: auto;

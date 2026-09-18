@@ -359,6 +359,91 @@ def render_visual(cur, *, visual_id: str, fmt: str,
             "render_id": cur.fetchone()["id"]}
 
 
+def _panels(cur, *, project_id: str, visual_ids: Sequence[str]):
+    """Load the figures to compose, each checked against the project.
+
+    An id from another project is reported as not found rather than drawn: a
+    composed figure is a download, and a download that carried another
+    account's figure is the leak T185 closed route by route.
+    """
+    if not visual_ids:
+        raise VisualError("Choose at least one figure to compose.")
+    if len(set(visual_ids)) != len(visual_ids):
+        raise VisualError("A figure appears twice. Each panel is a different figure.")
+    panels = []
+    for visual_id in visual_ids:
+        try:
+            row = load_visual(cur, visual_id)
+        except VisualError:
+            raise VisualNotFound(f"Figure {visual_id} was not found.") from None
+        if row["project_id"] != project_id:
+            raise VisualNotFound(f"Figure {visual_id} was not found.")
+        _refuse_if_unpublishable(row)
+        panels.append((ResearchVisualSpec.model_validate(row["spec"]),
+                       VisualData.model_validate(row["data"]), row))
+    return panels
+
+
+def check_composition(cur, *, project_id: str,
+                      visual_ids: Sequence[str]) -> dict[str, Any]:
+    """What a composed figure would say, before it is drawn.
+
+    The letters, each panel's recorded numbers and every disagreement between
+    them — so the interface can show "B and D point opposite ways" while the
+    researcher is still choosing panels, not after the file has downloaded.
+    """
+    from throughline_visual.renderers import compose
+
+    panels = _panels(cur, project_id=project_id, visual_ids=visual_ids)
+    pairs = [(spec, data) for spec, data, _ in panels]
+    return {
+        "panels": [{"letter": chr(ord("A") + i), "visual_id": row["id"],
+                    "title": spec.title, "visual_type": spec.visual_type.value,
+                    "metrics": compose.metrics_line(data.statistics or {}),
+                    "drawable": publication.can_render(spec.visual_type)}
+                   for i, (spec, data, row) in enumerate(panels)],
+        "disagreements": compose.disagreements(pairs),
+    }
+
+
+def compose_figure(cur, *, project_id: str, visual_ids: Sequence[str], fmt: str,
+                   directory: Path, ground: str = "light", transparent: bool = False,
+                   height_px: int | None = None, columns: int | None = None,
+                   actor: str = "system") -> dict[str, Any]:
+    """Draw several figures as one lettered figure, into `directory`.
+
+    Not stored: a composition is an arrangement of figures that are each
+    recorded, with their own lineage to the analyses they draw, and the file
+    carries the ids and spec hashes of every panel so it can be traced back
+    the same way. The composition is audited so the project's history says
+    it left.
+    """
+    from throughline_visual.renderers import compose
+
+    fmt = fmt.lower()
+    if fmt not in publication.SUPPORTED_FORMATS:
+        # Checked before any path is built from it: the format names the file.
+        raise compose.ComposeError(
+            f"{fmt!r} is not a supported publication format. "
+            f"Supported: {', '.join(publication.SUPPORTED_FORMATS)}")
+    panels = _panels(cur, project_id=project_id, visual_ids=visual_ids)
+    provenance = "; ".join(f"{row['id']} spec_hash={row['spec_hash']}"
+                           for _, _, row in panels)
+    path = directory / f"figure.{fmt}"
+    drawn = compose.compose(
+        [(spec, data) for spec, data, _ in panels], path=path, fmt=fmt,
+        ground=ground, transparent=transparent, height_px=height_px,
+        columns=columns,
+        metadata={"Title": "Composed figure: " + ", ".join(visual_ids),
+                  "Description": provenance, "Creator": "Throughline"})
+    audit(cur, project_id=project_id, actor=actor, action="compose",
+          object_type="visual", object_id=visual_ids[0],
+          detail={"visual_ids": list(visual_ids), "format": fmt,
+                  "ground": ground, "transparent": transparent,
+                  "disagreements": drawn["disagreements"]})
+    return drawn
+
+
 def apply_edit(
     cur, *, visual_id: str, changes: dict[str, Any], actor: str,
 ) -> dict[str, Any]:
@@ -431,6 +516,10 @@ def stale_renders(cur, visual_id: str) -> list[dict[str, Any]]:
 
 #: The worker job that runs Blender.
 BLENDER_RENDER_WORKFLOW = "visual.render_blender"
+
+
+class VisualNotFound(VisualError):
+    """A figure id that does not exist in this project. Answered 404."""
 
 
 class NotALook(VisualError):

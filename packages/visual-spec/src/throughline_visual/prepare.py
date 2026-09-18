@@ -168,6 +168,9 @@ def _statistics(result: dict[str, Any]) -> dict[str, Any]:
         "evidence_quality": result.get("evidence_quality"),
         "practical_significance": result.get("practical_significance"),
         "method": result.get("method"),
+        # The level the interval was computed at, so a figure that states the
+        # interval states its level, and alpha is the run's rather than assumed.
+        "confidence_level": result.get("confidence_level"),
     }
 
 

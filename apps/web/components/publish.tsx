@@ -89,7 +89,7 @@ export const GROUNDS = [
 export type Ground = (typeof GROUNDS)[number][0];
 
 /** Formats with no alpha channel, for which a transparent ground is refused. */
-const NO_ALPHA: readonly string[] = ["eps", "jpeg", "jpg"];
+export const NO_ALPHA: readonly string[] = ["eps", "jpeg", "jpg"];
 
 /** The query that asks the server for a ground, and the filename suffix it names. */
 export function groundQuery(ground: Ground): { query: string; suffix: string } {
@@ -118,7 +118,7 @@ export function summarise(critiques: Critique[]): Critique[] {
 }
 
 /** Save bytes the server has already named. */
-function save(bytes: Uint8Array, filename: string, type: string) {
+export function save(bytes: Uint8Array, filename: string, type: string) {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
   const link = document.createElement("a");
   link.href = url;

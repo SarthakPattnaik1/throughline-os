@@ -5157,6 +5157,77 @@ def download_visual(visual_id: str, format: str = Query("png"),
         filename=f"{visual_id}{size}{look}.{format.lower()}")
 
 
+class Composition(BaseModel):
+    """Figures to place as lettered panels of one figure, in reading order."""
+
+    visual_ids: list[str] = Field(min_length=1, max_length=9)
+    format: str = "pdf"
+    ground: str = "light"
+    transparent: bool = False
+    height: int | None = Field(default=None, ge=120, le=8000)
+    columns: int | None = Field(default=None, ge=1, le=3)
+
+
+@app.post("/api/projects/{project_id}/figures/compose/check")
+def check_figure_composition(project_id: str, body: Composition,
+                             user: dict = Depends(current_user)) -> dict[str, Any]:
+    """
+    What a composed figure would say — its letters, each panel's numbers, and
+    every place those numbers disagree — before anything is drawn.
+    """
+    scoped_project(project_id, user)
+    with transaction() as cur:
+        try:
+            return visuals.check_composition(cur, project_id=project_id,
+                                             visual_ids=body.visual_ids)
+        except visuals.VisualNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except visuals.VisualError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+
+@app.post("/api/projects/{project_id}/figures/compose")
+def compose_figure(project_id: str, body: Composition,
+                   user: dict = Depends(current_user)) -> Response:
+    """
+    Several recorded figures as one lettered figure, each panel's numbers under
+    it, on one ground and in one type scale.
+
+    Figures were composed by hand, outside Throughline: exported one by one and
+    pasted together, where the sizes drifted and the numbers stayed in the
+    caption. The file carries every panel's id and spec hash, so a composed
+    figure traces back like a single one.
+    """
+    from throughline_visual.renderers import compose as compose_renderer
+
+    scoped_project(project_id, user)
+    fmt = body.format.lower()
+    with tempfile.TemporaryDirectory() as scratch, transaction() as cur:
+        try:
+            drawn = visuals.compose_figure(
+                cur, project_id=project_id, visual_ids=body.visual_ids, fmt=fmt,
+                directory=Path(scratch), ground=body.ground,
+                transparent=body.transparent, height_px=body.height,
+                columns=body.columns, actor=user["id"])
+        except visuals.VisualNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except visuals.VisualError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except compose_renderer.ComposeError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except publication_render.RenderError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        content = Path(drawn["path"]).read_bytes()
+
+    look = ("" if body.ground == "light" else "-dark") + \
+        ("-transparent" if body.transparent else "")
+    return Response(
+        content,
+        media_type=FIGURE_MEDIA_TYPES.get(fmt, "application/octet-stream"),
+        headers={"Content-Disposition":
+                 f'attachment; filename="figure-{len(body.visual_ids)}-panels{look}.{fmt}"'})
+
+
 @app.get("/api/visuals/{visual_id}/scene.zip")
 def download_visual_geometry(visual_id: str,
                              user: dict = Depends(current_user)) -> Response:

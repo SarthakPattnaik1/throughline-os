@@ -25,7 +25,11 @@
 import { useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { ComposeFigure } from "./composefigure";
 import { Empty, Failure, Loading } from "./primitives";
+
+/** Kinds with no flat drawing, so no panel in a composed figure. */
+const NO_PANEL = ["surface", "line"];
 
 export type SavedFigure = {
   id: string;
@@ -67,6 +71,8 @@ export function SavedFigures({ projectId, focusId = null }: {
 }) {
   const figures = useApi<SavedFigure[]>(`/api/projects/${projectId}/visuals`);
   const [editing, setEditing] = useState<SavedFigure | null>(null);
+  /** Chosen panels, in the order chosen: that order is A, B, C. */
+  const [panels, setPanels] = useState<string[]>([]);
 
   if (figures.error) {
     return <Failure error={figures.error} retry={figures.reload} />;
@@ -89,8 +95,19 @@ export function SavedFigures({ projectId, focusId = null }: {
       <h2 id="saved-heading">Figures made here</h2>
       <p className="note">
         Each one records what the critic said and which analysis it draws, so a
-        figure in a paper can be traced back to the run behind it.
+        figure in a paper can be traced back to the run behind it. Tick several
+        to make them the lettered panels of one figure, with each panel&rsquo;s
+        numbers printed beneath it.
       </p>
+
+      {panels.length > 0 && (
+        <ComposeFigure
+          projectId={projectId}
+          visualIds={panels}
+          onRemove={(id) => setPanels((now) => now.filter((p) => p !== id))}
+          onClear={() => setPanels([])}
+        />
+      )}
 
       {figures.data.map((figure) => (
         <div className="card" key={figure.id}
@@ -118,11 +135,25 @@ export function SavedFigures({ projectId, focusId = null }: {
                 {!figure.publishable && " · the critic blocked this one"}
               </div>
             </div>
-            <button className="btn"
-                    onClick={() => setEditing(
-                      editing?.id === figure.id ? null : figure)}>
-              {editing?.id === figure.id ? "Done" : "Edit wording"}
-            </button>
+            <div className="row" style={{ gap: "0.75rem" }}>
+              {figure.publishable && !NO_PANEL.includes(figure.visual_type) && (
+                <label>
+                  <input type="checkbox" checked={panels.includes(figure.id)}
+                         disabled={!panels.includes(figure.id) && panels.length >= 9}
+                         onChange={(event) => setPanels((now) => event.target.checked
+                           ? [...now, figure.id]
+                           : now.filter((p) => p !== figure.id))} />{" "}
+                  {panels.includes(figure.id)
+                    ? `Panel ${String.fromCharCode(65 + panels.indexOf(figure.id))}`
+                    : "Add as a panel"}
+                </label>
+              )}
+              <button className="btn"
+                      onClick={() => setEditing(
+                        editing?.id === figure.id ? null : figure)}>
+                {editing?.id === figure.id ? "Done" : "Edit wording"}
+              </button>
+            </div>
           </div>
 
           {editing?.id === figure.id && (

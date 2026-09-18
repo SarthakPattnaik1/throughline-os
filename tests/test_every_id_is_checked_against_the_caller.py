@@ -47,6 +47,7 @@ KIND = {
     "preregistration_id": "preregistration", "connection_id": "connection",
     "left_connection_id": "connection", "right_connection_id": "connection2",
     "parent_id": "cohort", "analysis_run_id": "run", "visual_id": "visual",
+    "visual_ids": "visual",
     "mapping_id": "mapping", "project_id": "project",
 }
 
