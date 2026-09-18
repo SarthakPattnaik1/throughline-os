@@ -23,7 +23,8 @@ def _panel(estimate=0.5, low=0.2, high=0.8, p=0.001, name="mean_difference",
     data = VisualData(
         categories=["a", "b"], y_values=[1.0, 2.0],
         statistics={"estimate": estimate, "estimate_name": name, "ci_low": low,
-                    "ci_high": high, "p_value": p, "sample_size": 80, **stats})
+                    "ci_high": high, "p_value": p, "sample_size": 80,
+                    "confidence_level": 0.95, **stats})
     return spec, data
 
 
@@ -82,10 +83,21 @@ def test_significant_and_negligible_is_named():
 
 
 def test_the_same_question_answered_both_ways_is_named():
-    up = _panel(estimate=0.5, low=0.2, high=0.8)
-    down = _panel(estimate=-0.4, low=-0.7, high=-0.1)
+    up = _panel(estimate=0.5, low=0.2, high=0.8, name="beta[sleep]", x="sleep")
+    down = _panel(estimate=-0.4, low=-0.7, high=-0.1, name="beta[sleep]", x="sleep")
     assert compose.disagreements([up, down]) == [
         "A, B: the same estimate for Recall points in opposite directions."]
+
+
+def test_a_difference_between_groups_is_never_compared_by_sign():
+    """Its sign is which group was taken from which: +6 and -6 may be the same
+    finding written the other way round. Saying they disagree would be false."""
+    up = _panel(estimate=6.0, low=2.0, high=10.0)
+    down = _panel(estimate=-6.0, low=-10.0, high=-2.0)
+    assert compose.disagreements([up, down]) == []
+    medians = [_panel(estimate=3.0, low=1.0, high=5.0, name="median_difference"),
+               _panel(estimate=-3.0, low=-5.0, high=-1.0, name="median_difference")]
+    assert compose.disagreements(medians) == []
 
 
 def test_different_questions_about_one_outcome_are_not_a_disagreement():
@@ -97,6 +109,36 @@ def test_different_questions_about_one_outcome_are_not_a_disagreement():
     other_predictor = _panel(estimate=-0.4, low=-0.7, high=-0.1, x="dose")
     assert compose.disagreements([correlation, difference]) == []
     assert compose.disagreements([_panel(), other_predictor]) == []
+
+
+def test_a_p_value_is_never_rounded_across_the_threshold():
+    """p = 0.0496 to three places is 0.050, which reads as not significant."""
+    assert compose.metrics_line({"p_value": 0.0496, "confidence_level": 0.95}) \
+        == "p = 0.0496"
+    assert compose.metrics_line({"p_value": 0.04996, "confidence_level": 0.95}) \
+        == "p = 0.04996"
+    # Where rounding keeps the side, three places is enough.
+    assert compose.metrics_line({"p_value": 0.0504, "confidence_level": 0.95}) \
+        == "p = 0.050"
+    assert compose.metrics_line({"p_value": 0.0123, "confidence_level": 0.95}) \
+        == "p = 0.012"
+
+
+def test_an_interval_without_a_recorded_level_says_so_and_is_not_judged():
+    stats = {"estimate": 0.5, "estimate_name": "pearson_r", "ci_low": -0.1,
+             "ci_high": 0.9, "p_value": 0.03}
+    assert "(CI, level not recorded)" in compose.metrics_line(stats)
+    assert "95%" not in compose.metrics_line(stats)
+    spec, data = _panel()
+    data.statistics = dict(stats, practical_significance="negligible")
+    # No alpha was recorded, so neither alpha check can be made honestly.
+    assert compose.disagreements([(spec, data)]) == []
+
+
+def test_a_bound_keeps_its_sign_and_a_large_number_its_digits():
+    line = compose.metrics_line({"estimate": 1234.6, "ci_low": -0.004,
+                                 "ci_high": 2500.0, "confidence_level": 0.95})
+    assert "1,235 [-0.004, 2,500]" in line
 
 
 def test_agreeing_panels_say_nothing():
@@ -119,6 +161,15 @@ def test_the_disagreement_is_printed_in_the_file_not_only_returned(tmp_path):
     text = (tmp_path / "f.svg").read_text()
     assert "Where the numbers disagree" in text
     assert "includes 0, no effect." in text
+
+
+def test_every_panels_sources_are_printed(tmp_path):
+    first, second = _panel(), _panel()
+    first[0].citations = ["Smith 2021"]
+    second[0].citations = ["Lee 2023", "Smith 2021"]
+    compose.compose([first, second], path=tmp_path / "f.svg")
+    text = (tmp_path / "f.svg").read_text()
+    assert "Sources: Smith 2021; Lee 2023" in text
 
 
 def test_four_panels_make_two_rows_of_two(tmp_path):

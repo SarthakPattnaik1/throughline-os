@@ -231,6 +231,23 @@ def test_the_job_renders_it_and_records_it_as_a_render(analysed):
     blender_rows = [r for r in listed if r["renderer"] == "blender"]
     assert len(blender_rows) == 1 and blender_rows[0]["deterministic"] is False
 
+    # The colours are stated in the figure's own numbers: the ends of the ramp
+    # are the lowest and highest fitted values, exactly (T193).
+    with connection() as conn, conn.cursor() as cur:
+        row = visuals.load_visual(cur, visual_id)
+    fitted = [v for line in row["data"]["matrix"] for v in line]
+    scale = state["colour_scale"]
+    assert (scale["low"], scale["high"]) == (min(fitted), max(fitted))
+    assert "lowest fitted value" in scale["text"]
+
+    # A render of an earlier figure was coloured from other numbers: no scale.
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE visuals SET spec_hash = 'changed' WHERE id = %s",
+                    (visual_id,))
+        stale = visuals.blender_render_state(cur, visual_id=visual_id)
+        conn.rollback()
+    assert stale["render"]["stale"] is True and stale["colour_scale"] is None
+
 
 def test_a_surface_has_no_publication_export_to_mistake_it_for(analysed):
     """

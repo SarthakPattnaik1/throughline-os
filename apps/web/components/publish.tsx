@@ -386,6 +386,8 @@ export function PublishFigure({ projectId, analysisRunId, spec, findingId,
 export type BlenderState = {
   visual_id: string;
   is_surface: boolean;
+  /** What the colours stand for; null when the render is of an earlier figure. */
+  colour_scale?: null | { low: number; high: number; label: string; text: string };
   available: boolean;
   version: string | null;
   withheld: string;
@@ -580,6 +582,7 @@ export function BlenderRender({ visualId }: { visualId: string }) {
         <figure>
           <img src={image} alt="The fitted surface, rendered through Blender" />
           <figcaption>
+            {state.colour_scale && <>{state.colour_scale.text}{" "}</>}
             {state.render.note}
             {state.render.stale
               && " This is a render of an earlier version of the figure; render "

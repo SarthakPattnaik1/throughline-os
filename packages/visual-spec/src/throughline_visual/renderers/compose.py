@@ -49,19 +49,42 @@ class ComposeError(publication.RenderError):
 
 
 def _number(value: Any) -> str:
+    """A recorded number for print: rounded for reading, never to another sign.
+
+    Two decimals between 0.01 and 1000; two significant figures below that, so
+    a small bound keeps its sign and its first digits (-0.004 is not "-0.00");
+    whole numbers with separators above, rather than 1.2e+03 for 1234.
+    """
     if value is None:
         return ""
     value = float(value)
     if value == 0:
         return "0"
-    if abs(value) >= 1000 or abs(value) < 0.01:
+    if abs(value) >= 1000:
+        return f"{value:,.0f}"
+    if abs(value) < 0.01:
         return f"{value:.2g}"
     return f"{value:.2f}"
 
 
-def _p(value: Any) -> str:
+def _p(value: Any, alpha: float | None = None) -> str:
+    """A p-value for print, never rounded across the threshold it is judged at.
+
+    p = 0.0496 printed to three places is "0.050", which reads as not below
+    0.05 while the result counts it as significant — the rounding reverses the
+    finding (the class T176 fixed in the interpretation). Digits are added
+    until the printed number sits on the same side of alpha as the recorded one.
+    """
     value = float(value)
-    return "p < 0.001" if value < 0.001 else f"p = {value:.3f}"
+    if value < 0.001:
+        return "p < 0.001"
+    text = f"{value:.3f}"
+    if alpha is not None:
+        digits = 3
+        while (float(text) < alpha) != (value < alpha) and digits < 12:
+            digits += 1
+            text = f"{value:.{digits}f}"
+    return f"p = {text}"
 
 
 def _name(raw: Any) -> str:
@@ -82,11 +105,14 @@ def metrics_line(statistics: dict[str, Any]) -> str:
         text = f"{_name(statistics.get('estimate_name'))} = {_number(estimate)}"
         low, high = statistics.get("ci_low"), statistics.get("ci_high")
         if low is not None and high is not None:
-            level = statistics.get("confidence_level") or 0.95
-            text += f" [{_number(low)}, {_number(high)}] ({round(level * 100):d}% CI)"
+            level = statistics.get("confidence_level")
+            # The level is printed only when the run recorded one. An interval
+            # labelled 95% because 95% is usual is a claim nobody made.
+            label = f"{float(level) * 100:g}% CI" if level else "CI, level not recorded"
+            text += f" [{_number(low)}, {_number(high)}] ({label})"
         parts.append(text)
     if statistics.get("p_value") is not None:
-        parts.append(_p(statistics["p_value"]))
+        parts.append(_p(statistics["p_value"], _alpha(statistics)))
     if statistics.get("effect_size") is not None:
         effect = f"{_name(statistics.get('effect_size_name') or 'effect size')} = "
         effect += _number(statistics["effect_size"])
@@ -124,14 +150,32 @@ def _null(statistics: dict[str, Any]) -> float:
     return 1.0 if "ratio" in str(statistics.get("estimate_name") or "") else 0.0
 
 
-def _alpha(statistics: dict[str, Any]) -> float:
-    level = statistics.get("confidence_level") or 0.95
-    return round(1 - float(level), 10)
+def _alpha(statistics: dict[str, Any]) -> float | None:
+    """The run's own alpha, or None when it did not record its level.
+
+    Not assumed: a check made at 0.05 against a run computed at 0.01 would
+    report a contradiction between numbers that agree.
+    """
+    level = statistics.get("confidence_level")
+    return None if not level else round(1 - float(level), 10)
 
 
 def _significant(statistics: dict[str, Any]) -> bool | None:
-    p = statistics.get("p_value")
-    return None if p is None else float(p) < _alpha(statistics)
+    p, alpha = statistics.get("p_value"), _alpha(statistics)
+    return None if p is None or alpha is None else float(p) < alpha
+
+
+#: Estimates whose sign is fixed by the variables alone, so two panels with the
+#: same outcome and predictor can be compared by sign. A mean or median
+#: difference is not among them: its sign depends on which group was taken
+#: from which, and two panels with opposite signs may agree entirely.
+SIGNED_BY_VARIABLES = ("pearson_r", "spearman_rho", "spearman_r", "beta[", "odds_ratio[")
+
+
+def _comparable_by_sign(statistics: dict[str, Any]) -> bool:
+    name = str(statistics.get("estimate_name") or "")
+    return any(name == prefix or (prefix.endswith("[") and name.startswith(prefix))
+               for prefix in SIGNED_BY_VARIABLES)
 
 
 def _direction(statistics: dict[str, Any]) -> int:
@@ -153,7 +197,11 @@ def disagreements(panels: list[Panel]) -> list[str]:
     - within a panel, significant and negligible — the p-value says "real", the
       effect size says "too small to matter";
     - across panels asking the same question — same outcome, same predictor,
-      same kind of estimate — estimates on opposite sides of no-effect.
+      same kind of estimate, and a kind whose sign the variables fix — estimates
+      on opposite sides of no-effect.
+
+    A check that needs alpha is skipped for a run that did not record its
+    confidence level, rather than made against an assumed one.
     """
     letters = string.ascii_uppercase
     found: list[str] = []
@@ -187,7 +235,8 @@ def disagreements(panels: list[Panel]) -> list[str]:
     same_question: dict[tuple[str, str, str], list[int]] = {}
     for index, (spec, data) in enumerate(panels):
         stats = data.statistics or {}
-        if spec.y is None or spec.x is None or not _direction(stats):
+        if (spec.y is None or spec.x is None or not _direction(stats)
+                or not _comparable_by_sign(stats)):
             continue
         key = (spec.y.field, spec.x.field, str(stats.get("estimate_name") or ""))
         same_question.setdefault(key, []).append(index)
@@ -310,6 +359,15 @@ def compose(
             if captions:
                 below.append((publication._wrap(" ".join(captions), width=across),
                               neutrals["muted"], "normal"))
+            # Every panel's sources, as a single export prints them: a figure
+            # made of several must not cite fewer than its parts did.
+            sources: list[str] = []
+            for spec, _ in panels:
+                sources += [c for c in spec.citations if c not in sources]
+            if sources:
+                below.append((publication._wrap("Sources: " + "; ".join(sources),
+                                                width=across),
+                              neutrals["faint"], "normal"))
             # Stacked downward from the bottom edge, one block per note, so a
             # disagreement is its own line rather than a clause in a paragraph.
             offset = 0.0

@@ -129,6 +129,18 @@ describe("a render, from the click to the picture", () => {
       .toBeDisabled();
   });
 
+  it("states what the colours stand for, in the figure's own numbers", async () => {
+    // A colour ramp with no numbers is decoration that looks like data.
+    states({ ...BASE, render: RENDER,
+             colour_scale: { low: 12.5, high: 48.25, label: "yield",
+                             text: "Colour is the fitted yield: dark purple is 12.50, "
+                                   + "the lowest fitted value, and yellow 48.25, the highest." },
+             run: { run_id: "wfr_1", state: "completed", error: null } });
+    render(<BlenderRender visualId="vis_1" />);
+    expect(await screen.findByText(/dark purple is 12\.50, the lowest fitted value/))
+      .toBeVisible();
+  });
+
   it("says when a render is of an earlier version of the figure", async () => {
     // A picture of a figure that no longer exists in that form must not be
     // shown as current.

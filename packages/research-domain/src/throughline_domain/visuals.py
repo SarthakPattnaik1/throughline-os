@@ -727,6 +727,31 @@ def render_through_blender(cur, *, visual_id: str, samples: int = 64,
             "style": style, "ground": ground}
 
 
+def _colour_scale(row: dict[str, Any]) -> dict[str, Any] | None:
+    """What the render's colours stand for, in the figure's own numbers.
+
+    The surface is coloured from its lowest to its highest fitted value — the
+    mesh's own bounds, not the observations', which Blender never sees as
+    colour. A ramp with no numbers is decoration that looks like data, so the
+    two ends are stated. Only for a render of the current figure: a stale one
+    was coloured from different numbers.
+    """
+    from throughline_visual.renderers import compose, geometry
+
+    matrix = (row.get("data") or {}).get("matrix") or []
+    fitted = [float(v) for line in matrix for v in line if v is not None]
+    if not fitted:
+        return None
+    spec = ResearchVisualSpec.model_validate(row["spec"])
+    label = geometry._axis_names(spec)[2]
+    low, high = min(fitted), max(fitted)
+    return {"low": low, "high": high, "label": label,
+            "text": (f"Colour is the fitted {label}: dark purple is "
+                     f"{compose._number(low)}, the lowest fitted value, and "
+                     f"yellow {compose._number(high)}, the highest. The surface "
+                     "is the model, not the measurements.")}
+
+
 def blender_render_state(cur, *, visual_id: str) -> dict[str, Any]:
     """Whether this figure can be rendered through Blender, and how far it got."""
     row = load_visual(cur, visual_id)
@@ -747,6 +772,8 @@ def blender_render_state(cur, *, visual_id: str) -> dict[str, Any]:
     return {
         "visual_id": visual_id,
         "is_surface": row["visual_type"] == "surface",
+        "colour_scale": (_colour_scale(row) if render
+                         and render["spec_hash"] == row["spec_hash"] else None),
         "available": bool(available["available"]),
         "version": available.get("version"),
         "withheld": available.get("withheld") or "",
