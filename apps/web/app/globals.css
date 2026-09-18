@@ -2218,14 +2218,10 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
 .kg-tip span { color: var(--ink-faint); font-size: 11px; font-family: var(--mono); }
 
 /* The accessible equivalent, not an afterthought: canvas has no DOM, so this
-   is the only path for a screen reader or a keyboard. */
-.kg-table summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--ink-faint);
-  padding: 6px 0;
-}
-.kg-table summary:hover { color: var(--ink); }
+   is the only path for a screen reader or a keyboard. It is a `details.fold`
+   like every other disclosure (D216) — the count in `data-count`, with its
+   unit, rather than written into the label — and only the table is its own. */
+.kg-table > table { margin: 8px 0 6px; }
 
 @media (prefers-reduced-motion: reduce) {
   .kg { background-image: none; }
@@ -4513,14 +4509,7 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
   border-top: 1px solid var(--line);
 }
 
-.chart-table > summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--ink-faint);
-  padding: 8px 0;
-  list-style-position: outside;
-}
-.chart-table > summary:hover { color: var(--ink); }
+/* The summary is a `details.fold` summary (D216); only the table is its own. */
 
 .chart-table table {
   width: 100%;
@@ -6220,6 +6209,13 @@ details.fold[open] > summary::before { transform: rotate(45deg); }
 
 /* The count, drawn from the attribute. `--ink-faint` is `--n-500` in light and
    one step brighter in dark, for the reason the token block gives. */
+/* The same count as text, where it has to be findable and copyable — a data
+   table's "10 of 60 rows" says how complete it is (D216). */
+.fold-count {
+  /* The summary's flex gap is the space before the dot. */
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
 summary[data-count]::after {
   content: " · " attr(data-count);
   color: var(--ink-faint);

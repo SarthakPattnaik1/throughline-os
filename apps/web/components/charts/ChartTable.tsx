@@ -71,15 +71,18 @@ export function ChartTable({
   const shown = rows.slice(0, maxRows);
   const truncated = total > shown.length;
 
-  const summary = truncated
-    ? `The numbers behind this figure (${shown.length.toLocaleString()} of `
-      + `${total.toLocaleString()} rows)`
-    : `The numbers behind this figure (${total.toLocaleString()} `
-      + `${total === 1 ? "row" : "rows"})`;
+  // The count is text, not a CSS `attr()`: "10 of 60 rows" is a fact about
+  // how complete the table is, and generated content can be neither found
+  // with find-in-page nor copied. Styled as every fold's count is (D216).
+  const count = truncated
+    ? `${shown.length.toLocaleString()} of ${total.toLocaleString()} rows`
+    : `${total.toLocaleString()} ${total === 1 ? "row" : "rows"}`;
 
   return (
-    <details className="chart-table">
-      <summary>{summary}</summary>
+    <details className="fold chart-table">
+      <summary>
+        The numbers behind this figure<span className="fold-count">· {count}</span>
+      </summary>
       <table aria-describedby={captionId}>
         <caption id={captionId} className="sr-only">
           {label}
