@@ -39,8 +39,9 @@ def client():
 @pytest.fixture()
 def world(monkeypatch, paper_pdf):
     """The network and the model, answered; nothing else is replaced."""
-    import throughline_model
     from throughline_connectors import datasets, papers, registry
+    from throughline_model import registry as registry_of_models
+    from throughline_model.provider import Capability
     from throughline_connectors.base import SourceRecord
     from throughline_domain import dataset_import
     from throughline_model.schemas import (
@@ -84,14 +85,14 @@ def world(monkeypatch, paper_pdf):
     class Completion:
         model, prompt_name, prompt_version = "stand-in", "stand-in", 1
 
-    class Template:
-        name, version = "stand-in", 1
-
-        def render(self, **_):
-            return "instructions"
+    asked: list[str] = []
 
     class Model:
+        def capability(self):
+            return Capability(name="stand-in", model="stand-in", structured=True)
+
         def generate_structured(self, *, schema, **_):
+            asked.append(schema.__name__)
             if schema is TestableClaims:
                 return TestableClaims(claims=[TestableClaim(
                     statement="Antibiotic consumption is associated with resistance.",
@@ -103,14 +104,19 @@ def world(monkeypatch, paper_pdf):
             if schema is VariableProposals:
                 return VariableProposals(proposals=[
                     VariableProposal(column=name, label=name.replace("_", " ").title(),
-                                     canonical_name=name, definition="", unit="")
+                                     canonical_name=name, definition="", unit="",
+                                     choice_confidence=0.9)
                     for name in ("antibiotic_consumption", "resistance_prevalence")]), \
                     Completion()
             raise AssertionError(f"the journey asked the model for {schema}")
 
-    monkeypatch.setattr(throughline_model, "prompt", lambda _name: Template())
-    monkeypatch.setattr(throughline_model, "provider", lambda *a, **k: Model())
-    return {"fetched": fetched}
+    # At the registry, where every caller's `provider()` resolves. Patching the
+    # package attribute missed modules that bound `provider` at import —
+    # harmonize does — and on a machine with a local model running, labels were
+    # proposed by the real model while CI, with none, failed.
+    monkeypatch.setattr(registry_of_models, "_build", lambda: Model())
+    registry_of_models._cached.cache_clear()
+    return {"fetched": fetched, "asked": asked}
 
 
 def _drain():
@@ -193,3 +199,5 @@ def test_a_topic_reaches_a_verdict_on_found_data(client, world):
     assert verdict.status_code == 201, verdict.text
     final = verdict.json()["verdict"]
     assert final["family"] == "supported", final
+    # Only the stand-in read anything: a real local model must not decide this.
+    assert world["asked"] == ["TestableClaims", "VariableProposals"], world["asked"]
