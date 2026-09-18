@@ -2,9 +2,9 @@
 
 # Throughline
 
-### Turn research material into evidence you can trace, challenge, and reproduce.
+### AI-assisted research where every conclusion stays connected to its evidence.
 
-**Local-first research software for papers, datasets, analysis, validation, findings, figures, and reports.**
+**Papers → datasets → analysis → validation → findings → reports, with the chain of evidence intact.**
 
 <br />
 
@@ -17,28 +17,117 @@
 
 <br />
 
-[**Download Throughline**](https://throughline-research.pages.dev) · [**Quick start**](#quick-start) · [**Capabilities**](#what-throughline-can-do-today) · [**Architecture**](#system-design--engineering-architecture) · [**Security**](#security-tenancy--trust-boundaries) · [**Contribute**](CONTRIBUTING.md)
+[**Try Throughline**](https://throughline-research.pages.dev) · [**Quick start**](#quick-start) · [**See what it does**](#what-throughline-can-do-today) · [**Architecture**](#system-design--engineering-architecture) · [**Contribute**](CONTRIBUTING.md)
 
 </div>
 
 ---
 
-## Research should have a throughline
+## The problem
 
-A paper, dataset, analysis, figure, and conclusion should not become five disconnected files—or disappear into a chat transcript.
+Research increasingly happens across papers, datasets, notebooks, AI chats, figures, and draft documents. The result is often a conclusion that is hard to audit: **which source supported it, which data produced it, which computation generated it, and what happened when the result was challenged?**
 
-**Throughline keeps the chain of evidence intact.** Sources stay connected to datasets; datasets stay connected to analyses; analyses stay connected to validation; findings stay connected to the evidence that supports them; and reports preserve those links instead of flattening everything into detached prose.
+Throughline is built to keep that chain visible.
 
-| **Evidence stays attached** | **Computation stays deterministic** | **Your machine stays in control** |
+> **AI can help read and reason. It does not get to silently invent the analysis.**
+
+Numerical results come from recorded scientific computation. Findings remain connected to sources, dataset versions, analyses, validation runs, figures, and reports.
+
+| **Traceable** | **Reproducible** | **Local-first** |
 |---|---|---|
-| Findings preserve links to sources, analyses, lineage, and validation. | Numerical research results come from recorded scientific computation, not generated text. | Core workflows run locally. Hosted AI is optional, explicit, and never a silent fallback. |
+| Follow a finding back to the evidence and computation that produced it. | Analyses are recorded and can be challenged, rerun, and inspected. | Core workflows run on your machine. Hosted AI is optional and explicit. |
+
+---
+
+## The 60-second idea
+
+```text
+Paper / source
+     ↓
+Dataset / evidence
+     ↓
+Recorded analysis
+     ↓
+Validation & sensitivity checks
+     ↓
+Finding
+     ↓
+Figure / report / export
+```
+
+**Throughline keeps those objects connected instead of flattening them into a chat transcript.**
+
+A strong first demo is:
+
+1. Add a paper or research source.
+2. Add or connect a dataset.
+3. Run a recorded analysis.
+4. Challenge the result with validation checks.
+5. Save a finding.
+6. Open the finding and trace it back to the evidence and computation.
+7. Export a figure or report without losing that provenance.
 
 > [!IMPORTANT]
 > **Throughline is an early research release.** It is not medical or clinical decision software. Review statistical conclusions independently, and use synthetic or non-sensitive data when evaluating a new installation.
 
+---
+
+## Try it
+
+### macOS / Linux
+
+```bash
+curl -fsSL https://throughline-research.pages.dev/install.sh | sh
+```
+
+### Windows
+
+```powershell
+irm https://throughline-research.pages.dev/install.ps1 | iex
+```
+
+Then open:
+
+```text
+http://localhost:8080
+```
+
+Prefer source?
+
+```bash
+git clone https://github.com/SarthakPattnaik1/throughline-os.git
+cd throughline-os
+python scripts/manage.py bootstrap
+python scripts/manage.py dev
+```
+
+---
+
+## Why this is different from a generic AI research assistant
+
+- **The model is not the calculator.** Numerical results come from scientific code.
+- **Evidence stays attached.** Findings point back to the research objects that support them.
+- **Validation is part of the workflow.** Results can be challenged with resampling, missingness, outlier, sensitivity, and selected confounder checks.
+- **Local-first by design.** The default research workspace is yours, not a hidden hosted session.
+- **Exports keep context.** Figures and reports are produced from recorded research objects rather than detached prose.
+
+---
+
+## What I want people to test
+
+This project benefits most from people trying to break its assumptions.
+
+- Can you reproduce a published result and keep the evidence chain intact?
+- Can you find a workflow where provenance becomes ambiguous?
+- Can you make a validation step disagree with the original result?
+- Can you identify a research object that should be connected but is not?
+- Can you make the local-first/security boundary fail?
+
+If you care about reproducible AI-assisted research, **try it, open an issue, or contribute a test case.**
+
 <div align="center">
 
-**Current packaged release:** `v0.3.0` · **License:** Apache 2.0 · **Runtime:** Python 3.12
+**Current packaged release:** `v0.3.0` · **Apache-2.0** · **Python 3.12**
 
 </div>
 
@@ -51,19 +140,6 @@ A paper, dataset, analysis, figure, and conclusion should not become five discon
 - [Quick start](#quick-start)
 - [Why Throughline is different](#why-throughline-is-different)
 - [System design & engineering architecture](#system-design--engineering-architecture)
-  - [System context](#1-system-context)
-  - [Component architecture](#2-component-architecture)
-  - [Engineering boundaries](#3-engineering-boundaries)
-  - [Research object lifecycle](#4-research-object-lifecycle)
-  - [Request lifecycle](#5-request-lifecycle)
-  - [Persistence architecture](#6-persistence-architecture)
-  - [Durable workflow engine](#7-durable-workflow-engine)
-  - [Scientific execution](#8-scientific-execution)
-  - [Ingestion & connector boundary](#9-ingestion--connector-boundary)
-  - [Optional model boundary](#10-optional-model-boundary)
-  - [Provenance & lineage](#11-provenance--lineage)
-  - [Visualization & imaging](#12-visualization--imaging)
-  - [Failure and degraded modes](#13-failure--degraded-modes)
 - [Security, tenancy & trust boundaries](#security-tenancy--trust-boundaries)
 - [Deployment topology](#deployment-topology)
 - [Backup & recovery](#backup--recovery)
