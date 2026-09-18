@@ -76,11 +76,18 @@
   /* One number, used by the grid and by the stage, so the hole's column and
      the sentence's column cannot drift apart. */
   --sky-split: 40%;
-  /* Narrow, the band and the form together are taller than the viewport, and
-     `.gate` is a fixed element that would otherwise clip the password field. */
+  /* The band's height, narrow. One number for the grid row and the canvas.
+     It was 42vh: on a 375x812 phone that is 341px of sky before the first
+     field, and the password and the button started below the fold, so the
+     first thing a new user met was a scroll. 26vh, never under 170px, still
+     holds the sentence (two lines at 62% of the band) and puts the whole
+     form on one screen. */
+  --sky-band: max(26vh, 170px);
+  /* Narrow, the band and the form together can still be taller than a short
+     viewport, and `.gate` is a fixed element that would otherwise clip it. */
   overflow-y: auto;
   grid-template-columns: 1fr;
-  grid-template-rows: 42vh auto;
+  grid-template-rows: var(--sky-band) auto;
 }
 
 .gate.gate-sky > .sky { z-index: 0; }
@@ -88,7 +95,7 @@
 /* Narrow: a band across the top, hole centred in it, the form underneath. */
 .gate.gate-sky > .sky > .sky-stage {
   inset: 0 0 auto 0;
-  height: 42vh;
+  height: var(--sky-band);
 }
 .gate.gate-sky > .sky > .sky-stage::after {
   /* All the way to the page colour here, because what follows is the form and
@@ -141,7 +148,7 @@
   text-shadow: 0 2px 24px var(--gate-page);
 }
 .gate.gate-sky .gate-art-copy p {
-  /* The band is 42vh; a paragraph under the sentence would run into the form.
+  /* The band is short; a paragraph under the sentence would run into the form.
      Restored at the width where the sky is a full column. */
   display: none;
   text-shadow: 0 1px 16px var(--gate-page);

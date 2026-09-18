@@ -82,6 +82,22 @@ describe("first-run setup", () => {
     expect(globals).toMatch(/@media \(pointer: coarse\) \{ \.gate-modes > \.btn \{ min-height: 44px; \} \}/);
   });
 
+  it("puts the whole form on a phone's first screen", () => {
+    // At 375x812 the 42vh sky band put the password and the button below the
+    // fold. Measured after the change: the button ends at 774px of 812.
+    const sky = readFileSync("app/sky.css", "utf8");
+    expect(sky).toMatch(/--sky-band:\s*max\(26vh, 170px\)/);
+    expect(rule(sky, ".gate.gate-sky")).toMatch(/grid-template-rows:\s*var\(--sky-band\) auto/);
+    expect(rule(sky, ".gate.gate-sky > .sky > .sky-stage")).toMatch(/height:\s*var\(--sky-band\)/);
+    expect(sky.replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/42vh/);
+  });
+
+  it("gives Back a touch-sized target", () => {
+    const coarse = globals.match(/@media \(pointer: coarse\) \{\s*\.gate-back \{([^}]*)\}/);
+    expect(coarse, "a coarse-pointer rule for .gate-back").not.toBeNull();
+    expect(coarse![1]).toMatch(/min-height:\s*44px/);
+  });
+
   it("sets its small text at an ink that measured 4.5:1 or better", () => {
     // 42% measured 3.79:1 and 25% measured 2.15:1 on this ground; 56% is 5.8:1.
     for (const selector of [".gate-field > span", ".gate-field input::placeholder",

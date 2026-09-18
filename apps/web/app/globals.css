@@ -1690,6 +1690,12 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
   text-decoration: none;
 }
 .gate-back:hover { color: var(--gate-ink); }
+/* A touch target, not a footnote: the link was 18px tall on a phone. The
+   padding is taken back by the margin so the desktop layout does not move. */
+@media (pointer: coarse) {
+  .gate-back { min-height: 44px; display: inline-flex; align-items: center;
+               padding: 0 12px; margin-left: -12px; margin-top: 11px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .gate-submit, .gate-field input, .l-btn { transition: none; }
