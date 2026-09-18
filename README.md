@@ -1,3 +1,4 @@
+<img width="862" height="504" alt="Screenshot 2026-09-18 at 10 09 08 PM" src="https://github.com/user-attachments/assets/bdcd19e8-01c3-4019-8616-c63e3f5be298" />
 <div align="center">
 
 # Throughline
