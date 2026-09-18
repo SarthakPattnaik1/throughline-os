@@ -1127,10 +1127,6 @@ a { color: inherit; }
   background: var(--select-soft); color: var(--on-select-soft);
 }
 
-.rail-state { font-size: 11px; color: var(--ink-faint); }
-.rail-state-completed { color: var(--ok, var(--ink-faint)); }
-.rail-state-failed { color: var(--bad, var(--ink-faint)); }
-
 /* The panel is focusable so a keyboard can scroll what it has just opened; it
    must not therefore wear a focus ring as though it were a control. */
 .tab-panel { outline: none; }
@@ -1138,50 +1134,6 @@ a { color: inherit; }
   outline: 2px solid var(--focus);
   outline-offset: 3px;
   border-radius: 4px;
-}
-
-.rail {
-  /* No `border-right`: `.shell-divider` draws that line now, and keeping both
-     put two hairlines and a gap where the shell had one. */
-  padding: 14px 0;
-  overflow-y: auto;
-  background: var(--panel);
-}
-
-.rail-group { margin-bottom: 18px; }
-/* The group's name is `button.rail-heading` now, not an `.eyebrow` label: it
-   expands and collapses, which is a control. The rule that padded the old
-   label is gone rather than kept for a day it might come back — a selector
-   that matches nothing is a claim about the markup that is no longer true. */
-
-.rail-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 16px;
-  border: 0;
-  background: none;
-  text-align: left;
-  color: var(--ink-soft);
-  border-left: 2px solid transparent;
-}
-
-.rail-item:hover { background: var(--hover); color: var(--ink); }
-
-.rail-item[aria-current="true"] {
-  color: var(--ink);
-  font-weight: 560;
-  border-left-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.rail-count {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--ink-faint);
-  font-variant-numeric: tabular-nums;
 }
 
 .workspace {
@@ -1193,7 +1145,7 @@ a { color: inherit; }
 }
 
 .inspector {
-  /* No `border-left` — see `.rail`. */
+  /* No `border-left`: `.shell-divider` draws the line between panels. */
   overflow-y: auto;
   padding: 18px 18px 60px;
   background: var(--panel);
@@ -4361,12 +4313,6 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
   color: var(--ink-faint);
   transition: color var(--fast) linear;
 }
-/* `.rail-item` is `space-between` so the count sits at the far edge. Adding an
-   icon made that a three-way split and threw the label to the right, so the
-   label takes the slack instead and the count keeps its edge. */
-.rail-item > span:not(.rail-icon):not(.rail-count) { flex: 1; text-align: left; }
-.rail-item:hover .rail-icon { color: var(--ink-soft); }
-.rail-item[aria-current="true"] .rail-icon { color: var(--accent); }
 
 /* --- the first-project screen --------------------------------------------- */
 
@@ -5960,28 +5906,7 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
  * behind a visible fade. That is the whole of the improvement, stated.
  */
 .rail-panel { container: rail / inline-size; }
-.rail {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 4px 0 4px;
-  /* A scroll with a visible edge is not a hide; the fade is the edge. */
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
-}
-.rail-footer {
-  flex: 0 0 auto;
-  padding: 4px 0 6px;
-  border-top: 1px solid var(--line);
-  background: var(--panel);
-}
-.rail-footer .rail-group { margin-bottom: 0; }
 
-/*
- * A 30 px row, back up from the 26 px that fitting all 26 entries on a 900 px
- * laptop cost. One group is open now — eight rows at the widest — so the rail
- * has room it did not have, and a 30 px target is the comfortable one.
- */
-.rail-item { padding: 5px 16px; line-height: 20px; }
-.rail-group { margin-bottom: 4px; }
 
 /*
  * The group heading: a stage of the loop, its entry count, and a chevron.
@@ -5993,54 +5918,16 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
  * reason the token block states, quiet text on a near-black ground being the
  * first thing to disappear.
  */
-.rail-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 5px 16px;
-  min-height: 30px;
-  border: 0;
-  background: none;
-  text-align: left;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink-soft);
-}
-.rail-heading:hover { background: var(--hover); color: var(--ink); }
-.rail-heading > span:first-of-type { flex: 1; }
 
 /* The chevron is drawn, not shipped: one glyph per heading is five more
    files' worth of markup for a triangle. It points down when the group is
    open, which is the direction its entries went. */
-.rail-heading::before {
-  content: "";
-  flex: none;
-  width: 5px;
-  height: 5px;
-  border-right: 1.5px solid var(--n-400);
-  border-bottom: 1.5px solid var(--n-400);
-  transform: rotate(-45deg);
-  transition: transform var(--micro) var(--ease-out-quad);
-}
-.rail-heading[aria-expanded="true"]::before { transform: rotate(45deg); }
-
-.rail-heading-count {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-faint);
-  letter-spacing: 0;
-}
 
 /* Nothing of its own: the rows inside carry the padding. Named so the
    heading's `aria-controls` points at a region that exists — and deliberately
    without a `display`, because an author `display: block` here would outrank
    the user agent's `[hidden] { display: none }` and quietly un-hide a closed
    group the day somebody renders its rows unconditionally. */
-.rail-entries { min-width: 0; }
 
 /* The gate's two doors, as equal labelled buttons above the form.
  *
@@ -6339,7 +6226,7 @@ details.fold > *:not(summary) { padding: 8px 2px 10px; }
 .fold-body { padding: 8px 2px 10px; }
 
 @media (prefers-reduced-motion: reduce) {
-  details.fold > summary::before, .rail-heading::before { transition: none; }
+  details.fold > summary::before { transition: none; }
 }
 
 /*
