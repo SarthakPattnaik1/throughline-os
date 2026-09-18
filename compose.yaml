@@ -14,7 +14,10 @@ services:
     # Dockerfile's note: the embedded PostgreSQL has no Linux ARM wheel.
     platform: linux/amd64
     ports:
-      - "8080:8080"   # API
+      # Local-first means local by default. Publishing only on loopback prevents
+      # a `docker compose up` from putting a local-mode research workspace on the
+      # LAN merely because Docker's default bind address is 0.0.0.0.
+      - "127.0.0.1:8080:8080"   # API + interface
     volumes:
       # Named, not bind-mounted: research that disappears with `docker compose
       # down` is the loss this whole arrangement exists to prevent.
@@ -40,8 +43,11 @@ services:
     profiles: ["graph"]
     image: neo4j:5-community
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      # These are administrative/query surfaces, not public services. Keep them
+      # on the researcher's machine unless somebody explicitly chooses a remote
+      # deployment and configures its security separately.
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
     environment:
       NEO4J_AUTH: neo4j/${THROUGHLINE_NEO4J_PASSWORD:-throughline-local}
     healthcheck:
@@ -54,7 +60,8 @@ services:
     profiles: ["model"]
     image: ollama/ollama:latest
     ports:
-      - "11434:11434"
+      # Ollama exposes a model API with no reason to be LAN-visible by default.
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama-models:/root/.ollama
 

@@ -34,6 +34,7 @@
 
 import { useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
+import { plainText } from "@/lib/plain-text";
 import { Empty, Failure, Loading } from "./primitives";
 import { SourceChip, SourceMark } from "./SourceMark";
 
@@ -367,12 +368,17 @@ export function DataSearch({ projectId, onImported, initialQuery }: {
                           <p className="ds-unknown">{use.unknown.join("; ")}.</p>
                         )}
 
-                        {record.description && (
-                          <p className="lit-abstract">
-                            {record.description.replace(/<[^>]*>/g, "").slice(0, 300)}
-                            {record.description.length > 300 && "…"}
-                          </p>
-                        )}
+                        {record.description && (() => {
+                          // Its words, not its markup: read through an inert
+                          // parser and rendered as escaped text (CodeQL #29).
+                          const words = plainText(record.description);
+                          return words ? (
+                            <p className="lit-abstract">
+                              {words.slice(0, 300)}
+                              {words.length > 300 && "…"}
+                            </p>
+                          ) : null;
+                        })()}
 
                         <footer className="lit-actions">
                           {record.files.length > 0 && (

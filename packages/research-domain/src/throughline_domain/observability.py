@@ -163,8 +163,9 @@ def _worker_check() -> dict[str, Any]:
                 FROM workflow_runs
                 """)
             row = dict(cur.fetchone())
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "critical": False, "error": str(exc)[:200],
+    except Exception:  # noqa: BLE001
+        return {"ok": False, "critical": False,
+                "error": "Worker status could not be checked.",
                 "impact": "Whether anything is processing work is unknown."}
 
     due = int(row["due"] or 0)
@@ -224,9 +225,12 @@ def health() -> dict[str, Any]:
         checks["database"] = {
             "ok": True, "critical": True,
             "latency_ms": round((time.monotonic() - started) * 1000, 1)}
-    except Exception as exc:  # noqa: BLE001
-        checks["database"] = {"ok": False, "critical": True, "error": str(exc)[:200],
-                              "impact": "Nothing works without the record."}
+    except Exception:  # noqa: BLE001
+        checks["database"] = {
+            "ok": False, "critical": True,
+            "error": "The database health check failed.",
+            "impact": "Nothing works without the record.",
+        }
 
     try:
         import throughline_model
@@ -237,8 +241,11 @@ def health() -> dict[str, Any]:
             "impact": None if capability.text else
             "Claim location and plain summaries are unavailable. Every "
             "deterministic verdict, correction and export still works."}
-    except Exception as exc:  # noqa: BLE001
-        checks["model"] = {"ok": False, "critical": False, "error": str(exc)[:200]}
+    except Exception:  # noqa: BLE001
+        checks["model"] = {
+            "ok": False, "critical": False,
+            "error": "The model capability check failed.",
+        }
 
     checks["workers"] = _worker_check()
 
@@ -252,9 +259,11 @@ def health() -> dict[str, Any]:
             "impact": None if projection["reachable"] else
             "Path-finding, centrality and clustering are unavailable. "
             "Provenance and evidence graphs are unaffected."}
-    except Exception as exc:  # noqa: BLE001
-        checks["graph_projection"] = {"ok": False, "critical": False,
-                                      "error": str(exc)[:200]}
+    except Exception:  # noqa: BLE001
+        checks["graph_projection"] = {
+            "ok": False, "critical": False,
+            "error": "The graph projection health check failed.",
+        }
 
     critical_ok = all(c["ok"] for c in checks.values() if c.get("critical"))
     degraded = [name for name, c in checks.items() if not c["ok"]]

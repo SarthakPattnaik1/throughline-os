@@ -29,12 +29,23 @@ publication year — and they do, constantly, because one records the preprint a
 one the version of record — the record keeps both and says which was preferred.
 Silently picking one is how a bibliography ends up with a date nobody can
 defend.
+
+All connector HTTP goes through a public-network-only transport. Most connector
+URLs are assembled from literal API origins, but keeping the guard in the base
+class means a future connector cannot accidentally turn a query, cursor or
+configuration value into an SSRF primitive. Redirects are rechecked, environment
+proxies are disabled for this server-side research fetch path, and the actual
+connected peer must be globally routable so DNS rebinding cannot swap a public
+answer for a private socket between validation and connect.
 """
 
 from __future__ import annotations
 
+import http.client
+import ipaddress
 import json
 import re
+import socket
 import threading
 import time
 import urllib.error
@@ -59,13 +70,7 @@ class RateLimited(ConnectorError):
 
 @dataclass
 class SourceRecord:
-    """
-    One work, normalised.
-
-    `provenance` maps each field to the connector that supplied it, so a
-    disagreement between sources stays visible rather than being resolved
-    silently in favour of whichever answered first.
-    """
+    """One work, normalised, with field-level provenance."""
 
     title: str
     authors: list[str] = field(default_factory=list)
@@ -75,10 +80,6 @@ class SourceRecord:
     pmid: str | None = None
     pmcid: str | None = None
     openalex_id: str | None = None
-    #: The record's identifier within an OAI-PMH repository. Repository-scoped
-    #: rather than global, so it is only meaningful alongside the base URL in
-    #: `source` — but it is the stable key a re-harvest matches on, and without
-    #: it the same record arrives as a new one every time.
     oai_identifier: str | None = None
     abstract: str = ""
     venue: str = ""
@@ -87,21 +88,13 @@ class SourceRecord:
     open_access: bool | None = None
     cited_by: int | None = None
     source: str = ""
-    #: True for a version of record, False for a preprint, None when the source
-    #: does not say. The three are genuinely different, and collapsing None into
-    #: False labels indexed work as unreviewed.
     peer_reviewed: bool | None = None
-    #: Whether open-access full text can be retrieved, not merely an abstract.
-    #: A claim can be described from an abstract but not tested against one.
     has_full_text: bool = False
-    #: For a preprint since published: the DOI of the version of record. A
-    #: superseded preprint should not be cited as the newest thing.
     superseded_by: str | None = None
     provenance: dict[str, str] = field(default_factory=dict)
     disagreements: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def identity(self) -> tuple[str, str] | None:
-        """The strongest identifier this record carries."""
         for kind, value in (("doi", self.doi), ("arxiv", self.arxiv_id),
                             ("pmid", self.pmid), ("pmcid", self.pmcid),
                             ("openalex", self.openalex_id)):
@@ -125,13 +118,7 @@ class SourceRecord:
 
 
 class TokenBucket:
-    """
-    Politeness, enforced rather than documented.
-
-    Lives in the base class because a per-connector implementation is a
-    per-connector opportunity to forget, and the cost of forgetting is a block
-    that affects every user of this software, not just the one who triggered it.
-    """
+    """Politeness, enforced rather than documented."""
 
     def __init__(self, rate_per_second: float, burst: int = 1) -> None:
         self.rate = rate_per_second
@@ -155,16 +142,91 @@ class TokenBucket:
                 self._tokens -= 1
 
 
+# ---------------------------------------------------------------------------
+# Safe HTTP transport
+# ---------------------------------------------------------------------------
+
+
+def _public_url(url: str) -> str:
+    """Return a normalized HTTP(S) URL only when every DNS answer is public."""
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ConnectorError("A connector tried to fetch a non-http(s) address.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ConnectorError("Connector addresses may not contain credentials.")
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ConnectorError("The connector host could not be resolved.") from exc
+    if not infos:
+        raise ConnectorError("The connector host could not be resolved.")
+    for info in infos:
+        peer = info[4][0].split("%", 1)[0]
+        if not ipaddress.ip_address(peer).is_global:
+            raise ConnectorError("The connector host is not a public address.")
+    return urllib.parse.urlunsplit(parsed)
+
+
+class _PublicRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+        return super().redirect_request(
+            req, fp, code, msg, headers, _public_url(newurl))
+
+
+def _peer_checked_connection(base: type, *, host: str):
+    """Connection factory that validates the socket peer after connect."""
+    def make(connect_to: str, **kwargs):
+        connection = base(connect_to, **kwargs)
+        create = connection._create_connection
+
+        def checked(address, *args, **kw):
+            sock = create(address, *args, **kw)
+            peer = sock.getpeername()[0].split("%", 1)[0]
+            if not ipaddress.ip_address(peer).is_global:
+                sock.close()
+                raise ConnectorError(
+                    f"{host or 'That host'} is not a public address.")
+            return sock
+
+        connection._create_connection = checked
+        return connection
+    return make
+
+
+class _PublicHTTP(urllib.request.HTTPHandler):
+    def http_open(self, req):  # noqa: D102
+        host = urllib.parse.urlsplit(req.full_url).hostname or ""
+        return self.do_open(
+            _peer_checked_connection(http.client.HTTPConnection, host=host), req)
+
+
+class _PublicHTTPS(urllib.request.HTTPSHandler):
+    def https_open(self, req):  # noqa: D102
+        host = urllib.parse.urlsplit(req.full_url).hostname or ""
+        return self.do_open(
+            _peer_checked_connection(http.client.HTTPSConnection, host=host),
+            req,
+            context=self._context,
+        )
+
+
+def _public_opener() -> urllib.request.OpenerDirector:
+    # Explicit empty proxy map prevents HTTP_PROXY/HTTPS_PROXY from moving DNS
+    # resolution and destination choice outside the guard above.
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _PublicRedirects,
+        _PublicHTTP,
+        _PublicHTTPS,
+    )
+
+
 class Connector:
     """A literature source. Subclasses implement `search` and `normalise`."""
 
     name: str = "connector"
-    #: Published or documented limit. Deliberately conservative where a source
-    #: states a range: being slower than necessary costs a second, being faster
-    #: than allowed costs access.
     rate_per_second: float = 1.0
     burst: int = 1
-    #: Whether a key or a contact address is needed to use the polite pool.
     needs_contact: bool = False
 
     def __init__(self, *, mailto: str = "", api_key: str = "",
@@ -177,24 +239,19 @@ class Connector:
     # -- transport ---------------------------------------------------------
 
     def _open(self, request: urllib.request.Request):
-        """
-        Send one request. Every fetch in this class goes through here.
-
-        The seam a connector overrides when the address it fetches came from a
-        caller rather than from its own code: an API connector's URLs are its
-        own, while the OAI harvester's base URL is typed by whoever asked, and
-        must not be allowed to reach this machine (T165).
-        """
-        return urllib.request.urlopen(request, timeout=self.timeout)
+        """Send one request through the public-network-only transport."""
+        safe_url = _public_url(request.full_url)
+        safe_request = urllib.request.Request(
+            safe_url,
+            data=request.data,
+            headers=dict(request.header_items()),
+            method=request.get_method(),
+        )
+        return _public_opener().open(safe_request, timeout=self.timeout)
 
     def _get(self, url: str, *, headers: dict[str, str] | None = None,
              attempts: int = 3) -> bytes:
-        """
-        Fetch, with backoff and jitter.
-
-        Retries only on 429 and 5xx. A 404 is an answer, and retrying it three
-        times is rude to the upstream and slow for the researcher.
-        """
+        """Fetch, with backoff and jitter."""
         import random
 
         request_headers = {
@@ -207,7 +264,8 @@ class Connector:
         for attempt in range(attempts):
             self._bucket.take()
             try:
-                request = urllib.request.Request(url, headers=request_headers)
+                request = urllib.request.Request(
+                    _public_url(url), headers=request_headers)
                 with self._open(request) as r:
                     return r.read()
             except urllib.error.HTTPError as exc:
@@ -219,14 +277,17 @@ class Connector:
                     continue
                 raise ConnectorError(
                     f"{self.name} returned {exc.code} for that query.") from exc
+            except ConnectorError:
+                # Security-policy failures are deterministic, not transient
+                # network errors. Retrying would only hide the reason the URL
+                # was refused and could turn an SSRF guard into a generic error.
+                raise
             except (urllib.error.URLError, TimeoutError) as exc:
                 last = exc
                 if attempt == attempts - 1:
                     break
                 time.sleep((2 ** attempt) + random.random())
 
-        # Throttled and unreachable must not read alike: one is fixed by
-        # waiting or adding a key, the other is the source being down.
         if isinstance(last, urllib.error.HTTPError) and last.code == 429:
             raise RateLimited(
                 f"{self.name} is rate-limiting this request"
@@ -234,29 +295,11 @@ class Connector:
                    if not self.api_key else ".")
                 + " Other sources are unaffected.") from last
         raise ConnectorError(
-            f"{self.name} could not be reached ({last}). Other sources are "
-            "unaffected.")
+            f"{self.name} could not be reached. Other sources are unaffected.") from last
 
     def _send(self, url: str, *, method: str, payload: Any,
               headers: dict[str, str] | None = None) -> tuple[int, Any]:
-        """
-        A write. Deliberately without the retry that `_get` has.
-
-        `_get` retries 5xx and timeouts because fetching twice costs nothing. A
-        write is not like that. When a request times out, the client cannot tell
-        whether the server committed it — and retrying a create that already
-        succeeded puts a second copy in somebody's reference library, which is
-        the exact harm the caller is trying to avoid. One attempt, and an error
-        that says the outcome is unknown, is more useful than a retry that might
-        duplicate.
-
-        Returns the status alongside the body because callers need to
-        distinguish outcomes the HTTP layer treats as failures — a 412 here means
-        somebody else edited the record first, which is a reason to stop, not an
-        error to report as a network problem.
-        """
-        import urllib.error
-
+        """A write, deliberately without automatic retry."""
         body = json.dumps(payload).encode("utf-8")
         request_headers = {
             "User-Agent": USER_AGENT.format(mailto=self.mailto or "unknown"),
@@ -266,8 +309,8 @@ class Connector:
         }
 
         self._bucket.take()
-        request = urllib.request.Request(url, data=body, method=method,
-                                         headers=request_headers)
+        request = urllib.request.Request(
+            _public_url(url), data=body, method=method, headers=request_headers)
         try:
             with self._open(request) as r:
                 raw = r.read()
@@ -278,12 +321,11 @@ class Connector:
                 return exc.code, json.loads(raw.decode("utf-8")) if raw else None
             except (UnicodeDecodeError, json.JSONDecodeError):
                 return exc.code, None
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except (urllib.error.URLError, TimeoutError, ConnectorError) as exc:
             raise ConnectorError(
                 f"{self.name} could not be reached, and this was a write: it is "
-                f"not known whether it took effect ({exc}). Check the library "
-                "before trying again — retrying automatically could write it "
-                "twice.") from exc
+                "not known whether it took effect. Check the library before trying "
+                "again — retrying automatically could write it twice.") from exc
 
     def _json(self, url: str, **kwargs: Any) -> Any:
         raw = self._get(url, **kwargs)
@@ -299,14 +341,6 @@ class Connector:
         raise NotImplementedError
 
     def capability(self) -> dict[str, Any]:
-        """
-        What this connector can do right now.
-
-        `needs_contact` without a contact address is reported as usable but
-        impolite rather than as broken: most of these APIs work without it and
-        simply give you a worse rate limit, and refusing to search would be
-        overstating the problem.
-        """
         ready = not self.needs_contact or bool(self.mailto or self.api_key)
         return {
             "name": self.name,
@@ -320,7 +354,7 @@ class Connector:
 
 
 # ---------------------------------------------------------------------------
-# Normalisation helpers, shared because every source gets these wrong
+# Normalisation helpers
 # ---------------------------------------------------------------------------
 
 _DOI = re.compile(r"(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)")
@@ -333,23 +367,12 @@ def clean_doi(value: Any) -> str | None:
     return match.group(1).lower().rstrip(".") if match else None
 
 
-#: Crossref and PubMed return JATS markup inside titles and abstracts —
-#: `<i>Helicobacter pylori</i>`, `<sub>2</sub>`, `<jats:p>`. Left in, it reaches
-#: a bibliography as literal angle brackets, which is a defect a reviewer sees
-#: before the researcher does.
 _TAG = re.compile(r"<[^>]{1,80}>")
 _ENTITY = {"&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"',
            "&apos;": "'", "&#39;": "'", "&nbsp;": " "}
 
 
 def clean_text(value: Any) -> str:
-    """
-    Strip markup and collapse whitespace.
-
-    Tags are removed rather than rendered: the same string has to work in a
-    bibliography, a PowerPoint slide and a screen reader, and only plain text
-    does all three.
-    """
     text = str(value or "")
     text = _TAG.sub(" ", text)
     for entity, char in _ENTITY.items():

@@ -96,7 +96,7 @@ def version_of(executable: str) -> str:
         done = subprocess.run([executable, "--version"], capture_output=True,
                               text=True, timeout=30, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
-        raise BlenderError(f"Blender could not be run: {exc}") from exc
+        raise BlenderError("Blender could not be run on this machine.") from exc
 
     match = re.search(r"Blender\s+(\S+)", done.stdout or "")
     if not match:
@@ -125,9 +125,14 @@ def availability() -> dict[str, Any]:
         }
     try:
         found_version = version_of(executable)
-    except BlenderError as exc:
-        return {"available": False, "path": executable, "version": None,
-                "withheld": str(exc), "install": INSTALL_HINT}
+    except BlenderError:
+        return {
+            "available": False,
+            "path": executable,
+            "version": None,
+            "withheld": "Blender is present but could not be started safely.",
+            "install": INSTALL_HINT,
+        }
 
     return {
         "available": True,

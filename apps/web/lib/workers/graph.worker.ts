@@ -43,6 +43,81 @@ type Node = {
 };
 type Link = { source: string | Node; target: string | Node; similarity: number };
 
+type WorkerMessage =
+  | { type: "init"; nodes: Node[]; links: Link[] }
+  | { type: "add"; nodes: Node[]; links: Link[] }
+  | { type: "drag"; index: number; x: number; y: number }
+  | { type: "release"; index: number }
+  | { type: "stop" };
+
+function finiteNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function safeNode(value: unknown): Node | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.id !== "string" || raw.id.length === 0 || raw.id.length > 256) return null;
+  const node: Node = {
+    id: raw.id,
+    importance: finiteNumber(raw.importance),
+  };
+  if (typeof raw.x === "number" && Number.isFinite(raw.x)) node.x = raw.x;
+  if (typeof raw.y === "number" && Number.isFinite(raw.y)) node.y = raw.y;
+  if (raw.fx === null) node.fx = null;
+  else if (typeof raw.fx === "number" && Number.isFinite(raw.fx)) node.fx = raw.fx;
+  if (raw.fy === null) node.fy = null;
+  else if (typeof raw.fy === "number" && Number.isFinite(raw.fy)) node.fy = raw.fy;
+  return node;
+}
+
+function endpoint(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && typeof (value as Record<string, unknown>).id === "string") {
+    return (value as Record<string, unknown>).id as string;
+  }
+  return null;
+}
+
+function safeLink(value: unknown): Link | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const source = endpoint(raw.source);
+  const target = endpoint(raw.target);
+  if (!source || !target) return null;
+  return {
+    source,
+    target,
+    similarity: Math.max(0, Math.min(1, finiteNumber(raw.similarity, 0.5))),
+  };
+}
+
+function parseMessage(value: unknown): WorkerMessage | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.type === "init" || raw.type === "add") {
+    if (!Array.isArray(raw.nodes) || !Array.isArray(raw.links)) return null;
+    const parsedNodes = raw.nodes.map(safeNode);
+    const parsedLinks = raw.links.map(safeLink);
+    if (parsedNodes.some((n) => n === null) || parsedLinks.some((l) => l === null)) return null;
+    return {
+      type: raw.type,
+      nodes: parsedNodes as Node[],
+      links: parsedLinks as Link[],
+    };
+  }
+  if (raw.type === "drag") {
+    if (!Number.isInteger(raw.index) || typeof raw.x !== "number" || !Number.isFinite(raw.x)
+        || typeof raw.y !== "number" || !Number.isFinite(raw.y)) return null;
+    return { type: "drag", index: raw.index as number, x: raw.x, y: raw.y };
+  }
+  if (raw.type === "release") {
+    if (!Number.isInteger(raw.index)) return null;
+    return { type: "release", index: raw.index as number };
+  }
+  return raw.type === "stop" ? { type: "stop" } : null;
+}
+
 let simulation: ReturnType<typeof forceSimulation<Node>> | null = null;
 let nodes: Node[] = [];
 let links: Link[] = [];
@@ -91,23 +166,35 @@ function post() {
 }
 
 self.onmessage = (event: MessageEvent) => {
-  const message = event.data;
+  // Dedicated-worker messages normally carry an empty origin. Reject any
+  // non-empty origin that is not this application's own origin.
+  if (event.origin !== "" && event.origin !== self.location.origin) return;
+  const message = parseMessage(event.data);
+  if (!message) return;
 
   if (message.type === "init") {
-    nodes = message.nodes.map((n: Node) => ({ ...n }));
-    links = message.links.map((l: Link) => ({ ...l }));
+    nodes = message.nodes.map((node) => ({
+      id: node.id,
+      importance: node.importance,
+      x: node.x,
+      y: node.y,
+      fx: node.fx,
+      fy: node.fy,
+    }));
+    links = message.links.map((link) => ({
+      source: endpoint(link.source) ?? "",
+      target: endpoint(link.target) ?? "",
+      similarity: link.similarity,
+    }));
     build(1);
     return;
   }
 
   if (message.type === "add") {
-    // New nodes spawn at the centroid of their neighbours, never at (0,0):
-    // spawning at the origin fires them across the viewport on the first tick,
-    // which reads as the graph breaking rather than growing.
     const existing = new Map(nodes.map((n) => [n.id, n]));
-    for (const node of message.nodes as Node[]) {
+    for (const node of message.nodes) {
       if (existing.has(node.id)) continue;
-      const neighbours = (message.links as Link[])
+      const neighbours = message.links
         .filter((l) => l.source === node.id || l.target === node.id)
         .map((l) => existing.get((l.source === node.id ? l.target : l.source) as string))
         .filter((n): n is Node => Boolean(n));
@@ -115,12 +202,19 @@ self.onmessage = (event: MessageEvent) => {
         ? { x: neighbours.reduce((s, n) => s + (n.x ?? 0), 0) / neighbours.length,
             y: neighbours.reduce((s, n) => s + (n.y ?? 0), 0) / neighbours.length }
         : { x: 0, y: 0 };
-      nodes.push({ ...node, x: seed.x + (Math.random() - 0.5) * 20,
-                            y: seed.y + (Math.random() - 0.5) * 20 });
+      nodes.push({
+        id: node.id,
+        importance: node.importance,
+        x: seed.x + (Math.random() - 0.5) * 20,
+        y: seed.y + (Math.random() - 0.5) * 20,
+      });
     }
     const known = new Set(links.map((l) => `${String(l.source)} ${String(l.target)}`));
-    for (const link of message.links as Link[]) {
-      if (!known.has(`${String(link.source)} ${String(link.target)}`)) links.push({ ...link });
+    for (const link of message.links) {
+      const key = `${String(link.source)} ${String(link.target)}`;
+      if (!known.has(key)) {
+        links.push({ source: link.source, target: link.target, similarity: link.similarity });
+      }
     }
     build(0.3);
     return;
@@ -131,7 +225,6 @@ self.onmessage = (event: MessageEvent) => {
     if (!node || !simulation) return;
     node.fx = message.x;
     node.fy = message.y;
-    // Keep it warm while dragging so neighbours respond.
     simulation.alphaTarget(0.3).restart();
     return;
   }
@@ -139,11 +232,9 @@ self.onmessage = (event: MessageEvent) => {
   if (message.type === "release") {
     const node = nodes[message.index];
     if (node) { node.fx = null; node.fy = null; }
-    // Ramp to zero rather than stopping dead, so the graph relaxes after a drag
-    // instead of freezing mid-motion.
     simulation?.alphaTarget(0);
     return;
   }
 
-  if (message.type === "stop") simulation?.stop();
+  simulation?.stop();
 };

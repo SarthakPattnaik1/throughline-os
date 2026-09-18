@@ -137,6 +137,19 @@ MAX_REDIRECTS = 3
 
 _REDIRECTS = {301, 302, 303, 307, 308}
 
+# Only these connectors currently surface direct file URLs that the UI can
+# import. Dryad and Figshare search results are landing records with
+# files_listed=False, so accepting arbitrary sibling subdomains for them would
+# widen an SSRF boundary without enabling a real product path.
+_IMPORT_FILE_HOSTS = frozenset({
+    "zenodo.org",
+    "files.zenodo.org",
+    "dataverse.harvard.edu",
+    "figshare.com",
+    "datadryad.org",
+    "doi.org",
+})
+
 
 @dataclass
 class Fetched:
@@ -284,26 +297,42 @@ def _repositories() -> frozenset[str]:
 
 
 def _checked(url: str, *, redirected: bool = False) -> str:
-    """`url`, if it addresses a repository this installation searches."""
-    parsed = urllib.parse.urlparse(url)
+    """Return a normalized URL only for an exact, approved import host."""
+    parsed = urllib.parse.urlsplit(url)
     if parsed.scheme not in {"http", "https"}:
         raise DatasetImportRefused(
             "Only http and https addresses can be imported; "
             f"{parsed.scheme or 'that address'} cannot.")
+    if parsed.username is not None or parsed.password is not None:
+        raise DatasetImportRefused(
+            "Repository download addresses may not contain credentials.")
     if not parsed.hostname:
         raise DatasetImportRefused("That address names no host.")
+    if parsed.port not in (None, 80, 443):
+        raise DatasetImportRefused(
+            "Repository download addresses may not select a custom network port.")
 
-    domains = _repositories()
     host = parsed.hostname.lower().rstrip(".")
-    if not any(host == domain or host.endswith("." + domain)
-               for domain in domains):
-        named = ", ".join(sorted(domains))
+    approved = next((candidate for candidate in _IMPORT_FILE_HOSTS
+                     if host == candidate), None)
+    if approved is None:
+        named = ", ".join(sorted(_IMPORT_FILE_HOSTS))
         raise DatasetImportRefused(
             (f"That address redirected to {host}, which is not one of the "
              if redirected else
              f"{host} is not one of the ")
             + f"repositories this installation searches. Those are: {named}.")
-    return url
+
+    # Rebuild the network target from the approved literal host. User input can
+    # still choose the path/query for a file on that repository, but cannot
+    # choose the authority that urllib connects to.
+    netloc = approved
+    if parsed.port == 80 and parsed.scheme == "http":
+        netloc += ":80"
+    elif parsed.port == 443 and parsed.scheme == "https":
+        netloc += ":443"
+    return urllib.parse.urlunsplit(
+        (parsed.scheme, netloc, parsed.path or "/", parsed.query, ""))
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +497,12 @@ def _fetch_over_http(url: str) -> Fetched:
     # that has to be public (T165).
     from throughline_connectors.papers import (
         PaperFetchError, _PublicOnlyHTTP, _PublicOnlyHTTPS)
-    opener = urllib.request.build_opener(_NoRedirects, _PublicOnlyHTTP, _PublicOnlyHTTPS)
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _NoRedirects,
+        _PublicOnlyHTTP,
+        _PublicOnlyHTTPS,
+    )
     try:
         with opener.open(request, timeout=TIMEOUT) as response:
             return Fetched(status=response.status,

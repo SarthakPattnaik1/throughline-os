@@ -84,7 +84,7 @@
  * retries once if it sees one.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -93,7 +93,7 @@ const { chromium } = await import(
 );
 
 const WALK_URL = process.env.WALK_URL ?? "http://localhost:3100";
-const WALK_OUT = process.env.WALK_OUT ?? join(tmpdir(), "throughline-walk");
+const WALK_OUT = process.env.WALK_OUT ?? mkdtempSync(join(tmpdir(), "throughline-walk-"));
 const WALK_EMAIL = process.env.WALK_EMAIL ?? `walk-${Date.now()}@local.test`;
 const WALK_PASSWORD = process.env.WALK_PASSWORD ?? "walk-only-local-throwaway-2026";
 

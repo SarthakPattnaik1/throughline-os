@@ -16,23 +16,14 @@ does not change the shape of the bug: the API also binds a database and an
 admin surface on this machine, and "it's only localhost" is what makes localhost
 worth reaching.
 
-So the destination is resolved and checked *before* the request is made, and
-rejected if it lands anywhere private. Redirects are followed manually so each
-hop is checked the same way — a public URL that 302s to `169.254.169.254` is
-the standard way this guard gets bypassed when it is applied only once.
+The destination is resolved and checked before the request, every redirect is
+re-checked, and the address actually connected to is checked after connect so a
+DNS-rebinding answer cannot swap a public lookup for a private socket.
 
-**And the address actually connected to is checked as well.** Resolving a name
-to decide and letting the connection resolve it again is the other standard
-bypass: a name whose DNS answers public for the check and loopback for the
-connection (rebinding) passed the first guard and was fetched from this machine
-(T165). See `_connection_to_public_peers`.
-
-**A PDF is not trusted here either.** The bytes are handed to the browser, which
-hands them to PDF.js with scripting off; nothing on this side parses them. What
-this does enforce is that they are plausibly a PDF and not, say, a 900MB file
-or an HTML login page — a reader that spent a minute downloading a captcha page
-and then said "that file could not be opened" would be telling the truth and
-helping nobody.
+Environment proxies are deliberately disabled for client-supplied server-side
+fetches. A proxy moves DNS resolution and destination selection outside this
+process; the HTTP handlers fail closed if a proxied request reaches them even
+when another caller forgot to install the empty proxy map.
 """
 
 from __future__ import annotations
@@ -46,16 +37,8 @@ import urllib.request
 
 from .base import USER_AGENT, ConnectorError
 
-#: Papers are large but not unbounded. A 60MB PDF is a big supplementary-heavy
-#: article; a 600MB one is not a paper and would sit in browser memory.
 MAX_BYTES = 60 * 1024 * 1024
-
-#: Long enough for a slow repository, short enough that a hung host does not
-#: hold a request open until the researcher gives up on the whole page.
 TIMEOUT = 30.0
-
-#: Enough hops for the usual doi.org -> publisher -> CDN chain, few enough that
-#: a redirect loop ends.
 MAX_REDIRECTS = 5
 
 
@@ -64,70 +47,58 @@ class PaperFetchError(ConnectorError):
 
 
 def _is_public(host: str) -> bool:
-    """
-    Whether a hostname resolves only to addresses out on the internet.
-
-    Every address is checked, not just the first. A hostname can resolve to both
-    a public and a loopback address, and taking `getaddrinfo`'s first answer is
-    a guard that passes on Monday and fails on Tuesday depending on resolver
-    ordering.
-    """
+    """Whether a hostname resolves only to globally routable addresses."""
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
         return False
     if not infos:
         return False
-
     for info in infos:
-        address = ipaddress.ip_address(info[4][0])
-        # `is_global` is False for loopback, link-local, private ranges,
-        # multicast and the reserved blocks — including 169.254.169.254, which
-        # is the one worth naming.
+        address = ipaddress.ip_address(info[4][0].split("%", 1)[0])
         if not address.is_global:
             return False
     return True
 
 
 def _checked(url: str) -> str:
-    parsed = urllib.parse.urlparse(url)
+    parsed = urllib.parse.urlsplit(url)
     if parsed.scheme not in {"http", "https"}:
-        raise PaperFetchError(
-            "Only http and https addresses can be fetched.")
+        raise PaperFetchError("Only http and https addresses can be fetched.")
+    if parsed.username is not None or parsed.password is not None:
+        raise PaperFetchError("Addresses containing credentials cannot be fetched.")
     if not parsed.hostname:
         raise PaperFetchError("That address names no host.")
     if not _is_public(parsed.hostname):
-        # Deliberately the same message for "private address" and "does not
-        # resolve": distinguishing them turns this endpoint into a scanner that
-        # reports which internal hosts exist.
         raise PaperFetchError(
             f"{parsed.hostname} is not a public address this can fetch from.")
-    return url
+    return urllib.parse.urlunsplit(parsed)
+
+
+def _safe_opener() -> urllib.request.OpenerDirector:
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _NoRedirects,
+        _PublicOnlyHTTP,
+        _PublicOnlyHTTPS,
+    )
 
 
 def fetch_pdf(url: str, *, mailto: str | None = None) -> bytes:
-    """
-    The PDF at `url`, if it is a PDF and the address is somewhere public.
-
-    Redirects are followed by hand so every hop is checked. `urllib`'s automatic
-    redirect handling would follow a public URL to a private one without ever
-    consulting the guard above, which is the failure this is arranged to avoid.
-    """
     current = _checked(url)
     headers = {
         "User-Agent": USER_AGENT.format(mailto=mailto or "unknown"),
         "Accept": "application/pdf,*/*",
     }
+    opener = _safe_opener()
 
     for _ in range(MAX_REDIRECTS):
+        current = _checked(current)
         request = urllib.request.Request(current, headers=headers)
-        opener = urllib.request.build_opener(_NoRedirects, _PublicOnlyHTTP,
-                                             _PublicOnlyHTTPS)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
                 location = response.headers.get("Location")
                 if response.status in {301, 302, 303, 307, 308} and location:
-                    # Re-checked on every hop, which is the point.
                     current = _checked(urllib.parse.urljoin(current, location))
                     continue
                 return _body(response)
@@ -135,8 +106,7 @@ def fetch_pdf(url: str, *, mailto: str | None = None) -> bytes:
             if exc.code in {301, 302, 303, 307, 308}:
                 location = exc.headers.get("Location")
                 if not location:
-                    raise PaperFetchError(
-                        "That address redirected to nowhere.") from exc
+                    raise PaperFetchError("That address redirected to nowhere.") from exc
                 current = _checked(urllib.parse.urljoin(current, location))
                 continue
             raise PaperFetchError(
@@ -144,7 +114,7 @@ def fetch_pdf(url: str, *, mailto: str | None = None) -> bytes:
                 "behind a paywall.") from exc
         except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
             raise PaperFetchError(
-                f"That paper could not be downloaded ({exc}).") from exc
+                "That paper could not be downloaded from the remote host.") from exc
 
     raise PaperFetchError("That address redirects in a loop.")
 
@@ -152,7 +122,6 @@ def fetch_pdf(url: str, *, mailto: str | None = None) -> bytes:
 def _body(response: object) -> bytes:
     read = getattr(response, "read")
     headers = getattr(response, "headers")
-
     declared = headers.get("Content-Length")
     if declared is not None:
         try:
@@ -161,20 +130,10 @@ def _body(response: object) -> bytes:
                     f"That file is {int(declared) // (1024 * 1024)}MB, which is "
                     "larger than this will download.")
         except ValueError:
-            pass  # A malformed header is not a reason to refuse; the cap below
-                  # still applies to what actually arrives.
-
-    # One byte over the cap, so a server that lies about Content-Length — or
-    # omits it entirely, which is common — still cannot stream unboundedly into
-    # memory.
+            pass
     data = read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:
-        raise PaperFetchError(
-            "That file is larger than this will download.")
-
-    # Checked by content rather than by the header, because plenty of
-    # repositories serve PDFs as application/octet-stream, and plenty of
-    # paywalls serve an HTML login page as application/pdf.
+        raise PaperFetchError("That file is larger than this will download.")
     if not data.startswith(b"%PDF-"):
         raise PaperFetchError(
             "That address did not return a PDF. It may be a landing page "
@@ -183,28 +142,17 @@ def _body(response: object) -> bytes:
 
 
 class _NoRedirects(urllib.request.HTTPRedirectHandler):
-    """Hands redirects back rather than following them (see `fetch_pdf`)."""
-
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
         return None
 
 
-def _connection_to_public_peers(base: type, *, host: str, proxied: bool):
-    """
-    A connection class that refuses to talk to anything but a public address.
+def _connection_to_public_peers(base: type, *, host: str,
+                                proxied: bool = False):
+    """Build a connection factory that validates a direct socket peer.
 
-    `_checked` resolves the name to decide, and the connection resolves it
-    *again* to connect — so a name whose DNS answers a public address for the
-    first lookup and loopback for the second (DNS rebinding) passed the check
-    and was fetched from this machine: the API on loopback, cloud metadata, the
-    very things this module exists to keep out of reach (T165). So the address
-    the socket actually connected to is checked, after connecting and before a
-    byte of the request is sent. It is the peer that matters, not any lookup.
-
-    Not when a proxy is configured: then the socket's peer is the proxy, which
-    may rightly be on a private network, and the proxy — not this process —
-    resolves the destination. Refusing every proxied fetch would break the
-    installations behind one, and the hostname is still checked by `_checked`.
+    `proxied` remains only as a compatibility seam for the low-level unit tests.
+    Production handlers call `_refuse_proxy` first, so a proxied request never
+    reaches this bypass branch.
     """
     def make(connect_to: str, **kwargs):
         connection = base(connect_to, **kwargs)
@@ -226,14 +174,26 @@ def _connection_to_public_peers(base: type, *, host: str, proxied: bool):
     return make
 
 
+def _refuse_proxy(req: urllib.request.Request) -> None:
+    if req.has_proxy():
+        raise PaperFetchError(
+            "Security-sensitive server-side fetches do not use network proxies.")
+
+
 class _PublicOnlyHTTP(urllib.request.HTTPHandler):
     def http_open(self, req):  # noqa: D102
-        return self.do_open(_connection_to_public_peers(
-            http.client.HTTPConnection, host=urllib.parse.urlsplit(req.full_url).hostname or "", proxied=req.has_proxy()), req)
+        _refuse_proxy(req)
+        host = urllib.parse.urlsplit(req.full_url).hostname or ""
+        return self.do_open(
+            _connection_to_public_peers(http.client.HTTPConnection, host=host), req)
 
 
 class _PublicOnlyHTTPS(urllib.request.HTTPSHandler):
     def https_open(self, req):  # noqa: D102
-        return self.do_open(_connection_to_public_peers(
-            http.client.HTTPSConnection, host=urllib.parse.urlsplit(req.full_url).hostname or "", proxied=req.has_proxy()),
-            req, context=self._context)
+        _refuse_proxy(req)
+        host = urllib.parse.urlsplit(req.full_url).hostname or ""
+        return self.do_open(
+            _connection_to_public_peers(http.client.HTTPSConnection, host=host),
+            req,
+            context=self._context,
+        )

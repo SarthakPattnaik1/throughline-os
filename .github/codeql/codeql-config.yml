@@ -1,0 +1,10 @@
+name: throughline-production
+
+# Test fixtures deliberately contain hostile URLs, regex edge cases and race
+# reproductions. Analyze the product and its operational scripts, but do not
+# turn intentionally adversarial test data into merge-blocking production
+# alerts. Production code under apps/, packages/, services/ and scripts/
+# remains in scope.
+paths-ignore:
+  - tests/**
+  - apps/web/tests/**

@@ -33,7 +33,10 @@ from .events import audit, emit
 from .ids import new_id
 from .lineage import add_edge
 from .objects import create_object
-from .storage import storage_root
+from .storage import (
+    StorageError, blender_directory, export_directory, export_path, path_for,
+    storage_key_for,
+)
 
 
 class VisualError(RuntimeError):
@@ -312,18 +315,13 @@ def render_visual(cur, *, visual_id: str, fmt: str,
         return {"visual_id": visual_id, "format": fmt, "payload": payload,
                 "render_id": cur.fetchone()["id"]}
 
-    # The filename carries the spec hash and the size, not just the format.
-    #
-    # It used to be `{visual_id}.{fmt}` while the row was keyed on
-    # (visual_id, format, spec_hash) — so editing a figure and re-rendering
-    # produced a second row pointing at the same file, and the first row's
-    # content_hash described bytes that were gone. `stale_renders` then reported
-    # a file as out of date while pointing at the one that had replaced it.
-    # Adding a size without this would collide again: 720px and 1080px are the
-    # same name.
-    directory = storage_root() / "figures" / visual_id
-    size = "" if height_px is None else f"-{height_px}"
-    path = directory / f"{visual_id}-{current_hash[:12]}{size}.{fmt}"
+    # Every render gets a server-generated filename. The spec hash and size
+    # remain in the database uniqueness key and metadata; they do not need to be
+    # copied into a filesystem path.
+    directory = export_directory("visuals", visual_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    render_id = new_id("vren")
+    path = export_path("visuals", visual_id, render_id, fmt)
     publication.render(
         spec, data, path=path, fmt=fmt, height_px=height_px,
         # Provenance travels inside the file, because a figure that leaves the
@@ -335,7 +333,7 @@ def render_visual(cur, *, visual_id: str, fmt: str,
         })
     byte_size = path.stat().st_size
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    storage_key = str(path.relative_to(storage_root()))
+    storage_key = storage_key_for(path)
 
     cur.execute(
         "INSERT INTO visual_renders(id, visual_id, format, storage_key, content_hash, "
@@ -344,7 +342,7 @@ def render_visual(cur, *, visual_id: str, fmt: str,
         "DO UPDATE "
         "SET storage_key = EXCLUDED.storage_key, content_hash = EXCLUDED.content_hash, "
         "bytes = EXCLUDED.bytes RETURNING id",
-        (new_id("vren"), visual_id, fmt, storage_key, digest, current_hash,
+        (render_id, visual_id, fmt, storage_key, digest, current_hash,
          byte_size, height_px),
     )
     return {"visual_id": visual_id, "format": fmt, "storage_key": storage_key,
@@ -564,14 +562,15 @@ def render_through_blender(cur, *, visual_id: str,
     data = VisualData.model_validate(row["data"])
     current_hash = row["spec_hash"]
 
-    directory = (storage_root() / "figures" / visual_id
-                 / f"blender-{current_hash[:12]}")
+    # Built from the canonical id and a hex-checked hash, never the raw strings,
+    # so the key recorded below is one `path_for` reads back (CodeQL #6, #7).
+    directory = blender_directory(visual_id, current_hash)
     directory.mkdir(parents=True, exist_ok=True)
     obj_path = directory / "fitted_surface.obj"
     ply_path = directory / "observations.ply"
     obj_path.write_text(geometry.surface_obj(spec, data))
     ply_path.write_text(geometry.observations_ply(spec, data))
-    out_path = directory / f"{visual_id}-{current_hash[:12]}-blender.png"
+    out_path = directory / f"{directory.parent.name}-{directory.name[len('blender-'):]}-blender.png"
     out_path.unlink(missing_ok=True)
 
     try:
@@ -584,7 +583,7 @@ def render_through_blender(cur, *, visual_id: str,
 
     byte_size = out_path.stat().st_size
     digest = hashlib.sha256(out_path.read_bytes()).hexdigest()
-    storage_key = str(out_path.relative_to(storage_root()))
+    storage_key = storage_key_for(out_path)
 
     cur.execute(
         "INSERT INTO visual_renders(id, visual_id, format, storage_key, "
@@ -665,6 +664,10 @@ def blender_render_file(cur, *, visual_id: str) -> Path | None:
     found = cur.fetchone()
     if not found or not found["storage_key"]:
         return None
-    path = storage_root() / found["storage_key"]
-    return path if path.exists() else None
+    # Through the validated reader: the key came from a row, and a row is not
+    # a reason to build a path from a string.
+    try:
+        return path_for(found["storage_key"])
+    except StorageError:
+        return None
 

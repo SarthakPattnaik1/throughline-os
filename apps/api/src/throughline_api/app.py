@@ -1529,9 +1529,8 @@ def specification_curve(project_id: str, payload: SpecificationCurveRequest,
             # which told a researcher nothing about which covariate set broke or
             # why — and the reason a specification cannot be fitted is exactly
             # what they need to know.
-            body = result.payload or {}
             raise RuntimeError(
-                str(body.get("error") or result.stderr or "the fit failed")[:300])
+                "One specification could not be fit by the analysis sandbox.")
         return (result.payload or {}).get("result") or {}
 
     with transaction() as cur:
@@ -1542,7 +1541,8 @@ def specification_curve(project_id: str, payload: SpecificationCurveRequest,
                 outcome=payload.outcome, exposure=payload.exposure,
                 candidates=payload.candidates, run_analysis=run_one)
         except specification.SpecificationError as exc:
-            raise HTTPException(400, str(exc)) from exc
+            raise HTTPException(
+                400, "The specification curve request could not be completed.") from exc
 
 
 class SynthesisRequest(BaseModel):
@@ -2181,10 +2181,13 @@ def check_artifact_citations(artifact_id: str,
             try:
                 checked.append(citations.check_entailment(
                     cur, row["id"], row["template"] or ""))
-            except Exception as exc:  # noqa: BLE001 - reported, never fatal
-                # One unresolvable citation must not stop the others being
-                # checked; the researcher needs the whole picture.
-                checked.append({"citation_id": row["id"], "error": str(exc)})
+            except Exception:  # noqa: BLE001 - reported, never fatal
+                # Do not reflect exception internals (paths, SQL, provider text)
+                # into an API response. The citation id identifies the failed row.
+                checked.append({
+                    "citation_id": row["id"],
+                    "error": "This citation could not be checked.",
+                })
     return {"checked": len(checked), "citations": checked}
 
 
@@ -2877,7 +2880,8 @@ def compare_images(project_id: str, payload: ImageSetRequest,
     try:
         return images.compare_many(loaded)
     except images.ImageError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(
+            400, "Those images could not be compared safely.") from exc
 
 
 class ReconcileRequest(BaseModel):
@@ -3266,8 +3270,8 @@ def available_models(user: dict = Depends(current_user)) -> dict[str, Any]:
     note = None
     try:
         installed = OllamaProvider().installed()
-    except ModelUnavailable as exc:
-        note = str(exc)
+    except ModelUnavailable:
+        note = "The local model service is unavailable."
 
     capability = throughline_model.capability()
     with transaction() as cur:
@@ -5133,9 +5137,11 @@ def download_visual(visual_id: str, format: str = Query("png"),
             400, f"{format} is a web specification rather than a file. Ask for "
                  "svg, pdf, png, tiff, jpeg or webp to download one.")
 
-    path = storage.storage_root() / key
-    if not path.exists():
-        raise HTTPException(500, "The figure was recorded but its file is missing.")
+    try:
+        path = storage.path_for(key)
+    except storage.StorageError as exc:
+        raise HTTPException(
+            500, "The figure was recorded but its file is unavailable.") from exc
 
     size = "" if height is None else f"-{height}px"
     return FileResponse(
@@ -5223,7 +5229,7 @@ def blender_render_state(visual_id: str,
         try:
             row = visuals.load_visual(cur, visual_id)
         except visuals.VisualError as exc:
-            raise HTTPException(404, str(exc)) from exc
+            raise HTTPException(404, "That figure does not exist.") from exc
         scoped_project(row["project_id"], user)
         return visuals.blender_render_state(cur, visual_id=visual_id)
 
