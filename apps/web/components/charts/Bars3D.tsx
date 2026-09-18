@@ -30,6 +30,7 @@
  * constant and a reader is not comparing heights across a lighting gradient.
  */
 
+import { selectionColour } from "@/lib/charts/theme";
 import {
   useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 } from "react";
@@ -390,6 +391,8 @@ export function paintBars(
 ): void {
   if (!canvas) return;
   const context = canvas.getContext("2d");
+  // The theme's selection colour: the fixed blue was 2.3:1 on the dark canvas.
+  const selection = selectionColour(canvas);
   if (!context) return;
 
   const { width, height } = size;
@@ -452,7 +455,7 @@ export function paintBars(
     fillPath(context, corners.map((c) => c.top), barColour(bar.level, "top"));
 
     if (index === selected) {
-      context.strokeStyle = "rgba(20,67,184,0.95)";
+      context.strokeStyle = selection;
       context.lineWidth = 2;
       context.beginPath();
       corners.forEach((c, i) => {

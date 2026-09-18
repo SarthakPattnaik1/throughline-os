@@ -72,6 +72,36 @@ export const categorical = [
   "#56B4E9", "#D55E00", "#F0E442", "#7A7A76",
 ] as const;
 
+/**
+ * The outline a pale series colour gets, so its marks stay findable (D416).
+ *
+ * Okabe–Ito yellow is 1.2–1.3:1 on the light theme's page, canvas and surface:
+ * a yellow point or bar all but disappears there. Darkening the yellow would
+ * cost the lightness that separates it from orange under deuteranopia, and
+ * changing it would break the rule that a group has one colour on screen and
+ * on paper — so the fill stays and the mark is outlined instead, the way the
+ * publication export already outlines it. `#857612` is 4.2:1 or better on all
+ * three light grounds, 3.5:1 against the yellow it rings, and 4.3:1 on the
+ * dark page, so one value serves both themes and canvas charts need no theme.
+ */
+export const PALE_SERIES_EDGE = "#857612";
+
+/** The outline a series colour needs on a light ground, or null when none. */
+export function seriesEdge(colour: string): string | null {
+  return colour.toUpperCase() === "#F0E442" ? PALE_SERIES_EDGE : null;
+}
+
+/**
+ * The colour to draw a series as a *line* in.
+ *
+ * A thin line cannot carry an outline, so a pale series is drawn in its edge
+ * colour instead; its legend swatch shows the fill ringed in that edge, which
+ * is how the reader ties the two together.
+ */
+export function seriesStroke(colour: string): string {
+  return seriesEdge(colour) ?? colour;
+}
+
 /** Motion (Part D1). Nothing exceeds 900ms; longer needs staging, not duration. */
 export const duration = {
   instant: 80,

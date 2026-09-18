@@ -35,9 +35,28 @@ export function isDarkPage(
  * both themes; read at draw time, so a theme switch repaints in the new one.
  */
 export function selectionColour(element: Element | null): string {
-  if (!element || typeof getComputedStyle !== "function") return SELECT_FALLBACK;
+  // A painter can be handed a stand-in with a 2D context and no styles — the
+  // painter tests do exactly that — so only a real element is asked.
+  if (!element || typeof getComputedStyle !== "function"
+      || typeof Element === "undefined" || !(element instanceof Element)) {
+    return SELECT_FALLBACK;
+  }
   return getComputedStyle(element).getPropertyValue("--select").trim() || SELECT_FALLBACK;
 }
 
 /** The light theme's `--select`, for a canvas drawn before any style exists. */
 export const SELECT_FALLBACK = "#355F9D";
+
+/**
+ * Whether the page is dark right now, read as `isDarkPage` reads it.
+ *
+ * For painters that run outside React and are called every frame: asking is
+ * two attribute reads, so it is asked rather than cached, and a theme switch
+ * shows on the next frame.
+ */
+export function pageIsDark(): boolean {
+  if (typeof document === "undefined") return false;
+  const system = typeof matchMedia === "function"
+    && matchMedia("(prefers-color-scheme: dark)").matches;
+  return isDarkPage(document.documentElement.getAttribute("data-theme"), system);
+}

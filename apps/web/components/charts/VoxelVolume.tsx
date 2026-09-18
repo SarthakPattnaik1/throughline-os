@@ -46,7 +46,7 @@ import {
 } from "@/lib/charts/scene3d";
 import { AxisNaming, framing, namedIndex } from "@/lib/charts/frame";
 import { canvasPoint, isClick } from "@/lib/charts/pointer";
-import { isDarkPage } from "@/lib/charts/theme";
+import { isDarkPage, selectionColour } from "@/lib/charts/theme";
 import { useSpatialKeys } from "@/lib/charts/spatialKeys";
 import { drawLitSphere } from "@/lib/charts3d/shading";
 import { ChartExport } from "@/components/charts/ChartExport";
@@ -626,6 +626,8 @@ export function paintVolume(
 ): void {
   if (!canvas) return;
   const context = canvas.getContext("2d");
+  // The theme's selection colour: the fixed blue was 2.3:1 on the dark canvas.
+  const selection = selectionColour(canvas);
   if (!context) return;
 
   const { width, height } = size;
@@ -681,7 +683,7 @@ export function paintVolume(
        * buried, which is the one thing a volume must not do.
        */
       context.save();
-      context.strokeStyle = "rgba(20,67,184,0.95)";
+      context.strokeStyle = selection;
       context.lineWidth = 1.6;
       context.beginPath();
       context.arc(at.x, at.y, SPLAT_RADIUS * at.scale + 3, 0, Math.PI * 2);
