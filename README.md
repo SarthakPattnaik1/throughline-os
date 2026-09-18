@@ -131,7 +131,7 @@ A model may assist with reading or interpretation. It does **not** replace the r
 
 ### Verification status matters
 
-The **dataset-first path works end to end**. Paper/topic-first journeys are being re-walked on clean installations before they are described as complete end-to-end user flows. Individual components having tests is not treated as proof that an entire user journey is complete.
+The **dataset-first path works end to end**. The **topic-first path** — find papers, read one into the project, locate its claims, find and import data for a claim, name the columns, state the study design, run discovery, test the claim — is walked end to end through the API with a real worker by `tests/test_the_paper_first_journey.py`, with only the network and the model stood in for. It has not yet been walked in the browser on a clean installation, so it is not yet described as a complete user flow. Individual components having tests is not treated as proof that an entire user journey is complete.
 
 For the detailed capability truth table, use [**`docs/CAPABILITIES.md`**](docs/CAPABILITIES.md). For incomplete or planned work, see [**`ROADMAP.md`**](ROADMAP.md) and [**`docs/REQUIREMENTS.md`**](docs/REQUIREMENTS.md).
 
