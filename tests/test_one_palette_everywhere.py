@@ -97,6 +97,27 @@ def test_no_hue_disappears_into_its_ground(ground):
     assert "#000000" not in tokens.categorical("dark")
 
 
+def test_no_chart_colour_disappears_on_any_web_ground():
+    """D415: black was the eighth colour, 1.0:1 on the dark page, and the 3D
+    charts hash group names onto it — a group could vanish. Every surface a
+    chart is drawn on, in both themes, is checked here."""
+    grounds = [_ts_neutral(theme)[step] for theme in ("light", "dark")
+               for step in (0, 25, 50)]
+    # D416, open and named rather than hidden: Okabe-Ito yellow on the light
+    # grounds is 1.2-1.3:1. Darkening it to show on white costs the lightness
+    # that separates it from orange under deuteranopia — a design decision,
+    # not a fix, so it is the one recorded exception and nothing else may join.
+    known = {("#F0E442", _ts_neutral("light")[step]) for step in (0, 25, 50)}
+    for hue in tokens.CATEGORICAL:
+        for ground in grounds:
+            if (hue, ground) in known:
+                continue
+            assert tokens.contrast(hue, ground) > 1.25, (hue, ground)
+    # The neutral slot carries no hue at all, so it must carry contrast.
+    eighth = tokens.CATEGORICAL[7]
+    assert min(tokens.contrast(eighth, g) for g in grounds) >= 3.0
+
+
 def test_the_vega_lite_spec_draws_groups_in_the_shared_palette():
     spec, data = _scatter()
     chart = web.render(spec, data)

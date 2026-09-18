@@ -20,12 +20,12 @@ from typing import Literal
 #: Okabe-Ito, in the web charts' order: eight hues distinguishable under every
 #: common form of colour blindness. Past eight, aggregate or facet.
 #:
-#: The eighth is black, which is the ink of a light ground and invisible on a
-#: dark one, so `categorical(ground)` swaps it for that ground's ink rather
-#: than every drawer remembering to.
+#: The eighth is the achromatic slot as a mid neutral rather than black (D415):
+#: black is invisible on a dark ground, and the web's canvas charts cannot swap
+#: it by theme, so one value legible on both grounds is shared by every surface.
 CATEGORICAL: tuple[str, ...] = (
     "#0072B2", "#E69F00", "#009E73", "#CC79A7",
-    "#56B4E9", "#D55E00", "#F0E442", "#000000",
+    "#56B4E9", "#D55E00", "#F0E442", "#7A7A76",
 )
 
 #: Shape backs up colour, so a figure printed in greyscale still separates its
@@ -107,9 +107,13 @@ def ink(ground: str) -> dict[str, str]:
 
 
 def categorical(ground: str = "light") -> list[str]:
-    """The categorical hues, in order, as they are drawn on `ground`."""
-    neutrals = ink(ground)
-    return [neutrals["ink"] if hue == "#000000" else hue for hue in CATEGORICAL]
+    """The categorical hues, in order, as they are drawn on `ground`.
+
+    The same on both grounds: a group keeps its colour between a light slide
+    and a dark one. `ground` is still checked, so a misspelt one is refused.
+    """
+    ink(ground)
+    return list(CATEGORICAL)
 
 
 def _linear(channel: float) -> float:

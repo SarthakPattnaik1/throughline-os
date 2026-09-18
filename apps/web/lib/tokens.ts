@@ -58,10 +58,18 @@ export const semantic = {
  * Okabe–Ito: eight hues distinguishable under every common form of colour
  * blindness. Past eight, aggregate or facet — adding a ninth colour makes a
  * chart unreadable rather than more informative.
+ *
+ * The eighth is Okabe–Ito's achromatic slot as a mid neutral, not black
+ * (D415). Black measured 1.0:1 on the dark theme's page, so an eighth group
+ * vanished from every chart in it — and the 3D network and line charts pick a
+ * colour by hashing the group's name, so any group could land there. Canvas
+ * and WebGL cannot read a CSS variable, so it is one value legible on both
+ * grounds (3.9:1 or better on all six), shared with the exported figures
+ * through `throughline_visual.tokens`.
  */
 export const categorical = [
   "#0072B2", "#E69F00", "#009E73", "#CC79A7",
-  "#56B4E9", "#D55E00", "#F0E442", "#000000",
+  "#56B4E9", "#D55E00", "#F0E442", "#7A7A76",
 ] as const;
 
 /** Motion (Part D1). Nothing exceeds 900ms; longer needs staging, not duration. */
