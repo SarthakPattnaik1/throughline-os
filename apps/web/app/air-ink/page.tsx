@@ -114,19 +114,24 @@ const STABILISATION_LABEL: Record<StabilisationLevel, string> = {
 /**
  * What each setting trades, in the terms somebody choosing between them needs.
  *
- * The measurements are quoted because they are the only part of this anybody can
- * check without a hand, and because "more stable" on its own is the kind of
- * claim that turns out to be false.
+ * Every claim here is one `ink-stabilise.test.ts` checks: the order of the
+ * levels, that Steady removes most of a still hand's tremor, the gain behind
+ * "about 1.5x", and that Handwriting never predicts. It used to quote a still
+ * hand's drift in pixels — "about 9px", "under 4px" — and nothing measured
+ * either (D326): drift in pixels depends on the hand and the camera, not on
+ * this code, so no test here could back it. `air-ink-claims.test.ts` keeps a
+ * pixel figure from coming back unmeasured.
  */
 const STABILISATION_HELP: Record<StabilisationLevel, string> = {
-  natural: "One-to-one with your hand. Best for big marks and arrows; a hand "
-         + "held still still drifts about 9px.",
+  natural: "One-to-one with your hand. Best for big marks and arrows; it "
+         + "smooths the least, so a hand held still shows the most drift.",
   // "your hand moves *the pen* slightly further than the pen travels" — the
   // stray object made the sentence say the hand moves the pen further than the
   // pen moves, which cannot happen. The `handwriting` entry below has the
   // shape this one meant: hand against ink, not hand against itself.
-  steady: "The default. A hand held still drifts under 4px, and your hand "
-        + "moves slightly further than the pen travels.",
+  steady: "The default. Smooths away most of a still hand's tremor — more "
+        + "than Natural — and your hand moves slightly further than the pen "
+        + "travels.",
   handwriting: "Most precise. Your hand moves about 1.5x further than the ink "
              + "does, which is what makes small letters controllable, and the "
              + "line never runs ahead of where the camera last saw you.",
