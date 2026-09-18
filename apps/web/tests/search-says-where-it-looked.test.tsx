@@ -151,7 +151,11 @@ describe("two disclosures, each naming its own contents", () => {
      */
     await search();
     fireEvent.click(screen.getByText(/which passages this search was built from/i));
-    expect(await screen.findByText("Global AMR surveillance 2024")).toBeTruthy();
+    // The record is fetched on the click. One second — the default — was
+    // exceeded by 26 ms on a loaded CI runner (D414), so the wait is sized
+    // for a busy machine rather than an idle one; the assertion is unchanged.
+    expect(await screen.findByText("Global AMR surveillance 2024", undefined,
+                                   { timeout: 5000 })).toBeTruthy();
     expect(screen.getByText(/ret_evt_1/)).toBeTruthy();
   });
 

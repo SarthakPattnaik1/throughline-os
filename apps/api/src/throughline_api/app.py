@@ -5204,7 +5204,7 @@ def compose_figure(project_id: str, body: Composition,
     fmt = body.format.lower()
     with tempfile.TemporaryDirectory() as scratch, transaction() as cur:
         try:
-            drawn = visuals.compose_figure(
+            visuals.compose_figure(
                 cur, project_id=project_id, visual_ids=body.visual_ids, fmt=fmt,
                 directory=Path(scratch), ground=body.ground,
                 transparent=body.transparent, height_px=body.height,
@@ -5217,7 +5217,12 @@ def compose_figure(project_id: str, body: Composition,
             raise HTTPException(400, str(exc)) from exc
         except publication_render.RenderError as exc:
             raise HTTPException(400, str(exc)) from exc
-        content = Path(drawn["path"]).read_bytes()
+        # Read from the scratch directory this request made, by the one name the
+        # composition writes there — not from a path handed back through data.
+        written = [entry for entry in Path(scratch).iterdir() if entry.is_file()]
+        if len(written) != 1:
+            raise HTTPException(500, "The composed figure was not written.")
+        content = written[0].read_bytes()
 
     look = ("" if body.ground == "light" else "-dark") + \
         ("-transparent" if body.transparent else "")

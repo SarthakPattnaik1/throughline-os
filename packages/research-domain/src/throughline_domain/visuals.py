@@ -429,9 +429,13 @@ def compose_figure(cur, *, project_id: str, visual_ids: Sequence[str], fmt: str,
     panels = _panels(cur, project_id=project_id, visual_ids=visual_ids)
     provenance = "; ".join(f"{row['id']} spec_hash={row['spec_hash']}"
                            for _, _, row in panels)
-    path = directory / f"figure.{fmt}"
+    # The extension is the library's own literal, found by position, never the
+    # caller's string: a membership check does not stop request text reaching
+    # a filesystem path, and CodeQL (rightly) does not treat it as though it did.
+    extension = publication.SUPPORTED_FORMATS[publication.SUPPORTED_FORMATS.index(fmt)]
+    path = directory / f"figure.{extension}"
     drawn = compose.compose(
-        [(spec, data) for spec, data, _ in panels], path=path, fmt=fmt,
+        [(spec, data) for spec, data, _ in panels], path=path, fmt=extension,
         ground=ground, transparent=transparent, height_px=height_px,
         columns=columns,
         metadata={"Title": "Composed figure: " + ", ".join(visual_ids),
