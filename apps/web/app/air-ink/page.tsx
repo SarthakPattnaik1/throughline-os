@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { Fold } from "@/components/primitives";
 import { Volume } from "@/components/charts/Volume";
 import { Surface } from "@/components/charts/Surface";
 import { InkLayer, InkSurface } from "@/components/spatial/InkLayer";
@@ -407,7 +408,7 @@ export default function AirInkPage() {
                     margin: "16px 0" }}>
         <button onClick={() => setArmed((on) => !on)}
                 style={{ padding: "8px 14px", borderRadius: 6,
-                         border: "1px solid #1443B8",
+                         border: "1px solid var(--accent)",
                          background: armed ? "var(--accent)" : "transparent",
                          color: armed ? "var(--on-accent)" : "var(--accent)", cursor: "pointer" }}>
           {armed ? "Put the pen away" : "Take out the pen"}
@@ -422,7 +423,7 @@ export default function AirInkPage() {
         <button onClick={() => { inkRef.current?.undo(); syncPresent(); }}
                 disabled={!pending.undo}
                 style={{ padding: "8px 14px", borderRadius: 6,
-                         border: "1px solid #999", background: "transparent",
+                         border: "1px solid var(--line-strong)", background: "transparent",
                          cursor: pending.undo ? "pointer" : "default",
                          opacity: pending.undo ? 1 : 0.45 }}>
           {pending.undo ?? "Undo"}
@@ -430,14 +431,14 @@ export default function AirInkPage() {
         <button onClick={() => { inkRef.current?.redo(); syncPresent(); }}
                 disabled={!pending.redo}
                 style={{ padding: "8px 14px", borderRadius: 6,
-                         border: "1px solid #999", background: "transparent",
+                         border: "1px solid var(--line-strong)", background: "transparent",
                          cursor: pending.redo ? "pointer" : "default",
                          opacity: pending.redo ? 1 : 0.45 }}>
           {pending.redo ?? "Redo"}
         </button>
         <button onClick={() => { inkRef.current?.clear(); syncPresent(); }}
                 style={{ padding: "8px 14px", borderRadius: 6,
-                         border: "1px solid #999", background: "transparent",
+                         border: "1px solid var(--line-strong)", background: "transparent",
                          cursor: "pointer" }}>
           Clear
         </button>
@@ -479,63 +480,71 @@ export default function AirInkPage() {
       </div>
 
       {/*
-        * The straightedge (§182). A hand in mid-air cannot draw a straight line
-        * — an arm rotates about a shoulder while the researcher believes they
-        * are moving it sideways, so the line bows — and no amount of smoothing
-        * fixes that, because the problem is not tremor.
+        * How the pen behaves, folded away behind its current values (T194).
+        *
+        * The page opened on fifteen controls and two paragraphs before the
+        * first chart. The pen, its tool and undo are what a session needs every
+        * few seconds, so they stay out; the straightedge and the stabilisation
+        * are set once, so they fold — and the summary names both current values,
+        * so a folded setting is never a hidden one.
         */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center",
-                    flexWrap: "wrap", margin: "0 0 6px" }}>
-        <span style={{ fontSize: 14, color: "var(--ink)" }}>Straightedge</span>
-        {(["off", "line", "horizontal", "vertical", "diagonal",
-           "magnetic"] as const).map((option) => (
-          <button key={option}
-                  onClick={() => { inkRef.current?.setStraightedge(option);
-                                   setEdge(option); }}
-                  aria-pressed={edge === option}
-                  style={{ padding: "5px 11px", borderRadius: 6, fontSize: 13,
-                           border: "1px solid " + (edge === option ? "var(--accent)" : "var(--line-strong)"),
-                           background: edge === option ? "var(--accent-soft)" : "transparent",
-                           color: edge === option ? "var(--on-accent-soft)" : "var(--ink-soft)",
-                           cursor: "pointer" }}>
-            {STRAIGHTEDGE_LABEL[option]}
-          </button>
-        ))}
-      </div>
-      <p style={{ color: "var(--ink-soft)", fontSize: 13, maxWidth: 640, marginTop: 0 }}>
-        {STRAIGHTEDGE_HELP[edge]}
-      </p>
+      <Fold summary={`Pen settings: straightedge ${STRAIGHTEDGE_LABEL[edge]}, `
+                     + `stabilisation ${STABILISATION_LABEL[level]}`}
+            count={2} className="ink-settings">
+        {/*
+          * The straightedge (§182). A hand in mid-air cannot draw a straight line
+          * — an arm rotates about a shoulder while the researcher believes they
+          * are moving it sideways, so the line bows — and no amount of smoothing
+          * fixes that, because the problem is not tremor.
+          */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center",
+                      flexWrap: "wrap", margin: "0 0 6px" }}>
+          <span style={{ fontSize: 14, color: "var(--ink)" }}>Straightedge</span>
+          {(["off", "line", "horizontal", "vertical", "diagonal",
+             "magnetic"] as const).map((option) => (
+            <button key={option}
+                    onClick={() => { inkRef.current?.setStraightedge(option);
+                                     setEdge(option); }}
+                    aria-pressed={edge === option}
+                    style={{ padding: "5px 11px", borderRadius: 6, fontSize: 13,
+                             border: "1px solid " + (edge === option ? "var(--accent)" : "var(--line-strong)"),
+                             background: edge === option ? "var(--accent-soft)" : "transparent",
+                             color: edge === option ? "var(--on-accent-soft)" : "var(--ink-soft)",
+                             cursor: "pointer" }}>
+              {STRAIGHTEDGE_LABEL[option]}
+            </button>
+          ))}
+        </div>
+        <p style={{ color: "var(--ink-soft)", fontSize: 13, maxWidth: 640, marginTop: 0 }}>
+          {STRAIGHTEDGE_HELP[edge]}
+        </p>
 
-      {/*
-        * Stabilisation is a control rather than a constant because the right
-        * amount depends on the hand, the camera and the room — none of which
-        * this code can see. The numbers behind each setting were measured
-        * against a simulated tremor; only a person can say which one lets them
-        * write.
-        */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "0 0 16px" }}>
-        <span style={{ fontSize: 14, color: "var(--ink)" }}>Stabilisation</span>
-        {(["natural", "steady", "handwriting"] as const).map((option) => (
-          <button key={option} onClick={() => setLevel(option)}
-                  aria-pressed={level === option}
-                  style={{ padding: "5px 11px", borderRadius: 6, fontSize: 13,
-                           border: "1px solid " + (level === option ? "var(--accent)" : "var(--line-strong)"),
-                           background: level === option ? "var(--accent-soft)" : "transparent",
-                           color: level === option ? "var(--on-accent-soft)" : "var(--ink-soft)",
-                           cursor: "pointer" }}>
-            {STABILISATION_LABEL[option]}
-          </button>
-        ))}
-      </div>
-      <p style={{ color: "var(--ink-soft)", fontSize: 13, maxWidth: 640, marginTop: -8 }}>
-        {STABILISATION_HELP[level]}
-      </p>
+        {/*
+          * Stabilisation is a control rather than a constant because the right
+          * amount depends on the hand, the camera and the room — none of which
+          * this code can see. The numbers behind each setting were measured
+          * against a simulated tremor; only a person can say which one lets them
+          * write.
+          */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "0 0 16px" }}>
+          <span style={{ fontSize: 14, color: "var(--ink)" }}>Stabilisation</span>
+          {(["natural", "steady", "handwriting"] as const).map((option) => (
+            <button key={option} onClick={() => setLevel(option)}
+                    aria-pressed={level === option}
+                    style={{ padding: "5px 11px", borderRadius: 6, fontSize: 13,
+                             border: "1px solid " + (level === option ? "var(--accent)" : "var(--line-strong)"),
+                             background: level === option ? "var(--accent-soft)" : "transparent",
+                             color: level === option ? "var(--on-accent-soft)" : "var(--ink-soft)",
+                             cursor: "pointer" }}>
+              {STABILISATION_LABEL[option]}
+            </button>
+          ))}
+        </div>
+        <p style={{ color: "var(--ink-soft)", fontSize: 13, maxWidth: 640, margin: 0 }}>
+          {STABILISATION_HELP[level]}
+        </p>
+      </Fold>
 
-      <p style={{ color: "var(--ink-soft)", fontSize: 14, maxWidth: 640, marginTop: 0 }}>
-        Two locks, deliberately. The pen has to be out <em>and</em> you have to
-        pinch — pointing draws nothing at any time, because pointing is what
-        people do while they talk.
-      </p>
 
       {/*
         * The ink host is sized to the chart, exactly, and that is load-bearing.
@@ -561,7 +570,7 @@ export default function AirInkPage() {
         * decoration removes the class of mistake rather than the instance.
         */}
       <div style={{ width: "fit-content", margin: "0 auto",
-                    border: "1px solid #ddd", borderRadius: 8, overflow: "hidden" }}>
+                    border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
       <div style={{ position: "relative", width: CHART.width, height: CHART.height }}>
         <Volume controllerRef={chartRef} points={CLOUD}
                 onSelect={(target) => {
@@ -578,6 +587,12 @@ export default function AirInkPage() {
       </div>
       </div>
 
+      <p style={{ color: "var(--ink-soft)", fontSize: 14, maxWidth: 640, marginTop: 12 }}>
+        Two locks, deliberately. The pen has to be out <em>and</em> you have to
+        pinch — pointing draws nothing at any time, because pointing is what
+        people do while they talk.
+      </p>
+
       <h2 style={{ fontSize: 18, marginTop: 32 }}>A second figure</h2>
       <p style={{ color: "var(--ink-soft)", fontSize: 14, maxWidth: 640 }}>
         The pen spans the page rather than one chart, so a loop drawn here
@@ -585,7 +600,7 @@ export default function AirInkPage() {
         the one being drawn on, and once you pinch it is held until you let go.
       </p>
       <div style={{ width: "fit-content", margin: "0 auto",
-                    border: "1px solid #ddd", borderRadius: 8, overflow: "hidden" }}>
+                    border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
       <div style={{ position: "relative", width: CHART.width, height: CHART.height }}>
         <Surface controllerRef={surfaceRef} grid={SADDLE}
                  observations={SADDLE_POINTS}
@@ -623,7 +638,7 @@ export default function AirInkPage() {
         : (
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
+              <tr style={{ textAlign: "left", borderBottom: "1px solid var(--line)" }}>
                 <th style={{ padding: "6px 8px" }}>Points</th>
                 <th style={{ padding: "6px 8px" }}>Length</th>
                 <th style={{ padding: "6px 8px" }}>Closed?</th>
@@ -635,7 +650,7 @@ export default function AirInkPage() {
             </thead>
             <tbody>
               {visible.map((reading, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <tr key={i} style={{ borderBottom: "1px solid var(--line)" }}>
                   <td style={{ padding: "6px 8px" }}>{reading.points}</td>
                   <td style={{ padding: "6px 8px" }}>{reading.length}px</td>
                   <td style={{ padding: "6px 8px" }}>
@@ -712,7 +727,7 @@ export default function AirInkPage() {
                   style={{ width: 26, height: 26, borderRadius: "50%",
                            background: option.value, cursor: "pointer",
                            border: colour === option.value
-                             ? "3px solid #12203a" : "1px solid #bbb" }} />
+                             ? "3px solid var(--ink)" : "1px solid var(--line-strong)" }} />
         ))}
       </div>
 
@@ -732,7 +747,7 @@ export default function AirInkPage() {
         would get quoted.
       </p>
       <p style={{ maxWidth: 640, fontSize: 14, padding: "10px 12px",
-                  background: "var(--panel)", border: "1px solid #dbe4f7",
+                  background: "var(--panel)", border: "1px solid var(--line)",
                   borderRadius: 6 }}>
         {measuring.length < 2
           ? `Select ${2 - measuring.length} more observation${
@@ -836,17 +851,17 @@ export default function AirInkPage() {
                placeholder="why are these different"
                aria-label="Say something about what you indicated"
                style={{ flex: 1, padding: "7px 10px", fontSize: 14,
-                        border: "1px solid #bbb", borderRadius: 6 }} />
+                        border: "1px solid var(--line-strong)", borderRadius: 6 }} />
         <button type="submit"
                 style={{ padding: "7px 14px", borderRadius: 6, fontSize: 14,
-                         border: "1px solid #1443B8", background: "transparent",
+                         border: "1px solid var(--accent)", background: "transparent",
                          color: "var(--accent)", cursor: "pointer" }}>
           Read it
         </button>
       </form>
       {lassoed && (
         <p style={{ maxWidth: 640, fontSize: 14, padding: "10px 12px",
-                    background: "var(--panel)", border: "1px solid #dbe4f7",
+                    background: "var(--panel)", border: "1px solid var(--line)",
                     borderRadius: 6 }}>
           {lassoed}
         </p>
@@ -854,7 +869,7 @@ export default function AirInkPage() {
 
       {proposal && (
         <p style={{ maxWidth: 640, fontSize: 14, padding: "10px 12px",
-                    background: "var(--panel)", border: "1px solid #dbe4f7",
+                    background: "var(--panel)", border: "1px solid var(--line)",
                     borderRadius: 6 }}>
           {proposal}
         </p>

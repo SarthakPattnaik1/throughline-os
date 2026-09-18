@@ -6226,6 +6226,10 @@ summary[data-count]::after {
 
 /* Open, the summary becomes the head of something, so it takes a rule. */
 details.fold[open] > summary { border-bottom: 1px solid var(--line); }
+/* Air Ink's pen settings: a fold between the toolbar and the chart, so it takes
+   the toolbar's width and a gap above the figure rather than the list styling. */
+details.fold.ink-settings { max-width: 720px; margin: 0 0 16px; border-top: 1px solid var(--line); }
+details.fold.ink-settings > .fold-body { display: grid; gap: 8px; }
 details.fold > *:not(summary) { padding: 8px 2px 10px; }
 /* Named as well as positional, because a fold whose body is a fragment of
    several elements has nowhere for the padding to land otherwise. */
