@@ -1088,6 +1088,7 @@ def test_contingency_preparation_keeps_x_horizontal_and_y_vertical():
 
 
 def test_publication_export_keeps_the_sampling_caveat(tmp_path):
+    # SVG may wrap caption text across lines; assert on normalized visible text.
     spec = ResearchVisualSpec(
         visual_type=VisualType.SCATTER,
         analysis_run_id="arun_sampled",
