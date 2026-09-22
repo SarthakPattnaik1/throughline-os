@@ -169,12 +169,20 @@ def recommend_for_run(
         variable_labels(cur, project_id=run["project_id"], dataset_version_id=version_id)
         if version_id else LabelBook()
     )
-    return visual_recommend.recommend(
+    recommendation = visual_recommend.recommend(
         analysis_run_id=analysis_run_id, method=run["method"],
         variables=run["variables"], result=run["result"] or {},
         dataset_version_id=version_id,
         goal=goal, audience=audience, labels=book,
     )
+    # The population shown by a figure is part of its identity. A filtered
+    # analysis paired with unfiltered plotted rows is a different analysis, not
+    # a presentation choice, so the exact declarative filters travel on the
+    # visual spec and are applied by the row sampler.
+    recommendation["spec"] = recommendation["spec"].model_copy(
+        update={"filters": list(run.get("filters") or [])}
+    )
+    return recommendation
 
 
 def create_visual(
