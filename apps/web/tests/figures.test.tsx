@@ -116,12 +116,18 @@ describe("the axes", () => {
      * variable is called would be the one that goes into the paper.
      */
     expect(axisLabel("consumption", { consumption: "Antibiotic use" },
-                     { label: "Consumption (DDD)" }))
-      .toBe("Antibiotic use");
+                     { label: "Consumption", unit: "DDD" }))
+      .toBe("Antibiotic use (DDD)");
   });
 
   it("uses the figure's label when the project has approved no name", () => {
-    expect(axisLabel("consumption", {}, { label: "Consumption (DDD)" }))
+    expect(axisLabel("consumption", {}, { label: "Consumption", unit: "DDD" }))
+      .toBe("Consumption (DDD)");
+  });
+
+
+  it("does not print a unit twice when a label already carries it", () => {
+    expect(axisLabel("consumption", {}, { label: "Consumption (DDD)", unit: "DDD" }))
       .toBe("Consumption (DDD)");
   });
 
