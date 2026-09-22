@@ -4946,6 +4946,9 @@ def analysis_points(run_id: str, user: dict = Depends(current_user)) -> dict[str
             "group": data.group_values,
             "ci_low": data.ci_low,
             "ci_high": data.ci_high,
+            "categories": data.categories,
+            "matrix": data.matrix if spec.visual_type is VisualType.HEATMAP else [],
+            "series": data.series,
             # §47: sampling is communicated, never inferred from a point count.
             "sampling": sampling,
             # The preparation layer already says when the marks are only a
@@ -4959,7 +4962,7 @@ def analysis_points(run_id: str, user: dict = Depends(current_user)) -> dict[str
             # Present only when the recommendation is a binned figure. Computed
             # here rather than in the browser: binning is aggregation, and a
             # client that re-aggregated could disagree with the analysis (LAW 2).
-            "cells": _binned_cells(spec, data),
+            "cells": data.series if spec.visual_type is VisualType.HEXBIN else None,
             "bin_count": spec.bin_count,
             "bin_shape": str(spec.bin_shape),
             "count_scale": str(spec.count_scale),
@@ -4973,51 +4976,6 @@ def analysis_points(run_id: str, user: dict = Depends(current_user)) -> dict[str
             "grid_y": data.y_values if spec.visual_type is VisualType.SURFACE else [],
             "observations": data.series if spec.visual_type is VisualType.SURFACE else [],
         }
-
-
-def _binned_cells(spec, data) -> list[dict[str, Any]] | None:
-    """Counts per cell for a binned figure, or None for every other chart.
-
-    Without this the browser has points and no counts, so the workspace falls
-    back to drawing a scatter — which at the sample sizes that trigger this
-    recommendation is precisely the overplotted blob the binned primitive
-    exists to replace. The catalogue said P5 rendered; the figure a researcher
-    actually saw was a scatter.
-    """
-    from throughline_visual.spec import BinShape, VisualType
-
-    if spec.visual_type is not VisualType.HEXBIN:
-        return None
-    xs, ys = data.x_values, data.y_values
-    if not xs or not ys:
-        return None
-
-    bins = spec.bin_count or 30
-    x_low, x_high = min(xs), max(xs)
-    y_low, y_high = min(ys), max(ys)
-    x_step = (x_high - x_low) / bins or 1.0
-    y_step = (y_high - y_low) / bins or 1.0
-
-    counts: dict[tuple[int, int], int] = {}
-    for x, y in zip(xs, ys):
-        column = min(int((x - x_low) / x_step), bins - 1)
-        row = min(int((y - y_low) / y_step), bins - 1)
-        if spec.bin_shape is BinShape.HEX:
-            # Offset alternate rows by half a cell, which is what makes the
-            # lattice hexagonal rather than square.
-            column = min(int((x - x_low) / x_step - (0.5 if row % 2 else 0)),
-                         bins - 1)
-        counts[(column, row)] = counts.get((column, row), 0) + 1
-
-    offset = 0.5 if spec.bin_shape is BinShape.HEX else 0.0
-    return [
-        {
-            "x": x_low + (column + 0.5 + (offset if row % 2 else 0)) * x_step,
-            "y": y_low + (row + 0.5) * y_step,
-            "count": count,
-        }
-        for (column, row), count in sorted(counts.items())
-    ]
 
 
 @app.post("/api/projects/{project_id}/visuals", status_code=201)
@@ -5635,8 +5593,31 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
     is that sampling must be clearly communicated, and a caption can only say
     what the endpoint tells it.
     """
-    fields = spec.data_fields()
-    if not fields or not spec.dataset_version_id:
+    # Only figures that actually draw observations should touch the dataset.
+    # Forest/heatmap/bar figures are already fully determined by the recorded
+    # result; asking the sampler for synthetic fields such as "estimate" or
+    # "predictor" is both unnecessary and can fail valid figures.
+    raw_types = {
+        VisualType.SCATTER, VisualType.BOX, VisualType.HISTOGRAM,
+        VisualType.HEXBIN, VisualType.SURFACE,
+    }
+    if spec.visual_type not in raw_types or not spec.dataset_version_id:
+        return {}, {"sampled": False}
+
+    fields = list(spec.data_fields())
+    if spec.visual_type is VisualType.SURFACE:
+        # A fitted surface uses x/y for the grid and the model outcome for the
+        # observed points laid over it. The outcome is not an Encoding in the
+        # current visual grammar, so recover it from the immutable analysis run.
+        cur.execute("SELECT result FROM analysis_runs WHERE id = %s",
+                    (spec.analysis_run_id,))
+        found = cur.fetchone()
+        extra = ((found or {}).get("result") or {}).get("extra") or {}
+        outcome = extra.get("outcome")
+        if outcome and outcome not in fields:
+            fields.append(str(outcome))
+    fields = list(dict.fromkeys(fields))
+    if not fields:
         return {}, {"sampled": False}
     cur.execute(
         """
