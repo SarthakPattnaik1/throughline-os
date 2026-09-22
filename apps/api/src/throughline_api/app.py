@@ -4948,6 +4948,10 @@ def analysis_points(run_id: str, user: dict = Depends(current_user)) -> dict[str
             "ci_high": data.ci_high,
             # §47: sampling is communicated, never inferred from a point count.
             "sampling": sampling,
+            # The preparation layer already says when the marks are only a
+            # bounded sample. Return that sentence too so every client can
+            # communicate the same caveat instead of rediscovering it.
+            "note": data.note,
             # Statistics come from the recorded run, so the figure and the
             # analysis cannot state different numbers.
             "statistics": data.statistics,
