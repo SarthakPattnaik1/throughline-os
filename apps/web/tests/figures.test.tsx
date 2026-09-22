@@ -209,6 +209,144 @@ describe("the picker", () => {
   });
 });
 
+
+describe("prepared figure types", () => {
+  it("renders a forest plot from result-derived estimates without raw points", async () => {
+    serve({
+      "/visual-recommendation": {
+        visual_type: "forest",
+        reason: "Adjusted effects.",
+        caption: "Coefficient intervals.",
+        spec: {
+          title: "Adjusted associations",
+          x: { field: "estimate", label: "coefficient (95% CI)" },
+          y: { field: "predictor", label: "predictor" },
+          dataset_version_id: "dsv_run",
+        },
+      },
+      "/points": {
+        x: [], y: [0.4, -0.2], ci_low: [0.1, -0.4], ci_high: [0.7, 0.05],
+        categories: ["age", "dose"], group: [], matrix: [], series: [],
+        sample_size: 120, sampling: { sampled: false, rows_total: 0, rows_drawn: 0, method: "every row" },
+      },
+    });
+    await openOneRelationship([run({ method: "linear_regression" })]);
+
+    expect(await screen.findByRole("img", { name: /2 estimates with confidence intervals/i }))
+      .toBeTruthy();
+    expect(screen.queryByText(/No plottable values recorded/)).toBeNull();
+  });
+
+  it("renders prepared box summaries without requiring x/y point arrays", async () => {
+    serve({
+      "/visual-recommendation": {
+        visual_type: "box",
+        reason: "Show group spread.",
+        caption: "Boxes show the distributions.",
+        spec: {
+          title: "Outcome by arm",
+          x: { field: "arm", label: "Arm" },
+          y: { field: "outcome", label: "Outcome" },
+          dataset_version_id: "dsv_run",
+        },
+      },
+      "/points": {
+        x: [], y: [], group: [], categories: ["A", "B"], matrix: [],
+        series: [
+          { group: "A", q1: 1, median: 2, q3: 3, low: 0.5, high: 3.5, n: 10 },
+          { group: "B", q1: 2, median: 3, q3: 4, low: 1.5, high: 4.5, n: 11 },
+        ],
+        sample_size: 21, sampling: { sampled: false, rows_total: 21, rows_drawn: 21, method: "every row" },
+      },
+    });
+    await openOneRelationship([run({ method: "t_test" })]);
+
+    expect(await screen.findByRole("img", { name: /2 groups of Outcome/i })).toBeTruthy();
+    expect(screen.getByText("Median")).toBeTruthy();
+  });
+
+  it("renders a contingency heatmap from the prepared matrix", async () => {
+    serve({
+      "/visual-recommendation": {
+        visual_type: "heatmap",
+        reason: "Show the contingency table.",
+        caption: "Observed counts.",
+        spec: {
+          title: "Arm by outcome",
+          x: { field: "arm", label: "Arm" },
+          y: { field: "outcome", label: "Outcome" },
+          dataset_version_id: "dsv_run",
+        },
+      },
+      "/points": {
+        x: [], y: [], group: ["no", "yes"], categories: ["control", "treated"],
+        matrix: [[3, 1], [4, 6]], series: [], sample_size: 14,
+        sampling: { sampled: false, rows_total: 0, rows_drawn: 0, method: "every row" },
+      },
+    });
+    await openOneRelationship([run({ method: "chi_square" })]);
+
+    expect(await screen.findByRole("img", { name: /2 by 2 grid of count values/i }))
+      .toBeTruthy();
+    expect(screen.queryByText(/No plottable values recorded/)).toBeNull();
+  });
+
+  it("renders prepared histogram bins instead of asking the browser to bin again", async () => {
+    serve({
+      "/visual-recommendation": {
+        visual_type: "histogram",
+        reason: "Show the distribution.",
+        caption: "Prepared bins.",
+        spec: {
+          title: "Distribution of age",
+          x: { field: "age", label: "Age" },
+          y: { field: "count", label: "count" },
+          dataset_version_id: "dsv_run",
+        },
+      },
+      "/points": {
+        x: [], y: [], group: [], categories: [], matrix: [],
+        series: [
+          { left: 10, right: 20, count: 4 },
+          { left: 20, right: 30, count: 7 },
+        ],
+        sample_size: 11, sampling: { sampled: false, rows_total: 11, rows_drawn: 11, method: "every row" },
+      },
+    });
+    await openOneRelationship([run({ method: "descriptive" })]);
+
+    expect(await screen.findByRole("img", { name: /2 prepared bins for Age/i })).toBeTruthy();
+    expect(screen.getByText("Bin start")).toBeTruthy();
+  });
+
+  it("labels a fitted surface with the recorded outcome rather than predictor y", async () => {
+    serve({
+      "/variables": { labels: { response: "Response", x: "Dose", y: "Time" } },
+      "/visual-recommendation": {
+        visual_type: "surface",
+        reason: "Show the fitted response.",
+        caption: "Recorded model.",
+        spec: {
+          title: "Fitted response",
+          x: { field: "x", label: "Dose" },
+          y: { field: "y", label: "Time" },
+          dataset_version_id: "dsv_run",
+        },
+      },
+      "/points": {
+        x: [0, 1], y: [0, 1], group: [], categories: [], matrix: [],
+        series: [], grid: [[1, 2], [3, 4]], grid_x: [0, 1], grid_y: [0, 1],
+        observations: [{ x: 0, y: 0, z: 1 }, { x: 1, y: 1, z: 4 }],
+        surface_outcome: "response", sample_size: 2,
+        sampling: { sampled: false, rows_total: 2, rows_drawn: 2, method: "every row" },
+      },
+    });
+    await openOneRelationship([run({ method: "linear_regression" })]);
+
+    expect(await screen.findByText("Response")).toBeTruthy();
+  });
+});
+
 describe("run provenance", () => {
   it("uses the active run's dataset when recording a brushed subset", async () => {
     const post = vi.spyOn(api, "post").mockResolvedValue(
