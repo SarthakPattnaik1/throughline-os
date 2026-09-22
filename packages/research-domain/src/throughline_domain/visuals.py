@@ -499,6 +499,20 @@ def apply_edit(
 
     spec = ResearchVisualSpec.model_validate(row["spec"] | changes)
     data = VisualData.model_validate(row["data"])
+
+    # A regression-line annotation is not decoration: it asserts a fitted
+    # model. Only allow it when the immutable prepared data carries the exact
+    # recorded slope and intercept. Otherwise an edit could manufacture a
+    # model that the analysis never ran.
+    if any(annotation.kind == "regression_line" for annotation in spec.annotations):
+        if (data.statistics.get("fit_slope") is None
+                or data.statistics.get("fit_intercept") is None):
+            raise EditRequiresRecomputation(
+                "A regression line can only be shown when the recorded analysis "
+                "supplied its fitted slope and intercept. Run the regression, then "
+                "visualise that result rather than adding a fitted line as decoration."
+            )
+
     run = get_run(cur, row["analysis_run_id"])
     report = visual_critic.critique(spec, data, analysis=(run["result"] or {}),
                                     autofix=True)
