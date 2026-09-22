@@ -5005,6 +5005,12 @@ def create_visual(project_id: str, payload: VisualCreate,
 
         spec = (ResearchVisualSpec.model_validate(payload.spec) if payload.spec
                 else recommendation["spec"])
+        if spec.analysis_run_id != payload.analysis_run_id:
+            raise HTTPException(
+                409,
+                "The supplied figure spec names a different analysis run from "
+                "the requested analysis_run_id.",
+            )
         # The account is discarded here on purpose: a stored visual records
         # its own provenance, and the figure endpoint above is what a reader
         # sees the sampling in.
