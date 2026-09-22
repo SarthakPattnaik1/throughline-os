@@ -139,11 +139,15 @@ def build(cur, *, user_id: str, project_id: str) -> dict[str, str]:
                    "semantic_type": semantic}, "dcol")
         insert("spec" + suffix, "analysis_specs", {"project_id": project_id,
                "analysis_type": "correlation", "method": "pearson_correlation",
-               "dataset_version_ids": json.dumps([ids["version"]]),
+               "dataset_version_ids": json.dumps([ids["version" + suffix]]),
                "variables": json.dumps({"x": "x", "y": "y"}),
                "content_hash": "0" * 64, "created_by": user_id}, "aspec")
         insert("run" + suffix, "analysis_runs", {"project_id": project_id,
                "spec_id": ids["spec" + suffix], "status": "completed", "object_id": ids["object"],
+               "input_hashes": json.dumps({
+                   "dataset_content_hash": content_hash,
+                   "spec_content_hash": "0" * 64,
+               }),
                "result": json.dumps({"method": "pearson_correlation", "estimate": 0.5,
                                      "estimate_name": "pearson_r", "p_value": 0.01,
                                      "sample_size": 8, "evidence_quality": "weak",
