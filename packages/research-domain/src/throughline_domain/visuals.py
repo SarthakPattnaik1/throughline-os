@@ -50,12 +50,12 @@ class EditRequiresRecomputation(VisualError):
 #: Spec fields whose change alters *what is being shown*, not how it looks.
 #: Editing one of these means a different analysis, not a different drawing.
 _DATA_BEARING_FIELDS = {"x", "y", "group", "facet", "filters", "aggregation",
-                        "analysis_run_id", "dataset_version_id"}
+                        "analysis_run_id", "dataset_version_id", "visual_type"}
 
 #: Fields that only affect presentation and may be edited freely.
 _PRESENTATION_FIELDS = {"title", "subtitle", "caption", "citations", "theme",
                         "uncertainty", "annotations", "interaction",
-                        "animation_semantics", "visual_type", "category_labels"}
+                        "animation_semantics", "category_labels"}
 
 
 def spec_hash(spec: ResearchVisualSpec) -> str:
