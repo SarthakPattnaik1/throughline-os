@@ -69,8 +69,9 @@ describe("the screen agrees with the recommendation", () => {
     expect(built).toContain("points.data!.grid_x");
     expect(built).not.toMatch(/Math\.|=>\s*\{[^}]*\*/);
 
-    const branch = source.slice(source.indexOf("{surface ? ("),
-                                source.indexOf(") : binned ? ("));
+    const surfaceAt = source.indexOf('recommendation.visual_type === "surface"')
+    const branch = source.slice(source.indexOf(") : surface ? (", surfaceAt),
+                                source.indexOf(") : binned ? (", surfaceAt));
     expect(branch).toContain("grid={surfaceGrid");
     expect(branch).not.toMatch(/Math\.|=>\s*\{[^}]*\*/);
 
