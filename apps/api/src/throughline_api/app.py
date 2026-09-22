@@ -5455,6 +5455,7 @@ STREAMABLE = {".csv", ".tsv"}
 
 def _sample_columns(
     path: Path, suffix: str, fields: list[str], limit: int,
+    filters: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     A bounded sample of `fields`, without loading the file to get it (§47).
@@ -5484,16 +5485,31 @@ def _sample_columns(
     import numpy as np
     import pandas as pd
 
-    if suffix not in STREAMABLE:
-        # Read whole, as before: these libraries offer nothing else, and the
-        # formats are not where the millions are.
-        from throughline_ingestion.datasets import read_dataset
+    filters = list(filters or [])
+    filter_fields = [
+        str(rule.get("column")) for rule in filters if rule.get("column")
+    ]
+    read_fields = list(dict.fromkeys([*fields, *filter_fields]))
 
-        frame, _ = read_dataset(path, suffix=suffix)
+    if suffix not in STREAMABLE:
+        # Match the scientific runtime's parser for formats it can analyse.
+        # Falling back to ingestion keeps this endpoint useful for legacy
+        # stored figures, but a completed analysis normally arrives through one
+        # of the three runtime-supported branches below.
+        if suffix in {".xlsx", ".xlsm"}:
+            frame = pd.read_excel(path)
+        elif suffix == ".json":
+            frame = pd.read_json(path)
+        else:
+            from throughline_ingestion.datasets import read_dataset
+            frame, _ = read_dataset(path, suffix=suffix)
+        for rule in filters:
+            frame = _apply_visual_filter(frame, rule)
         total = len(frame)
         chosen = (frame.sample(n=limit, random_state=0).sort_index()
                   if total > limit else frame)
-        return _columns_from(chosen, fields), _account(total, len(chosen), limit)
+        return _columns_from(chosen, fields), _account(
+            total, len(chosen), limit, filters_applied=len(filters))
 
     separator = "\t" if suffix == ".tsv" else _sniff(path)
 
@@ -5511,12 +5527,14 @@ def _sample_columns(
     # 45MB with the pack and 23MB without it (T187). Python strings are what
     # the reservoir keeps either way.
     reader = pd.read_csv(
-        path, sep=separator, usecols=lambda name: name in set(fields),
-        dtype=object, keep_default_na=False, encoding="utf-8",
+        path, sep=separator, usecols=lambda name: name in set(read_fields),
+        dtype=object, encoding="utf-8",
         encoding_errors="replace", chunksize=SAMPLE_CHUNK_ROWS,
         low_memory=False,
     )
     for chunk in reader:
+        for rule in filters:
+            chunk = _apply_visual_filter(chunk, rule)
         if not columns:
             columns = list(chunk.columns)
         rows = chunk.to_numpy(dtype=object)
@@ -5537,8 +5555,9 @@ def _sample_columns(
                 kept[int(draws[index])] = rest[index]
         seen += len(rows)
 
-    frame = pd.DataFrame(kept, columns=columns or fields)
-    return _columns_from(frame, fields), _account(seen, len(frame), limit)
+    frame = pd.DataFrame(kept, columns=columns or read_fields)
+    return _columns_from(frame, fields), _account(
+        seen, len(frame), limit, filters_applied=len(filters))
 
 
 def _sniff(path: Path) -> str:
@@ -5562,14 +5581,50 @@ def _columns_from(frame: Any, fields: list[str]) -> dict[str, Any]:
     return sample
 
 
-def _account(total: int, drawn: int, limit: int) -> dict[str, Any]:
+def _account(
+    total: int, drawn: int, limit: int, *, filters_applied: int = 0,
+) -> dict[str, Any]:
     return {
         "sampled": total > limit,
         "rows_total": int(total),
         "rows_drawn": int(drawn),
         "method": "uniform random without replacement, fixed seed"
                   if total > limit else "every row",
+        "filters_applied": int(filters_applied),
+        "population": "after analysis filters" if filters_applied else "analysis dataset",
     }
+
+
+def _apply_visual_filter(frame: Any, rule: dict[str, Any]):
+    """Mirror the sandbox's declarative filter semantics for figure rows.
+
+    This is intentionally expression-free. A conformance test exercises every
+    allowed operator against the scientific runtime's implementation so these
+    two execution paths cannot drift silently.
+    """
+    import pandas as pd
+
+    column, operator, value = rule["column"], rule["operator"], rule.get("value")
+    if column not in frame.columns:
+        raise ValueError(f"Filter references unknown column {column!r}")
+    series = frame[column]
+    if operator in {"gt", "gte", "lt", "lte"}:
+        series = pd.to_numeric(series, errors="coerce")
+        comparisons = {
+            "gt": series > value, "gte": series >= value,
+            "lt": series < value, "lte": series <= value,
+        }
+        return frame[comparisons[operator].fillna(False)]
+    if operator == "eq":
+        return frame[series.astype(str) == str(value)]
+    if operator == "ne":
+        return frame[series.astype(str) != str(value)]
+    if operator == "in":
+        allowed = {str(v) for v in (value or [])}
+        return frame[series.astype(str).isin(allowed)]
+    if operator == "not_null":
+        return frame[series.notna()]
+    raise ValueError(f"Unsupported filter operator {operator!r}")
 
 
 def _visual_sample(cur, spec: ResearchVisualSpec,
@@ -5616,7 +5671,7 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
     return _sample_columns(
         storage.path_for(row["storage_key"]),
         Path(row["filename"] or "").suffix.lower(),
-        list(fields), limit)
+        list(fields), limit, filters=list(spec.filters or []))
 
 
 # ---------------------------------------------------------------------------
