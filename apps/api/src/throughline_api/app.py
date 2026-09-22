@@ -4988,6 +4988,13 @@ def create_visual(project_id: str, payload: VisualCreate,
     """Create a figure from an analysis run, critiqued before it is stored."""
     scoped_project(project_id, user)
     with transaction() as cur:
+        # Scope the run before recommendation or sampling. A run id from another
+        # project must not be usable to make this route read that project's
+        # result or dataset and only reject it afterward.
+        run = analysis.get_run(cur, payload.analysis_run_id)
+        if not run or run["project_id"] != project_id:
+            raise HTTPException(404, "Analysis run not found in this project.")
+
         # 404 before the figure is prepared; `visuals.create_visual` refuses it
         # too, for any other caller (T185).
         if payload.finding_id:
@@ -5011,6 +5018,11 @@ def create_visual(project_id: str, payload: VisualCreate,
                 "The supplied figure spec names a different analysis run from "
                 "the requested analysis_run_id.",
             )
+        try:
+            visuals.validate_spec_against_run(run, spec)
+        except visuals.VisualError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
         # The account is discarded here on purpose: a stored visual records
         # its own provenance, and the figure endpoint above is what a reader
         # sees the sampling in.
