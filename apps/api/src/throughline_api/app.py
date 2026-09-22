@@ -5449,6 +5449,7 @@ STREAMABLE = {".csv", ".tsv"}
 
 def _sample_columns(
     path: Path, suffix: str, fields: list[str], limit: int,
+    filters: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     A bounded sample of `fields`, without loading the file to get it (§47).
@@ -5484,6 +5485,7 @@ def _sample_columns(
         from throughline_ingestion.datasets import read_dataset
 
         frame, _ = read_dataset(path, suffix=suffix)
+        frame = _apply_visual_filters(frame, filters or [])
         total = len(frame)
         chosen = (frame.sample(n=limit, random_state=0).sort_index()
                   if total > limit else frame)
@@ -5504,16 +5506,20 @@ def _sample_columns(
     # then converted back to Python objects below — so the same figure cost
     # 45MB with the pack and 23MB without it (T187). Python strings are what
     # the reservoir keeps either way.
+    needed = set(fields) | {
+        str(rule.get("column")) for rule in (filters or []) if rule.get("column")
+    }
     reader = pd.read_csv(
-        path, sep=separator, usecols=lambda name: name in set(fields),
+        path, sep=separator, usecols=lambda name: name in needed,
         dtype=object, keep_default_na=False, encoding="utf-8",
         encoding_errors="replace", chunksize=SAMPLE_CHUNK_ROWS,
         low_memory=False,
     )
     for chunk in reader:
+        chunk = _apply_visual_filters(chunk, filters or [])
         if not columns:
-            columns = list(chunk.columns)
-        rows = chunk.to_numpy(dtype=object)
+            columns = [name for name in chunk.columns if name in set(fields)]
+        rows = chunk[[name for name in fields if name in chunk.columns]].to_numpy(dtype=object)
 
         take = min(limit - len(kept), len(rows))
         if take > 0:
@@ -5539,6 +5545,45 @@ def _sniff(path: Path) -> str:
     from throughline_ingestion.datasets import sniff_delimiter
 
     return sniff_delimiter(path)
+
+
+def _apply_visual_filters(frame: Any, filters: list[dict[str, Any]]):
+    """Apply the analysis' declarative row filters before anything is plotted.
+
+    This mirrors the scientific runtime's deliberately tiny filter language:
+    there is no expression evaluation and no renderer-side interpretation.
+    """
+    import pandas as pd
+
+    used = frame
+    for rule in filters:
+        column = str(rule.get("column") or "")
+        operator = str(rule.get("operator") or "")
+        value = rule.get("value")
+        if column not in used.columns:
+            raise ValueError(f"Filter references unknown column {column!r}")
+        series = used[column]
+        if operator in {"gt", "gte", "lt", "lte"}:
+            numeric = pd.to_numeric(series, errors="coerce")
+            comparisons = {
+                "gt": numeric > value,
+                "gte": numeric >= value,
+                "lt": numeric < value,
+                "lte": numeric <= value,
+            }
+            used = used[comparisons[operator].fillna(False)]
+        elif operator == "eq":
+            used = used[series.astype(str) == str(value)]
+        elif operator == "ne":
+            used = used[series.astype(str) != str(value)]
+        elif operator == "in":
+            allowed = {str(v) for v in (value or [])}
+            used = used[series.astype(str).isin(allowed)]
+        elif operator == "not_null":
+            used = used[series.notna()]
+        else:
+            raise ValueError(f"Unsupported filter operator {operator!r}")
+    return used
 
 
 def _columns_from(frame: Any, fields: list[str]) -> dict[str, Any]:
@@ -5610,7 +5655,7 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
     return _sample_columns(
         storage.path_for(row["storage_key"]),
         Path(row["filename"] or "").suffix.lower(),
-        list(fields), limit)
+        list(fields), limit, filters=list(spec.filters or []))
 
 
 # ---------------------------------------------------------------------------
