@@ -60,6 +60,8 @@ def recommend(
         "spearman_correlation": _correlation,
         "bootstrap_correlation": _correlation,
         "linear_regression": _regression,
+        "logistic_regression": _logistic_regression,
+        "mixed_model": _mixed_model,
         "t_test": _group_comparison,
         "mann_whitney": _group_comparison,
         "anova": _group_comparison,
@@ -304,6 +306,85 @@ def _regression(run_id, version_id, variables, result, audience,
 
     return {"visual_type": spec.visual_type, "reason": reason, "spec": spec,
             "interpretation": result.get("interpretation", ""), "alternatives": alternatives}
+
+
+def _logistic_regression(run_id, version_id, variables, result, audience,
+                         book=_NO_LABELS) -> dict[str, Any]:
+    predictors = list(variables.get("predictors") or [])
+    outcome = variables["outcome"]
+    if not predictors:
+        raise RecommendationError("logistic regression named no predictors to plot")
+
+    spec = ResearchVisualSpec(
+        visual_type=VisualType.FOREST,
+        analysis_run_id=run_id,
+        dataset_version_id=version_id,
+        x=Encoding(field="odds_ratio", label="odds ratio (95% CI)"),
+        y=Encoding(field="predictor", label="predictor"),
+        category_labels=book.category_labels(predictors),
+        uncertainty=UncertaintyDisplay.CONFIDENCE_INTERVAL,
+        annotations=[Annotation(
+            kind="reference_line", value=1.0,
+            orientation="vertical", text="no association"
+        )],
+        title=f"Adjusted odds ratios for {book.label(outcome)}",
+        caption=(
+            f"Odds ratios from a logistic regression of {book.described(outcome)} "
+            f"on {book.joined(predictors)}. {_significance_note(result)}. "
+            "An odds ratio of 1 is compatible with no association. "
+            "Association does not establish causation."
+        ),
+    )
+    return {
+        "visual_type": VisualType.FOREST,
+        "reason": (
+            "A coefficient plot shows every adjusted odds ratio with its interval "
+            "against the no-association value of 1."
+        ),
+        "spec": spec,
+        "interpretation": result.get("interpretation", ""),
+        "alternatives": [],
+    }
+
+
+def _mixed_model(run_id, version_id, variables, result, audience,
+                 book=_NO_LABELS) -> dict[str, Any]:
+    predictors = list(variables.get("predictors") or [])
+    outcome = variables["outcome"]
+    if not predictors:
+        raise RecommendationError("mixed model named no predictors to plot")
+
+    spec = ResearchVisualSpec(
+        visual_type=VisualType.FOREST,
+        analysis_run_id=run_id,
+        dataset_version_id=version_id,
+        x=Encoding(field="estimate", label="coefficient (95% CI)", include_zero=True),
+        y=Encoding(field="predictor", label="predictor"),
+        category_labels=book.category_labels(predictors),
+        uncertainty=UncertaintyDisplay.CONFIDENCE_INTERVAL,
+        annotations=[Annotation(
+            kind="reference_line", value=0.0,
+            orientation="vertical", text="no association"
+        )],
+        title=f"Mixed-model associations with {book.label(outcome)}",
+        caption=(
+            f"Mixed-model coefficients for {book.described(outcome)} across "
+            f"{book.joined(predictors)}. {_significance_note(result)}. "
+            "Intervals crossing zero are compatible with no association. "
+            "Association does not establish causation."
+        ),
+    )
+    return {
+        "visual_type": VisualType.FOREST,
+        "reason": (
+            "A coefficient plot keeps the adjusted mixed-model estimates and "
+            "their uncertainty visible without flattening the grouping structure "
+            "into a raw scatter."
+        ),
+        "spec": spec,
+        "interpretation": result.get("interpretation", ""),
+        "alternatives": [],
+    }
 
 
 def _group_comparison(run_id, version_id, variables, result, audience,
