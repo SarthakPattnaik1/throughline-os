@@ -24,7 +24,7 @@ from throughline_visual import prepare as visual_prepare
 from throughline_visual import recommend as visual_recommend
 from throughline_visual.labels import LabelBook
 from throughline_visual.renderers import publication, web
-from throughline_visual.spec import ResearchVisualSpec, VisualData
+from throughline_visual.spec import ResearchVisualSpec, VisualData, VisualType
 
 from throughline_schemas.words import plural
 from .analysis import get_run
@@ -185,6 +185,84 @@ def recommend_for_run(
     return recommendation
 
 
+def _validate_visual_binding(run: dict[str, Any], spec: ResearchVisualSpec) -> None:
+    """A visual may restyle a run, never change which analysis it represents."""
+    method = str(run.get("method") or "")
+    variables = run.get("variables") or {}
+    kind = spec.visual_type
+
+    allowed_types = {
+        "pearson_correlation": {VisualType.SCATTER, VisualType.HEXBIN},
+        "spearman_correlation": {VisualType.SCATTER, VisualType.HEXBIN},
+        "bootstrap_correlation": {VisualType.SCATTER, VisualType.HEXBIN},
+        "linear_regression": {VisualType.SCATTER, VisualType.FOREST, VisualType.SURFACE},
+        "logistic_regression": {VisualType.FOREST},
+        "mixed_model": {VisualType.FOREST},
+        "t_test": {VisualType.BOX, VisualType.BAR},
+        "mann_whitney": {VisualType.BOX, VisualType.BAR},
+        "anova": {VisualType.BOX, VisualType.BAR},
+        "kruskal_wallis": {VisualType.BOX, VisualType.BAR},
+        "chi_square": {VisualType.HEATMAP, VisualType.BAR},
+        "descriptive": {VisualType.HISTOGRAM},
+    }
+    if kind not in allowed_types.get(method, set()):
+        raise VisualError(
+            f"{kind.value} is not a faithful figure type for the recorded "
+            f"{method} run. Rerun or use one of: "
+            + ", ".join(sorted(v.value for v in allowed_types.get(method, set())))
+        )
+
+    def field(encoding):
+        return encoding.field if encoding is not None else None
+
+    if method in {"pearson_correlation", "spearman_correlation",
+                  "bootstrap_correlation"}:
+        if field(spec.x) != variables.get("x") or field(spec.y) != variables.get("y"):
+            raise VisualError(
+                "The figure axes do not match the variables recorded by the "
+                "correlation run."
+            )
+    elif method == "linear_regression":
+        predictors = list(variables.get("predictors") or [])
+        outcome = variables.get("outcome")
+        if kind is VisualType.SCATTER:
+            if len(predictors) != 1 or field(spec.x) != predictors[0] or field(spec.y) != outcome:
+                raise VisualError(
+                    "A simple-regression scatter must use the recorded predictor "
+                    "on x and recorded outcome on y."
+                )
+        elif kind is VisualType.SURFACE:
+            if len(predictors) != 2 or [field(spec.x), field(spec.y)] != predictors:
+                raise VisualError(
+                    "A regression surface must use the two recorded predictors "
+                    "in their recorded order."
+                )
+    elif method in {"t_test", "mann_whitney", "anova", "kruskal_wallis"}:
+        group, value = variables.get("group"), variables.get("value")
+        if field(spec.x) != group or field(spec.y) != value:
+            raise VisualError(
+                "The group-comparison figure does not use the recorded group "
+                "and value variables."
+            )
+        if kind is VisualType.BOX and field(spec.group) != group:
+            raise VisualError(
+                "The box plot grouping does not match the recorded group variable."
+            )
+    elif method == "chi_square":
+        if kind is VisualType.HEATMAP:
+            if field(spec.x) != variables.get("x") or field(spec.y) != variables.get("y"):
+                raise VisualError(
+                    "The contingency heatmap axes do not match the recorded "
+                    "categorical variables."
+                )
+    elif method == "descriptive":
+        columns = list(variables.get("columns") or [])
+        if field(spec.x) not in columns:
+            raise VisualError(
+                "The histogram column was not part of the recorded descriptive run."
+            )
+
+
 def create_visual(
     cur, *, project_id: str, spec: ResearchVisualSpec, actor: str,
     sample: dict[str, Sequence[Any]] | None = None,
@@ -197,6 +275,8 @@ def create_visual(
         raise VisualError(f"Unknown analysis run: {spec.analysis_run_id}")
     if run["project_id"] != project_id:
         raise VisualError("The analysis run belongs to a different project.")
+
+    _validate_visual_binding(run, spec)
 
     run_versions = list(run.get("dataset_version_ids") or [])
     if run_versions:
