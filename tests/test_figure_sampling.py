@@ -228,3 +228,37 @@ def test_small_filtered_population_draws_every_filtered_row(tmp_path):
         "method": "every row",
     }
     assert sample["x"] == list(range(80))
+
+
+
+def test_binned_density_aggregates_every_complete_filtered_pair(tmp_path):
+    from throughline_api.app import _aggregate_binned_columns
+
+    rows = 12_000
+    path = tmp_path / "dense.csv"
+    frame = pd.DataFrame({
+        "x": range(rows),
+        "y": [i % 101 for i in range(rows)],
+        "arm": ["keep" if i < 7_000 else "drop" for i in range(rows)],
+    })
+    # Two rows inside the kept population are not complete plotted pairs.
+    frame.loc[10, "x"] = None
+    frame.loc[20, "y"] = None
+    frame.to_csv(path, index=False)
+
+    sample, account = _aggregate_binned_columns(
+        path, ".csv",
+        x_field="x", y_field="y",
+        filters=[{"column": "arm", "operator": "eq", "value": "keep"}],
+        bins=30, hex_shape=True,
+    )
+
+    assert account == {
+        "sampled": False,
+        "rows_total": 6_998,
+        "rows_drawn": 6_998,
+        "method": "aggregated every complete plotted row",
+    }
+    assert sample["__binned_rows__"] == 6_998
+    assert sum(int(cell["count"]) for cell in sample["__binned_cells__"]) == 6_998
+    assert 1 <= len(sample["__binned_cells__"]) <= 30 * 30
