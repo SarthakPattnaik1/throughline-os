@@ -23,7 +23,8 @@ import { Estimate, Interval } from "./charts/Interval";
 import { Cell, Matrix } from "./charts/Matrix";
 import { Density, DensityCurve } from "./charts/Density";
 import {
-  BoxSummary, HistogramBin, PreparedBoxPlot, PreparedHistogram,
+  BoxSummary, HistogramBin, PreparedBoxPlot, PreparedCountHeatmap,
+  PreparedHeatmapCell, PreparedHistogram,
 } from "./charts/PreparedStatCharts";
 import { Empty, Failure, Fold, Loading } from "./primitives";
 import { SavedFigures } from "./savedfigures";
@@ -240,7 +241,14 @@ export function Figures({ projectId, runs, focusId = null,
    * A run that has not finished has no estimate and no points, and a picker
    * entry that can only ever say "no plottable values" is worse than no entry.
    */
-  const plottable = (runs.data ?? []).filter((r) => r.estimate !== null);
+  const supportedMethods = new Set([
+    "pearson_correlation", "spearman_correlation", "bootstrap_correlation",
+    "linear_regression", "t_test", "mann_whitney", "anova",
+    "kruskal_wallis", "chi_square", "descriptive",
+  ]);
+  const plottable = (runs.data ?? []).filter(
+    (r) => r.status === "completed" && supportedMethods.has(r.method),
+  );
   const active = chosen ?? plottable[0]?.id ?? null;
   const run = plottable.find((r) => r.id === active) ?? null;
 
@@ -719,14 +727,15 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
 
   const heatmapRows = points.data?.group ?? [];
   const heatmapColumns = points.data?.categories ?? [];
-  const heatmapCells: Cell[] = recommendation.visual_type === "heatmap"
-    ? heatmapRows.flatMap((row, rowIndex) =>
-        heatmapColumns.map((column, columnIndex) => ({
-          row,
-          column,
-          value: points.data?.matrix?.[rowIndex]?.[columnIndex] ?? null,
-        })))
-    : [];
+  const heatmapCells: PreparedHeatmapCell[] =
+    recommendation.visual_type === "heatmap"
+      ? heatmapRows.flatMap((row, rowIndex) =>
+          heatmapColumns.map((column, columnIndex) => ({
+            row,
+            column,
+            value: points.data?.matrix?.[rowIndex]?.[columnIndex] ?? 0,
+          })))
+      : [];
 
   const boxSummaries = recommendation.visual_type === "box"
     ? (points.data?.series ?? []) as unknown as BoxSummary[]
@@ -795,14 +804,14 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
             caption={recommendation.caption}
           />
         ) : recommendation.visual_type === "heatmap" ? (
-          <Matrix
+          <PreparedCountHeatmap
             cells={heatmapCells}
             rows={heatmapRows}
             columns={heatmapColumns}
+            xLabel={xLabel}
+            yLabel={yLabel}
             title={recommendation.spec?.title}
             caption={recommendation.caption}
-            valueLabel="count"
-            symmetricAt={Math.max(1, ...heatmapCells.map((cell) => cell.value ?? 0))}
           />
         ) : recommendation.visual_type === "box" ? (
           <PreparedBoxPlot
