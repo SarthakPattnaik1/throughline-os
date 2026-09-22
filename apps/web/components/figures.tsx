@@ -17,8 +17,8 @@ import { ApiState, useApi } from "@/lib/useApi";
 // Aliased: Matrix exports a `Cell` too, and its shape is row/column/value
 // rather than x/y/count.
 import { Binned, Cell as BinnedCell } from "./charts/Binned";
-import { BoxPlot, BoxSummary } from "./charts/BoxPlot";
-import { Histogram, HistogramBin } from "./charts/Histogram";
+import { BoxPlot, type BoxSummary } from "./charts/BoxPlot";
+import { Histogram, type HistogramBin } from "./charts/Histogram";
 import { Surface } from "./charts/Surface";
 import { Cartesian, CartesianMark, Datum } from "./charts/Cartesian";
 import { Estimate, Interval } from "./charts/Interval";
