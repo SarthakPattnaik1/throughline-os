@@ -905,6 +905,8 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
             caption={preparedCaption}
             valueLabel="count"
             symmetricAt={Math.max(1, ...heatmapCells.map((cell) => Number(cell.value ?? 0)))}
+            scaleMode="sequential"
+            diagonalNeutral={false}
           />
         ) : histogram ? (
           <Histogram
