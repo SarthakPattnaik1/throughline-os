@@ -277,7 +277,7 @@ def render(
             layout="constrained" if height_px is not None else None)
         try:
             draw_panel(spec, data, axes, look)
-            _caption(spec, figure, look)
+            _caption(spec, data, figure, look)
             figure.savefig(path, **saving)
         finally:
             plt.close(figure)
@@ -577,11 +577,15 @@ def _decorate(spec: ResearchVisualSpec, data: VisualData, axes, look: Look) -> N
         axes.set_title(title, loc="left")
 
 
-def _caption(spec: ResearchVisualSpec, figure, look: Look) -> None:
-    """The caption and sources, under the whole figure."""
-    if spec.caption:
-        #  — the caption travels with the figure, not in a separate document.
-        figure.text(0.0, -0.06, _wrap(spec.caption), fontsize=tokens.TYPE["caption"],
+def _caption(spec: ResearchVisualSpec, data: VisualData, figure, look: Look) -> None:
+    """The caption, preparation caveat, and sources under the whole figure."""
+    parts = [text for text in (spec.caption, data.note) if text]
+    if parts:
+        # The preparation note is part of the exported research claim. In
+        # particular, a bounded sample disclosure must not disappear when a
+        # figure leaves the browser.
+        figure.text(0.0, -0.06, _wrap(" ".join(parts)),
+                    fontsize=tokens.TYPE["caption"],
                     color=look.ink["muted"], ha="left", va="top", wrap=True)
     if spec.citations:
         figure.text(1.0, -0.06, "Sources: " + "; ".join(spec.citations[:3]),
