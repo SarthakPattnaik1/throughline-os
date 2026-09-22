@@ -156,7 +156,7 @@ def _is_number(value: Any) -> bool:
 def _statistics(result: dict[str, Any]) -> dict[str, Any]:
     """The numbers a figure is permitted to state, taken verbatim from the run."""
     effect = result.get("effect_size") or {}
-    return {
+    statistics = {
         "estimate": result.get("estimate"),
         "estimate_name": result.get("estimate_name"),
         "p_value": result.get("p_value"),
@@ -172,6 +172,23 @@ def _statistics(result: dict[str, Any]) -> dict[str, Any]:
         # interval states its level, and alpha is the run's rather than assumed.
         "confidence_level": result.get("confidence_level"),
     }
+
+    # A simple-regression figure is allowed to draw the fitted line, but only
+    # from the coefficients the scientific runtime recorded. Re-fitting the
+    # points supplied to a renderer would create a second analysis — and on a
+    # sampled figure it can produce a different slope from the run it claims to
+    # visualise.
+    extra = result.get("extra") or {}
+    predictors = list(extra.get("predictors") or [])
+    coefficients = extra.get("coefficients") or {}
+    if (result.get("method") == "linear_regression"
+            and len(predictors) == 1
+            and "const" in coefficients
+            and predictors[0] in coefficients):
+        statistics["fit_intercept"] = float(coefficients["const"]["estimate"])
+        statistics["fit_slope"] = float(coefficients[predictors[0]]["estimate"])
+
+    return statistics
 
 
 def _scatter(spec, result, sample, statistics) -> VisualData:

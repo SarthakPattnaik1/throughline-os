@@ -40,6 +40,7 @@ type Recommendation = {
     */
     x?: { field: string; label?: string; unit?: string; scale?: string };
     y?: { field: string; label?: string; unit?: string; scale?: string };
+    dataset_version_id?: string | null;
     title?: string;
   };
 };
@@ -47,7 +48,7 @@ type Recommendation = {
 type Points = {
   x: number[];
   y: number[];
-  statistics?: Record<string, number>;
+  statistics?: Record<string, number | string | null>;
   sample_size?: number;
   sampling?: {
     sampled: boolean;
@@ -349,7 +350,8 @@ export function Figures({ projectId, runs, focusId = null,
       {recommendation.loading && <Loading rows={4} label="Choosing the figure" />}
       {run && recommendation.data && (
         <Figure run={run} recommendation={recommendation.data}
-                labels={labels} projectId={projectId} versionId={versionId} />
+                labels={labels} projectId={projectId}
+                versionId={recommendation.data.spec.dataset_version_id ?? null} />
       )}
       </>
       )}
@@ -783,6 +785,15 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
             */
             densityColour={mark === "point"}
             totalPoints={points.data?.sampling?.rows_total}
+            fit={
+              points.data?.statistics?.fit_slope != null
+              && points.data?.statistics?.fit_intercept != null
+                ? {
+                    slope: Number(points.data.statistics.fit_slope),
+                    intercept: Number(points.data.statistics.fit_intercept),
+                  }
+                : null
+            }
             /*
               Only where there is a dataset to define a subset against.
               Offering it without one would be a control that cannot work,

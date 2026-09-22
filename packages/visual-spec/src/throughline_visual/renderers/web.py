@@ -207,9 +207,22 @@ def _scatter(spec, data: VisualData) -> dict[str, Any]:
          "encoding": encoding}
     ]
     if any(a.kind == "regression_line" for a in spec.annotations):
+        slope = data.statistics.get("fit_slope")
+        intercept = data.statistics.get("fit_intercept")
+        if slope is None or intercept is None:
+            raise WebRenderError(
+                "This figure asks for a fitted regression line, but the recorded "
+                "analysis did not supply the coefficients needed to draw it."
+            )
+        xs = [float(v) for v in data.x_values]
+        low, high = min(xs), max(xs)
+        line = [
+            {"x": low, "y": float(intercept) + float(slope) * low},
+            {"x": high, "y": float(intercept) + float(slope) * high},
+        ]
         layers.append({
+            "data": {"values": line},
             "mark": {"type": "line", "color": tokens.INK["light"]["ink"], "strokeDash": [4, 3]},
-            "transform": [{"regression": "y", "on": "x"}],
             "encoding": {"x": {"field": "x", "type": "quantitative"},
                          "y": {"field": "y", "type": "quantitative"}},
         })

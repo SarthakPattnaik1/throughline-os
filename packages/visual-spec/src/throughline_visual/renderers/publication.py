@@ -421,7 +421,14 @@ def _scatter(spec, data: VisualData, axes, look: Look) -> None:
                      edgecolors=look.edge(look.hue(0)), linewidths=0.4)
 
     if any(a.kind == "regression_line" for a in spec.annotations) and len(xs) > 1:
-        slope, intercept = np.polyfit(xs, ys, 1)
+        slope = data.statistics.get("fit_slope")
+        intercept = data.statistics.get("fit_intercept")
+        if slope is None or intercept is None:
+            raise RenderError(
+                "This figure asks for a fitted regression line, but the recorded "
+                "analysis did not supply the coefficients needed to draw it."
+            )
+        slope, intercept = float(slope), float(intercept)
         line_x = np.linspace(xs.min(), xs.max(), 100)
         axes.plot(line_x, slope * line_x + intercept, color=look.ink["ink"],
                   linewidth=1.2, linestyle="--",

@@ -152,6 +152,62 @@ def test_incomplete_analysis_cannot_be_visualised(analysed):
     assert "queued" in str(exc.value)
 
 
+def test_simple_regression_figure_uses_recorded_fit_not_a_refit(analysed, tmp_path):
+    project_id, _, runs = analysed
+    with connection() as conn, conn.cursor() as cur:
+        run = analysis.get_run(cur, runs["regression"])
+        # The fixture's regression run has two predictors, so create one simple
+        # regression whose line is meaningful on a 2D chart.
+        spec_created = analysis.create_spec(
+            cur,
+            project_id=project_id,
+            spec={
+                "method": "linear_regression",
+                "dataset_version_ids": [run["spec"]["dataset_version_ids"][0]],
+                "variables": {"outcome": "resistance_pct",
+                              "predictors": ["consumption_ddd"]},
+            },
+            actor="test",
+        )
+        simple = analysis.create_run(
+            cur, project_id=project_id, spec_id=spec_created["spec_id"]
+        )
+        workflow.enqueue(
+            cur, workflow_name="analysis.run", project_id=project_id,
+            payload={"analysis_run_id": simple}, idempotency_key=f"analysis:{simple}",
+        )
+    _drain()
+
+    with connection() as conn, conn.cursor() as cur:
+        simple_run = analysis.get_run(cur, simple)
+        rec = visuals.recommend_for_run(cur, analysis_run_id=simple)
+        sample = _sample_for(
+            cur, simple_run, ["consumption_ddd", "resistance_pct"]
+        )
+        data = visual_prepare.prepare(
+            rec["spec"], analysis_result=simple_run["result"], sample=sample
+        )
+
+    coefficients = simple_run["result"]["extra"]["coefficients"]
+    assert data.statistics["fit_slope"] == pytest.approx(
+        coefficients["consumption_ddd"]["estimate"]
+    )
+    assert data.statistics["fit_intercept"] == pytest.approx(
+        coefficients["const"]["estimate"]
+    )
+    assert rec["spec"].uncertainty is UncertaintyDisplay.NONE
+
+    chart = web.render(rec["spec"], data)
+    line_layer = next(
+        layer for layer in chart["layer"]
+        if isinstance(layer, dict) and "data" in layer
+    )
+    line_values = line_layer["data"]["values"]
+    x0, x1 = line_values[0]["x"], line_values[1]["x"]
+    slope = (line_values[1]["y"] - line_values[0]["y"]) / (x1 - x0)
+    assert slope == pytest.approx(coefficients["consumption_ddd"]["estimate"])
+
+
 # ---------------------------------------------------------------------------
 # §76 — the critic
 # ---------------------------------------------------------------------------
