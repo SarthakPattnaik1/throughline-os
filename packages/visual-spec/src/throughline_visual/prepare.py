@@ -194,18 +194,39 @@ def _statistics(result: dict[str, Any]) -> dict[str, Any]:
 def _scatter(spec, result, sample, statistics) -> VisualData:
     x_field = spec.x.field if spec.x else None
     y_field = spec.y.field if spec.y else None
-    xs = list(sample.get(x_field, []) or [])
-    ys = list(sample.get(y_field, []) or [])
-    if len(xs) != len(ys):
+    raw_x = list(sample.get(x_field, []) or [])
+    raw_y = list(sample.get(y_field, []) or [])
+    raw_group = (
+        list(sample.get(spec.group.field, []) or []) if spec.group else []
+    )
+    if len(raw_x) != len(raw_y):
         raise PreparationError("Scatter sample has mismatched x and y lengths.")
+    if raw_group and len(raw_group) != len(raw_x):
+        raise PreparationError("Scatter sample has mismatched group values.")
+
+    xs: list[float] = []
+    ys: list[float] = []
+    groups: list[str] = []
+    for index, (x, y) in enumerate(zip(raw_x, raw_y)):
+        if not _is_number(x) or not _is_number(y):
+            continue
+        xs.append(float(x))
+        ys.append(float(y))
+        if raw_group:
+            groups.append(str(raw_group[index]))
+
+    if not xs:
+        raise PreparationError(
+            "The sampled rows contain no complete numeric x/y pairs to draw."
+        )
+
+    full_n = int(result.get("sample_size") or len(xs))
     return VisualData(
-        x_values=xs, y_values=[float(v) for v in ys],
-        group_values=list(sample.get(spec.group.field, []) or []) if spec.group else [],
-        sample_size=int(result.get("sample_size") or len(xs)),
+        x_values=xs, y_values=ys, group_values=groups,
+        sample_size=full_n,
         statistics=statistics,
-        note=("Points shown are a bounded sample of the dataset; all statistics come "
-              "from the full analysis run." if len(xs) < (result.get("sample_size") or 0)
-              else ""),
+        note=("Points shown are a bounded complete-case sample; all statistics "
+              "come from the full analysis run." if len(xs) < full_n else ""),
     )
 
 
