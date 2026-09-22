@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { KEPT, clearHistory, readHistory, remember } from "@/components/askhistory";
 import { OneBar } from "@/components/onebar";
-import type { Command } from "@/components/CommandPalette";
+import type { Command } from "@/components/commands";
 
 const PROJECT = "prj_test";
 

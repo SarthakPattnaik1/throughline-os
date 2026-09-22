@@ -86,7 +86,7 @@ describe("the shell carries the strip above the workspace", () => {
      *  content, which is the defect it exists to end. */
     const { container } = render(
       <Shell section="findings" onSection={vi.fn()} map={null} inspector={null}
-             onCommand={vi.fn()} projectName="P" crumbs={[]} onDropFiles={vi.fn()}
+             projectName="P" crumbs={[]} onDropFiles={vi.fn()}
              strip={<div className="step-strip" data-testid="strip">strip</div>}>
         <p>content</p>
       </Shell>,
@@ -101,7 +101,7 @@ describe("the shell carries the strip above the workspace", () => {
   it("keeps This machine a group of its own, not a research step", () => {
     const { container } = render(
       <Shell section="settings" onSection={vi.fn()} map={null} inspector={null}
-             onCommand={vi.fn()} projectName="P" crumbs={[]} onDropFiles={vi.fn()}>
+             projectName="P" crumbs={[]} onDropFiles={vi.fn()}>
         <p>content</p>
       </Shell>,
     );

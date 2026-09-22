@@ -70,7 +70,7 @@ function shell() {
       onSection={vi.fn()}
       map={null}
       inspector={<p>context</p>}
-      onCommand={vi.fn()}
+     
       projectName="A project"
       crumbs={[]}
       onDropFiles={vi.fn()}

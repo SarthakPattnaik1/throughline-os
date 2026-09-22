@@ -27,7 +27,7 @@ const HEADINGS = [
 function shell(section: Section = "overview", onSection = vi.fn()) {
   const result = render(
     <Shell section={section} onSection={onSection} map={null} inspector={null}
-           onCommand={vi.fn()} projectName="A project" crumbs={[]}
+           projectName="A project" crumbs={[]}
            onDropFiles={vi.fn()}>
       <p>content</p>
     </Shell>,
@@ -171,7 +171,7 @@ describe("a heading press expands its group and collapses the rest", () => {
 
     rerender(
       <Shell section="reports" onSection={vi.fn()} map={null} inspector={null}
-             onCommand={vi.fn()} projectName="A project" crumbs={[]}
+             projectName="A project" crumbs={[]}
              onDropFiles={vi.fn()}>
         <p>content</p>
       </Shell>,

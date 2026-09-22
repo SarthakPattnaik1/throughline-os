@@ -20,7 +20,7 @@ import { AnalysisContext } from "@/components/AnalysisContext";
 import { ViewTabs } from "@/components/ViewTabs";
 import { Centered, Failure, Fold, Loading } from "@/components/primitives";
 import { Crumb, PAGES, SECTIONS, Section, Shell } from "@/components/Shell";
-import { CommandPalette, buildCommands } from "@/components/CommandPalette";
+import { buildCommands } from "@/components/commands";
 import { OneBar } from "@/components/onebar";
 import type { Destination } from "@/components/verbs";
 import { AnalysisRail } from "@/components/AnalysisRail";
@@ -318,7 +318,6 @@ function Workspace({ user }: { user: SignedInUser }) {
   const [runMethod, setRunMethod] = useState<string | null>(null);
   /** The open run's recorded roles, for the cockpit's left column. */
   const [runVariables, setRunVariables] = useState<Record<string, unknown>>({});
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [pendingDiscovery, setPendingDiscovery] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<unknown>(null);
@@ -425,23 +424,18 @@ function Workspace({ user }: { user: SignedInUser }) {
   }, [inFlight, reloadMap, reloadSources, reloadAnalyses, reloadConnections, reloadFindings]);
 
   /*
-   * Global keys. ⌘K opens the palette; Escape leaves a detail view for the list
-   * it came from, which is the one navigation a keyboard user reaches for most
-   * and the one a single-page shell most often forgets to provide.
+   * Escape leaves a detail view for the list it came from — the one navigation
+   * a keyboard user reaches for most, and the one a single-page shell most
+   * often forgets to provide.
+   *
+   * ⌘K is no longer handled here. It used to open the command palette; the
+   * dock owns it now (T197), because the palette searched the same list
+   * through the same ranking and did no verbs — one keystroke should not have
+   * two front doors behind it.
    */
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault();
-        // Always opens, never toggles. Written as a toggle first, which meant a
-        // second ⌘K on an already-open palette dismissed it — and since you
-        // cannot see whether it is open while reaching for the shortcut, the
-        // keystroke did the opposite of what you asked about half the time.
-        // Escape is how it closes.
-        setPaletteOpen(true);
-        return;
-      }
-      if (event.key === "Escape" && !paletteOpen) {
+      if (event.key === "Escape") {
         // Don't steal Escape from a field the researcher is typing in.
         const tag = (event.target as HTMLElement | null)?.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -451,7 +445,7 @@ function Workspace({ user }: { user: SignedInUser }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [paletteOpen, go]);
+  }, [go]);
 
   const upload = useCallback(async (files: FileList | null) => {
     if (!files?.length || !activeId) return;
@@ -610,7 +604,6 @@ function Workspace({ user }: { user: SignedInUser }) {
         map={map.data} projectName={project.name}
         crumbs={crumbs}
         onDropFiles={upload}
-        onCommand={() => setPaletteOpen(true)}
         projectMenu={
           <ProjectMenu
             projects={projects.data}
@@ -1134,9 +1127,7 @@ function Workspace({ user }: { user: SignedInUser }) {
         />
       </div>
 
-      <CommandPalette
-        open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands}
-      />
+
     </>
   );
 }

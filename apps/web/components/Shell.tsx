@@ -337,7 +337,7 @@ function useRoomForInspector(): boolean {
 }
 
 export function Shell({
-  section, onSection, map, children, inspector, rail, onCommand, bar, projectName,
+  section, onSection, map, children, inspector, rail, bar, projectName,
   crumbs, onDropFiles, projectMenu, account, strip,
 }: {
   section: Section;
@@ -355,7 +355,6 @@ export function Shell({
    * screen that has none of that renders none of it and gets the width back.
    */
   rail?: ReactNode;
-  onCommand: () => void;
   /**
    * The header's bar, when the caller has one.
    *
@@ -492,17 +491,6 @@ export function Shell({
             bar across the middle of the identity row, which is the size of a
             thing you are meant to use constantly; the masters give it a
             quarter of that, on the right, beside the account. */}
-        {/* The bar itself when the workspace hands one down (T189), and the
-            button that opens the modal palette when it does not. The bar is
-            the front door — it does verbs as well as names — and ⌘K still
-            opens the palette for anyone who reaches for it. */}
-        {bar ?? (
-          <button className="command" onClick={onCommand} aria-label="Open the command bar">
-            <span className="command-icon" aria-hidden><IconSearch size={15} /></span>
-            <span>Search project…</span>
-            <kbd>⌘K</kbd>
-          </button>
-        )}
         {/*
           One control at the right, for the two questions that are about the
           *session* rather than about any research object: who am I, and which

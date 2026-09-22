@@ -31,7 +31,7 @@ afterEach(cleanup);
 function shell() {
   return render(
     <Shell section="overview" onSection={vi.fn()} map={null} inspector={null}
-           onCommand={vi.fn()} projectName="A project" crumbs={[]}
+           projectName="A project" crumbs={[]}
            onDropFiles={vi.fn()} account={USER}>
       <p>content</p>
     </Shell>,
@@ -49,14 +49,18 @@ async function openMenu(container: HTMLElement) {
 
 describe("the topbar carries one control for the account and the theme", () => {
   it("has exactly one control at the right, and no separate theme toggle", () => {
-    /** Counted as "everything after the command bar", because that is what the
-     *  right-hand side of the topbar is. The project switcher is not in it —
-     *  it sits in the breadcrumb, on the object the crumb is already naming. */
+    /** Counted as "everything after the breadcrumb", because that is what the
+     *  right-hand side of the topbar is. It used to be counted from the command
+     *  bar, which sat between them; that button is gone (T197) — the bar at the
+     *  foot of every screen does what it did and more, and two front doors onto
+     *  one index is the thing the single box set out to remove. The project
+     *  switcher is not in the count: it sits in the breadcrumb, on the object
+     *  the crumb is already naming. */
     const { container } = shell();
     const topbar = container.querySelector(".topbar")!;
-    const command = topbar.querySelector(".command")!;
+    const crumbs = topbar.querySelector("[aria-label='Breadcrumb']")!;
     const right = [...topbar.children].filter((element) =>
-      command.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
+      crumbs.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING);
 
     expect(right).toHaveLength(1);
     expect(right[0].querySelectorAll("button")).toHaveLength(1);
@@ -72,12 +76,17 @@ describe("the topbar carries one control for the account and the theme", () => {
     expect(trigger.querySelector(".am-avatar")?.textContent).toBe("DC");
   });
 
-  it("keeps the command bar and the breadcrumb beside it", () => {
+  it("keeps the breadcrumb beside it, and no longer carries a command bar", () => {
     /** The two controls that were merged were the ones a person does not aim
-     *  at. These are the ones they do, and they stay where they were. */
+     *  at. The breadcrumb is one they do, and it stays where it was.
+     *
+     *  The command bar that used to sit here is gone (T197). It opened a modal
+     *  palette that searched the same index through the same ranking and
+     *  matched no verbs at all — a strict subset of the bar docked at the foot
+     *  of every screen, which now owns ⌘K too. */
     shell();
-    expect(screen.getByRole("button", { name: /command bar/i })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /command bar/i })).toBeNull();
   });
 });
 
@@ -147,7 +156,7 @@ describe("no account yet", () => {
      *  name that opens a menu with no identity in it says less than nothing. */
     const { container } = render(
       <Shell section="overview" onSection={vi.fn()} map={null} inspector={null}
-             onCommand={vi.fn()} projectName="A project" crumbs={[]}
+             projectName="A project" crumbs={[]}
              onDropFiles={vi.fn()}>
         <p>content</p>
       </Shell>,

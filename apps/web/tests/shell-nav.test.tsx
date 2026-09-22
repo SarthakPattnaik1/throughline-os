@@ -34,7 +34,7 @@ function shell() {
       onSection={vi.fn()}
       map={null}
       inspector={null}
-      onCommand={vi.fn()}
+     
       projectName="A project"
       crumbs={[]}
       onDropFiles={vi.fn()}

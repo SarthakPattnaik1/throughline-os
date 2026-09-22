@@ -38,7 +38,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Command, rank } from "./CommandPalette";
+import { Command, rank } from "./commands";
 import { Verb, VERBS, matchVerbs, verbsByGroup } from "./verbs";
 import type { Destination } from "./verbs";
 import { AskEntry, readHistory, remember } from "./askhistory";
@@ -164,10 +164,15 @@ export function OneBar({ commands, onVerb, suggestions = [], size = "compact",
       if (event.key === "Escape") { setQuery(""); setOpen(false); }
       return;
     }
-    if (event.key === "ArrowDown") {
+    // Ctrl-N / Ctrl-P alongside the arrows: the palette this replaced answered
+    // them and said so, and a keyboard surface that quietly stops answering a
+    // binding it advertised is worse than one that never did (T197).
+    const down = event.key === "ArrowDown" || (event.key === "n" && event.ctrlKey);
+    const up = event.key === "ArrowUp" || (event.key === "p" && event.ctrlKey);
+    if (down) {
       event.preventDefault();
       setActive((i) => (i + 1) % offers.length);
-    } else if (event.key === "ArrowUp") {
+    } else if (up) {
       event.preventDefault();
       setActive((i) => (i - 1 + offers.length) % offers.length);
     } else if (event.key === "Enter") {
@@ -179,6 +184,29 @@ export function OneBar({ commands, onVerb, suggestions = [], size = "compact",
       setOpen(false);
     }
   }
+
+  /*
+   * ⌘K / Ctrl-K puts the keyboard here (T197).
+   *
+   * It used to open a modal palette, which searched the same `commands` list
+   * through the same `rank` and did no verbs at all — a strict subset of this
+   * bar behind a second front door. The shortcut is the one thing that door
+   * had that this one did not, so it moved here and the door went.
+   *
+   * Bound only by the dock: the compact and home bars can appear beside it,
+   * and two listeners would fight over the same keystroke.
+   */
+  useEffect(() => {
+    if (size !== "dock") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey)) return;
+      event.preventDefault();
+      inputRef.current?.focus();
+      setOpen(true);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [size]);
 
   // A click outside closes the list without clearing what was typed.
   useEffect(() => {
@@ -217,6 +245,9 @@ export function OneBar({ commands, onVerb, suggestions = [], size = "compact",
           onClick={() => setOpen(true)}
           onKeyDown={onKeyDown}
         />
+        {!query && size === "dock" && (
+          <kbd className="onebar-key" aria-hidden>⌘K</kbd>
+        )}
         {query && (
           <button type="button" className="onebar-clear" aria-label="Clear"
                   onClick={() => { setQuery(""); inputRef.current?.focus(); }}>
@@ -283,7 +314,10 @@ export function OneBar({ commands, onVerb, suggestions = [], size = "compact",
         * it sits on. This is the panel that replaces what a rail gave away for
         * free — the sense that these places exist.
         */}
-      {size === "dock" && open && !query.trim() && (suggestions.length > 0 || trail.length > 0) && (
+      {/* Always, once focused and empty — not only when there are chips or a
+          trail to show. A fresh project has neither, and that is exactly the
+          reader who most needs "What can I ask?" (T197). */}
+      {size === "dock" && open && !query.trim() && (
         <div className="onebar-start">
           {suggestions.length > 0 && (
             <div className="onebar-start-block">
@@ -396,10 +430,14 @@ export function VerbSheet({ onPick }: { onPick: (verb: Verb) => void }) {
           </ul>
         </section>
       ))}
+      {/* What the name search covers, named kind by kind (T197).
+          The modal palette this replaced said so in its placeholder, and a
+          control that under-describes itself is the mirror of §123: nobody
+          types an analysis id into a box that never claimed to know one. */}
       <p className="verbsheet-foot">
-        {VERBS.length} things to ask for, and everything in the project by name —
-        a column, a run, a connection, a finding, a report, or an id somebody
-        sent you.
+        {VERBS.length} things to ask for — and everything this project holds, by
+        name or by id: any section, source, connection, finding, analysis,
+        report, figure, or standalone page.
       </p>
     </div>
   );

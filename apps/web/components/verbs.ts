@@ -14,9 +14,9 @@
  *
  * ## No model is required, and none is pretended
  *
- * `CommandPalette.tsx` says §69 wants natural-language intent parsing, that it
- * needs a model, and that the palette therefore does not pretend to. That is
- * still true and this table does not change it. What it does is narrower and
+ * §69 wants natural-language intent parsing; it needs a model, and the command
+ * index has never pretended to do it. That is still true and this table does
+ * not change it. What it does is narrower and
  * completely deterministic: a verb, and the rest of the line as its argument.
  * "find papers about soil fertility" is a prefix match and a string, not a
  * parse. When no model is configured — the default install — every verb here

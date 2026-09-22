@@ -11,7 +11,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { OneBar, offersFor } from "@/components/onebar";
-import type { Command } from "@/components/CommandPalette";
+import type { Command } from "@/components/commands";
 
 afterEach(cleanup);
 
