@@ -122,7 +122,13 @@ def variable_labels(cur, *, project_id: str, dataset_version_id: str) -> LabelBo
                 labels_module.strip_trailing_unit(header, unit))
             source = labels_module.DATASET_HEADER
         else:
-            label, source = labels_module.humanise(row["name"]), labels_module.COLUMN_NAME
+            # Machine-style column names can carry an inferred unit suffix
+            # (for example `flipper_length_mm`). The unit already travels
+            # separately on the encoding, so remove only that exact known
+            # suffix before humanising or the axis becomes
+            # "flipper length mm (mm)".
+            bare_name = labels_module.strip_trailing_unit(row["name"], unit)
+            label, source = labels_module.humanise(bare_name), labels_module.COLUMN_NAME
 
         entry = {"label": label, "unit": unit or None, "source": source}
         entries[row["name"]] = entry
