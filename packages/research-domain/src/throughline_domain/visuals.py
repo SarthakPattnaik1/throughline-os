@@ -24,7 +24,7 @@ from throughline_visual import prepare as visual_prepare
 from throughline_visual import recommend as visual_recommend
 from throughline_visual.labels import LabelBook
 from throughline_visual.renderers import publication, web
-from throughline_visual.spec import ResearchVisualSpec, VisualData
+from throughline_visual.spec import ResearchVisualSpec, VisualData, VisualType
 
 from throughline_schemas.words import plural
 from .analysis import get_run
@@ -185,6 +185,117 @@ def recommend_for_run(
     return recommendation
 
 
+def _raw_run_variables(run: dict[str, Any]) -> set[str]:
+    """Every dataset column explicitly named by the immutable AnalysisSpec."""
+    found: set[str] = set()
+    for value in (run.get("variables") or {}).values():
+        if isinstance(value, str):
+            found.add(value)
+        elif isinstance(value, list):
+            found.update(str(item) for item in value if isinstance(item, str))
+    return found
+
+
+def validate_spec_against_run(run: dict[str, Any], spec: ResearchVisualSpec) -> None:
+    """Refuse a figure whose provenance contract disagrees with its analysis.
+
+    A visual override may change presentation, but it cannot silently redirect
+    recorded statistics onto another run, dataset, filtered population, or
+    unrelated column. Method-compatible alternative visual types remain
+    possible where their data shape is defined.
+    """
+    if spec.analysis_run_id != run["id"]:
+        raise VisualError(
+            "The figure spec names a different analysis run from the one being "
+            "visualised. Create the figure from that run instead."
+        )
+
+    versions = list(run.get("dataset_version_ids") or [])
+    expected_version = versions[0] if versions else None
+    if spec.dataset_version_id != expected_version:
+        raise VisualError(
+            "The figure dataset does not match the analysis run's dataset version."
+        )
+
+    if list(spec.filters or []) != list(run.get("filters") or []):
+        raise VisualError(
+            "The figure filters do not match the analysis run's population. "
+            "Rerun the analysis for a different population."
+        )
+
+    method = str(run.get("method") or "")
+    visual = spec.visual_type
+    variables = run.get("variables") or {}
+    predictors = list(variables.get("predictors") or [])
+    allowed_types: dict[str, set[VisualType]] = {
+        "descriptive": {VisualType.HISTOGRAM},
+        "pearson_correlation": {VisualType.SCATTER, VisualType.HEXBIN},
+        "spearman_correlation": {VisualType.SCATTER, VisualType.HEXBIN},
+        "bootstrap_correlation": {VisualType.SCATTER, VisualType.HEXBIN},
+        "linear_regression": (
+            {VisualType.SCATTER} if len(predictors) == 1
+            else {VisualType.FOREST, VisualType.SURFACE}
+            if len(predictors) == 2
+            else {VisualType.FOREST}
+        ),
+        "logistic_regression": {VisualType.FOREST},
+        "mixed_model": {VisualType.FOREST},
+        "t_test": {VisualType.BOX},
+        "mann_whitney": {VisualType.BOX},
+        "anova": {VisualType.BOX},
+        "kruskal_wallis": {VisualType.BOX},
+        "chi_square": {VisualType.HEATMAP},
+    }
+    if visual not in allowed_types.get(method, set()):
+        choices = ", ".join(sorted(v.value for v in allowed_types.get(method, set())))
+        raise VisualError(
+            f"{visual.value} is not a supported figure for {method}. "
+            f"Supported for this run: {choices or 'none'}."
+        )
+
+    raw = _raw_run_variables(run)
+    synthetic = {"estimate", "predictor", "odds_ratio", "count"}
+    for encoding_name in ("x", "y", "group", "facet"):
+        encoding = getattr(spec, encoding_name)
+        if encoding is None:
+            continue
+        if encoding.field not in raw | synthetic:
+            raise VisualError(
+                f"The figure's {encoding_name} field {encoding.field!r} was not "
+                "part of the analysis run."
+            )
+
+    # Where the role is scientifically directional, enforce it rather than
+    # merely checking that both columns appeared somewhere in the run.
+    if method in {"pearson_correlation", "spearman_correlation", "bootstrap_correlation"}:
+        if spec.x is None or spec.y is None:
+            raise VisualError("A correlation figure requires both recorded variables.")
+        if spec.x.field != variables.get("x") or spec.y.field != variables.get("y"):
+            raise VisualError("The correlation figure axes do not match the recorded run.")
+    elif method == "linear_regression" and visual is VisualType.SCATTER:
+        if spec.x is None or spec.y is None:
+            raise VisualError("A regression scatter requires predictor and outcome axes.")
+        if spec.x.field != predictors[0] or spec.y.field != variables.get("outcome"):
+            raise VisualError(
+                "The regression figure must place the recorded predictor on x "
+                "and the recorded outcome on y."
+            )
+    elif method in {"t_test", "mann_whitney", "anova", "kruskal_wallis"}:
+        expected_group, expected_value = variables.get("group"), variables.get("value")
+        if (spec.x is None or spec.y is None or spec.group is None
+                or spec.x.field != expected_group
+                or spec.y.field != expected_value
+                or spec.group.field != expected_group):
+            raise VisualError(
+                "The group-comparison figure does not match the recorded group/value roles."
+            )
+    elif method == "chi_square":
+        if (spec.x is None or spec.y is None
+                or spec.x.field != variables.get("x")
+                or spec.y.field != variables.get("y")):
+            raise VisualError("The contingency figure axes do not match the recorded run.")
+
+
 def create_visual(
     cur, *, project_id: str, spec: ResearchVisualSpec, actor: str,
     sample: dict[str, Sequence[Any]] | None = None,
@@ -197,6 +308,7 @@ def create_visual(
         raise VisualError(f"Unknown analysis run: {spec.analysis_run_id}")
     if run["project_id"] != project_id:
         raise VisualError("The analysis run belongs to a different project.")
+    validate_spec_against_run(run, spec)
     if finding_id:
         # The run was checked and the finding was not, so a figure in your
         # project could be filed against another account's finding (T185).
