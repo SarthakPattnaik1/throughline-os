@@ -405,9 +405,18 @@ def _heatmap(spec, result, statistics) -> VisualData:
     table = (result.get("extra") or {}).get("table") or {}
     if not table:
         raise PreparationError("The result carried no contingency table to plot.")
-    columns = sorted(table)
-    rows = sorted({row for column in table.values() for row in column})
-    matrix = [[float(table[column].get(row, 0)) for column in columns] for row in rows]
+
+    # pandas crosstab(...).to_dict() is column-oriented:
+    #   {y_category: {x_category: count}}
+    # The visual spec says x is the horizontal variable and y the vertical one,
+    # so transpose that dictionary shape once here rather than letting every
+    # renderer accidentally label y categories as x.
+    rows = sorted(table)  # y categories
+    columns = sorted({x for y_column in table.values() for x in y_column})
+    matrix = [
+        [float(table[row].get(column, 0)) for column in columns]
+        for row in rows
+    ]
     return VisualData(
         categories=columns, group_values=rows, matrix=matrix,
         sample_size=int(result.get("sample_size") or 0), statistics=statistics,
