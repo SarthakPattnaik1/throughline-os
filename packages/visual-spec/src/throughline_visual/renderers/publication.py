@@ -472,29 +472,36 @@ def _forest(spec, data: VisualData, axes, look: Look) -> None:
 
 
 def _box(spec, data: VisualData, axes, look: Look) -> None:
-    categories = data.categories or sorted(set(data.group_values))
-    grouped = [
-        [v for v, g in zip(data.y_values, data.group_values) if g == name]
-        for name in categories
-    ]
-    parts = axes.boxplot(grouped, tick_labels=[str(c) for c in categories],
-                         patch_artist=True, widths=0.55,
-                         medianprops={"color": look.ink["ink"], "linewidth": 1.4},
-                         whiskerprops={"color": look.ink["muted"]},
-                         capprops={"color": look.ink["muted"]},
-                         flierprops={"markeredgecolor": look.ink["muted"]})
-    for index, box in enumerate(parts["boxes"]):
-        box.set_facecolor(look.hue(index))
-        box.set_alpha(0.35)
-        box.set_edgecolor(look.ink["muted"])
-    # Individual points, jittered, so the reader sees the sample not just the box.
-    rng = np.random.default_rng(0)
-    for index, values in enumerate(grouped, start=1):
-        if not values or len(values) > 400:
-            continue
-        jitter = rng.normal(0, 0.045, len(values))
-        axes.scatter(np.full(len(values), index) + jitter, values, s=8, alpha=0.35,
-                     color=look.ink["ink"], linewidths=0)
+    summaries = list(data.series)
+    if not summaries:
+        raise RenderError("A box figure needs prepared group summaries.")
+
+    positions = np.arange(1, len(summaries) + 1)
+    for index, (position, summary) in enumerate(zip(positions, summaries)):
+        q1, median, q3 = (float(summary["q1"]), float(summary["median"]),
+                          float(summary["q3"]))
+        low, high = float(summary["whisker_low"]), float(summary["whisker_high"])
+        width = 0.55
+        axes.add_patch(__import__("matplotlib").patches.Rectangle(
+            (position - width / 2, q1), width, q3 - q1,
+            facecolor=look.hue(index), alpha=0.35,
+            edgecolor=look.ink["muted"], linewidth=1,
+        ))
+        axes.plot([position - width / 2, position + width / 2], [median, median],
+                  color=look.ink["ink"], linewidth=1.4)
+        axes.plot([position, position], [low, q1], color=look.ink["muted"], linewidth=1)
+        axes.plot([position, position], [q3, high], color=look.ink["muted"], linewidth=1)
+        axes.plot([position - 0.12, position + 0.12], [low, low],
+                  color=look.ink["muted"], linewidth=1)
+        axes.plot([position - 0.12, position + 0.12], [high, high],
+                  color=look.ink["muted"], linewidth=1)
+        outliers = [float(v) for v in summary.get("outliers", [])]
+        if outliers:
+            axes.scatter(np.full(len(outliers), position), outliers, s=10,
+                         facecolors="none", edgecolors=look.ink["muted"], linewidths=0.8)
+
+    axes.set_xticks(positions)
+    axes.set_xticklabels([str(summary["group"]) for summary in summaries])
 
 
 def _bar(spec, data: VisualData, axes, look: Look) -> None:
@@ -517,10 +524,16 @@ def _bar(spec, data: VisualData, axes, look: Look) -> None:
 
 
 def _histogram(spec, data: VisualData, axes, look: Look) -> None:
-    axes.hist(data.y_values, bins="auto", color=look.hue(0), alpha=0.8,
-              edgecolor=look.ink["edge"], linewidth=0.5)
-    if spec.y is not None and spec.y.include_zero:
-        axes.set_ylim(bottom=0)
+    bins = list(data.series)
+    if not bins:
+        raise RenderError("A histogram needs prepared bins.")
+    left = np.asarray([float(item["left"]) for item in bins], dtype=float)
+    right = np.asarray([float(item["right"]) for item in bins], dtype=float)
+    count = np.asarray([float(item["count"]) for item in bins], dtype=float)
+    axes.bar(left, count, width=right - left, align="edge",
+             color=look.hue(0), alpha=0.8,
+             edgecolor=look.ink["edge"], linewidth=0.5)
+    axes.set_ylim(bottom=0)
 
 
 def _heatmap(spec, data: VisualData, axes, look: Look) -> None:
