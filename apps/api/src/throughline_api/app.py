@@ -5693,6 +5693,16 @@ def _account(total: int, drawn: int, limit: int) -> dict[str, Any]:
     }
 
 
+def _empty_sampling_account() -> dict[str, Any]:
+    """Stable response shape for figures that do not read raw dataset rows."""
+    return {
+        "sampled": False,
+        "rows_total": 0,
+        "rows_drawn": 0,
+        "method": "result-derived; no raw rows sampled",
+    }
+
+
 def _visual_sample(cur, spec: ResearchVisualSpec,
                    limit: int = 500) -> tuple[dict[str, Any], dict[str, Any]]:
     """
@@ -5726,7 +5736,7 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
         VisualType.HEXBIN, VisualType.SURFACE,
     }
     if spec.visual_type not in raw_types or not spec.dataset_version_id:
-        return {}, {"sampled": False}
+        return {}, _empty_sampling_account()
 
     fields = list(spec.data_fields())
     if spec.visual_type is VisualType.SURFACE:
@@ -5742,7 +5752,7 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
             fields.append(str(outcome))
     fields = list(dict.fromkeys(fields))
     if not fields:
-        return {}, {"sampled": False}
+        return {}, _empty_sampling_account()
     cur.execute(
         """
         SELECT f.storage_key, f.filename FROM dataset_versions dv
@@ -5755,13 +5765,13 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
     )
     row = cur.fetchone()
     if not row:
-        return {}, {"sampled": False}
+        return {}, _empty_sampling_account()
 
     path = storage.path_for(row["storage_key"])
     suffix = Path(row["filename"] or "").suffix.lower()
     if spec.visual_type is VisualType.HEXBIN:
         if spec.x is None or spec.y is None:
-            return {}, {"sampled": False}
+            return {}, _empty_sampling_account()
         return _aggregate_binned_columns(
             path, suffix,
             x_field=spec.x.field, y_field=spec.y.field,
