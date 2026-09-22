@@ -116,6 +116,7 @@ def test_the_endpoint_returns_the_account(monkeypatch):
     body = body[:body.index("\n@app.")]
 
     assert '"sampling": sampling' in body, "the account never reaches the reader"
+    assert '"note": data.note' in body, "the sampling caveat never reaches the reader"
     assert "sample, sampling = _visual_sample(" in body
 
 
