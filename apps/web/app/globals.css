@@ -2596,6 +2596,19 @@ input[type="text"], input[type="email"], input[type="password"], textarea, selec
   transition: d var(--standard) var(--ease-in-out-quart);
 }
 .chart-median { stroke-width: 1.25; stroke-dasharray: 3 3; opacity: 0.7; }
+
+/* Prepared statistical summaries use the same restrained data ink as the
+   existing chart primitives. The box is an interval summary, not a filled bar. */
+.chart-box {
+  fill: color-mix(in oklab, var(--select) 18%, transparent);
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+}
+.chart-cell-value {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 /* The rug carries the honesty of this chart: it shows how much data is behind
    each bump, so a smoother cannot make four points look like a distribution. */
 /*

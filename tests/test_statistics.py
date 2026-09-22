@@ -90,6 +90,51 @@ def test_unequal_variance_triggers_welch_automatically():
     assert "Welch's correction for unequal variances" in result.adjustments
 
 
+def test_missing_group_labels_are_dropped_before_group_tests():
+    """A missing category must not become a literal group called "nan"."""
+    frame = pd.DataFrame({
+        "value": [1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 999.0],
+        "group": ["a", "a", "a", "b", "b", "b", None],
+    })
+
+    t = run("t_test", frame, value="value", group="group")
+    mw = run("mann_whitney", frame, value="value", group="group")
+
+    assert t.sample_size == 6
+    assert mw.sample_size == 6
+    assert set(t.extra["groups"]) == {"a", "b"}
+    assert set(mw.extra["groups"]) == {"a", "b"}
+    assert "nan" not in t.extra["groups"]
+
+
+def test_missing_group_labels_are_dropped_before_multi_group_tests():
+    frame = pd.DataFrame({
+        "value": [1, 2, 3, 10, 11, 12, 20, 21, 22, 999],
+        "group": ["a"] * 3 + ["b"] * 3 + ["c"] * 3 + [None],
+    })
+
+    anova_result = run("anova", frame, value="value", group="group")
+    kruskal_result = run("kruskal_wallis", frame, value="value", group="group")
+
+    assert anova_result.sample_size == 9
+    assert kruskal_result.sample_size == 9
+    assert anova_result.extra["group_count"] == 3
+    assert kruskal_result.extra["group_count"] == 3
+
+
+def test_chi_square_drops_rows_missing_either_category():
+    frame = pd.DataFrame({
+        "exposure": ["yes", "yes", "no", "no", None, "yes"],
+        "outcome": ["case", "control", "case", "control", "case", None],
+    })
+    result = run("chi_square", frame, x="exposure", y="outcome")
+
+    assert result.sample_size == 4
+    outer = result.extra["table"]
+    assert "nan" not in outer
+    assert all("nan" not in inner for inner in outer.values())
+
+
 def test_chi_square_matches_scipy():
     frame = pd.DataFrame({
         "exposure": ["yes"] * 60 + ["no"] * 60,

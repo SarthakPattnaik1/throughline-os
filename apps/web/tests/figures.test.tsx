@@ -17,7 +17,7 @@
  * that disagrees with the analysis it came from.
  */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { Figures, axisFields, axisLabel, figureName } from "@/components/figures";
@@ -42,6 +42,7 @@ const RECOMMENDATION = {
   spec: {
     x: { field: "consumption", label: "Consumption (DDD)" },
     y: { field: "resistance", label: "Resistance (%)" },
+    dataset_version_id: "dsv_run",
   },
 };
 
@@ -116,12 +117,18 @@ describe("the axes", () => {
      * variable is called would be the one that goes into the paper.
      */
     expect(axisLabel("consumption", { consumption: "Antibiotic use" },
-                     { label: "Consumption (DDD)" }))
-      .toBe("Antibiotic use");
+                     { label: "Consumption", unit: "DDD" }))
+      .toBe("Antibiotic use (DDD)");
   });
 
   it("uses the figure's label when the project has approved no name", () => {
-    expect(axisLabel("consumption", {}, { label: "Consumption (DDD)" }))
+    expect(axisLabel("consumption", {}, { label: "Consumption", unit: "DDD" }))
+      .toBe("Consumption (DDD)");
+  });
+
+
+  it("does not print a unit twice when a label already carries it", () => {
+    expect(axisLabel("consumption", {}, { label: "Consumption (DDD)", unit: "DDD" }))
       .toBe("Consumption (DDD)");
   });
 
@@ -199,6 +206,197 @@ describe("the picker", () => {
 
     await waitFor(() => expect(get)
       .toHaveBeenCalledWith("/api/analyses/arun_2/visual-recommendation"));
+  });
+});
+
+describe("every recommended figure shape reaches the browser", () => {
+  it("renders a descriptive histogram even though descriptive has no headline estimate", async () => {
+    serve({
+      "/visual-recommendation": {
+        visual_type: "histogram",
+        reason: "Show the distribution.",
+        caption: "Distribution of consumption.",
+        spec: {
+          x: { field: "consumption", label: "Consumption" },
+          y: { field: "count", label: "count" },
+          dataset_version_id: "dsv_run",
+          title: "Distribution of consumption",
+        },
+      },
+      "/points": {
+        x: [], y: [], categories: [], matrix: [],
+        series: [
+          { left: 0, right: 1, count: 2 },
+          { left: 1, right: 2, count: 3 },
+        ],
+        statistics: {}, sample_size: 5,
+      },
+    });
+    await openOneRelationship([run({
+      method: "descriptive",
+      estimate: null,
+      estimate_name: "",
+      variables: { columns: ["consumption"] },
+      left_variable: null,
+      right_variable: null,
+    })]);
+
+    expect(await screen.findByRole("img",
+      { name: /Distribution of consumption.*2 prepared bins/i })).toBeTruthy();
+    expect(screen.queryByText(/No plottable values recorded/)).toBeNull();
+  });
+
+  it("renders prepared box summaries for group comparisons", async () => {
+    serve({
+      "/visual-recommendation": {
+        visual_type: "box",
+        reason: "Show spread and overlap.",
+        caption: "Distribution by group.",
+        spec: {
+          x: { field: "arm", label: "Arm" },
+          y: { field: "score", label: "Score" },
+          dataset_version_id: "dsv_run",
+          title: "Score by arm",
+        },
+      },
+      "/points": {
+        x: [], y: [], categories: ["a", "b"], matrix: [],
+        series: [
+          { group: "a", n: 10, q1: 1, median: 2, q3: 3,
+            whisker_low: 0, whisker_high: 4, outliers: [] },
+          { group: "b", n: 10, q1: 4, median: 5, q3: 6,
+            whisker_low: 3, whisker_high: 7, outliers: [9] },
+        ],
+        statistics: {}, sample_size: 20,
+      },
+    });
+    await openOneRelationship([run({
+      method: "t_test",
+      variables: { value: "score", group: "arm" },
+      left_variable: "arm",
+      right_variable: "score",
+    })]);
+
+    expect(await screen.findByRole("img", { name: /Score by arm.*2 groups/i }))
+      .toBeTruthy();
+  });
+
+  it("renders a contingency table as a sequential count heatmap", async () => {
+    serve({
+      "/visual-recommendation": {
+        visual_type: "heatmap",
+        reason: "Show where the association sits.",
+        caption: "Contingency table.",
+        spec: {
+          x: { field: "exposure", label: "Exposure" },
+          y: { field: "outcome", label: "Outcome" },
+          dataset_version_id: "dsv_run",
+          title: "Exposure by outcome",
+        },
+      },
+      "/points": {
+        x: [], y: [],
+        group: ["case", "control"],
+        categories: ["no", "yes"],
+        matrix: [[1, 4], [3, 2]],
+        series: [], statistics: {}, sample_size: 10,
+      },
+    });
+    await openOneRelationship([run({
+      method: "chi_square",
+      variables: { x: "exposure", y: "outcome" },
+      left_variable: "exposure",
+      right_variable: "outcome",
+    })]);
+
+    expect(await screen.findByRole("img",
+      { name: /Exposure by outcome.*Counts printed in every cell/i })).toBeTruthy();
+    expect(screen.getByText("4")).toBeTruthy();
+  });
+
+  it("renders model coefficients with the model's own null value", async () => {
+    serve({
+      "/visual-recommendation": {
+        visual_type: "forest",
+        reason: "Show adjusted odds ratios.",
+        caption: "Odds ratios.",
+        spec: {
+          x: { field: "odds_ratio", label: "odds ratio (95% CI)" },
+          y: { field: "predictor", label: "predictor" },
+          dataset_version_id: "dsv_run",
+          category_labels: { dose: "Dose" },
+          annotations: [{ kind: "reference_line", value: 1 }],
+          title: "Adjusted odds ratios",
+        },
+      },
+      "/points": {
+        x: [], y: [2.0],
+        ci_low: [1.2], ci_high: [3.3],
+        categories: ["dose"], matrix: [], series: [],
+        statistics: {}, sample_size: 120,
+      },
+    });
+    await openOneRelationship([run({
+      method: "logistic_regression",
+      variables: { outcome: "event", predictors: ["dose"] },
+      left_variable: null,
+      right_variable: null,
+      estimate: 2.0,
+    })]);
+
+    expect(await screen.findByRole("img",
+      { name: /Adjusted odds ratios.*1 estimates with confidence intervals/i }))
+      .toBeTruthy();
+    expect(screen.getByText("no relationship")).toBeTruthy();
+  });
+});
+
+describe("run provenance", () => {
+  it("uses the active run's dataset when recording a brushed subset", async () => {
+    const post = vi.spyOn(api, "post").mockResolvedValue(
+      { sentence: "Recorded subset." } as never);
+    serve();
+    await openOneRelationship([run()]);
+
+    const plot = await screen.findByRole("img");
+    const brush = plot.querySelector(".chart-brush-surface") as SVGRectElement;
+    Object.defineProperty(brush, "getBoundingClientRect", {
+      value: () => ({ left: 0, width: 500, top: 0, height: 300,
+                      right: 500, bottom: 300, x: 0, y: 0, toJSON() {} }),
+    });
+    fireEvent.mouseDown(brush, { clientX: 100 });
+    fireEvent.mouseMove(brush, { clientX: 200 });
+    fireEvent.mouseUp(brush, { clientX: 200 });
+
+    await userEvent.click(await screen.findByRole("button",
+      { name: /record as a subset/i }));
+    await userEvent.type(await screen.findByLabelText("Subset name"), "Middle range");
+    await userEvent.click(screen.getByRole("button", { name: "Record subset" }));
+
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    const [, body] = post.mock.calls[0];
+    expect(body).toMatchObject({ dataset_version_id: "dsv_run" });
+  });
+});
+
+describe("sampling disclosure", () => {
+  it("tells the reader when the plotted marks are only a sample", async () => {
+    serve({
+      "/points": {
+        ...POINTS,
+        sampling: {
+          sampled: true,
+          rows_total: 2_000_000,
+          rows_drawn: 500,
+          method: "uniform random without replacement, fixed seed",
+        },
+      },
+    });
+    await openOneRelationship([run()]);
+
+    expect(await screen.findByText(/Showing 500 of 2,000,000 rows/)).toBeTruthy();
+    expect(screen.getByText(/Statistics shown with the figure come from the full analysis run/))
+      .toBeTruthy();
   });
 });
 

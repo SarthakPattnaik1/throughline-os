@@ -116,6 +116,7 @@ def test_the_endpoint_returns_the_account(monkeypatch):
     body = body[:body.index("\n@app.")]
 
     assert '"sampling": sampling' in body, "the account never reaches the reader"
+    assert '"note": data.note' in body, "the sampling caveat never reaches the reader"
     assert "sample, sampling = _visual_sample(" in body
 
 
@@ -152,3 +153,75 @@ def test_the_sample_is_not_taken_from_the_top(tmp_path):
     assert drawn.min() < rows * 0.1, "the sample never reaches the top either"
     # And it is spread, not clustered at one end.
     assert rows * 0.3 < np.median(drawn) < rows * 0.7
+
+
+@pytest.mark.parametrize("rule", [
+    {"column": "value", "operator": "gt", "value": 2},
+    {"column": "value", "operator": "gte", "value": 2},
+    {"column": "value", "operator": "lt", "value": 3},
+    {"column": "value", "operator": "lte", "value": 3},
+    {"column": "arm", "operator": "eq", "value": "a"},
+    {"column": "arm", "operator": "ne", "value": "a"},
+    {"column": "arm", "operator": "in", "value": ["a", "c"]},
+    {"column": "arm", "operator": "not_null"},
+])
+def test_figure_filters_match_the_scientific_runtime(rule):
+    """The plotted population and the computed population use one contract."""
+    from throughline_api.app import _apply_visual_filter
+    from throughline_runtime.entrypoint import _apply_filter
+
+    frame = pd.DataFrame({
+        "row_id": list(range(6)),
+        "value": [1.0, 2.0, 3.0, 4.0, None, 6.0],
+        "arm": ["a", "b", "a", "c", None, "b"],
+    })
+    runtime = _apply_filter(frame.copy(), rule)
+    visual = _apply_visual_filter(frame.copy(), rule)
+
+    assert visual["row_id"].tolist() == runtime["row_id"].tolist()
+
+
+def test_sampling_applies_filters_before_drawing(tmp_path):
+    """A filtered result must never be shown over unfiltered points."""
+    from throughline_api.app import _sample_columns
+
+    path = tmp_path / "filtered.csv"
+    frame = pd.DataFrame({
+        "x": list(range(1000)),
+        "y": [v * 2 for v in range(1000)],
+        "species": ["Adelie"] * 300 + ["Gentoo"] * 700,
+    })
+    frame.to_csv(path, index=False)
+
+    sample, account = _sample_columns(
+        path, ".csv", ["x", "y"], 500,
+        filters=[{"column": "species", "operator": "eq", "value": "Adelie"}],
+    )
+
+    assert account["rows_total"] == 300
+    assert account["rows_drawn"] == 300
+    assert account["sampled"] is False
+    assert account["filters_applied"] == 1
+    assert account["population"] == "after analysis filters"
+    assert len(sample["x"]) == 300
+    assert max(sample["x"]) == 299
+
+
+def test_filter_only_columns_do_not_leak_into_figure_payload(tmp_path):
+    """A filter column may be read to select rows without becoming plotted data."""
+    from throughline_api.app import _sample_columns
+
+    path = tmp_path / "filter-only.csv"
+    pd.DataFrame({
+        "x": [1, 2, 3, 4],
+        "y": [10, 20, 30, 40],
+        "site": ["north", "south", "north", "south"],
+    }).to_csv(path, index=False)
+
+    sample, _ = _sample_columns(
+        path, ".csv", ["x", "y"], 500,
+        filters=[{"column": "site", "operator": "eq", "value": "north"}],
+    )
+
+    assert set(sample) == {"x", "y"}
+    assert sample["x"] == [1, 3]
