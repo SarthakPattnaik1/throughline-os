@@ -440,6 +440,30 @@ def test_a_visual_type_edit_requires_recomputation(analysed):
     assert "visual_type" in str(exc.value)
 
 
+def test_a_regression_annotation_cannot_be_added_to_a_correlation(analysed):
+    project_id, _, runs = analysed
+    with connection() as conn, conn.cursor() as cur:
+        run = analysis.get_run(cur, runs["correlation"])
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=runs["correlation"]
+        )
+        sample = _sample_for(cur, run, ["consumption_ddd", "resistance_pct"])
+        created = visuals.create_visual(
+            cur, project_id=project_id,
+            spec=recommendation["spec"], actor="test",
+            sample=sample, recommendation=recommendation,
+        )
+        with pytest.raises(visuals.EditRequiresRecomputation, match="regression line"):
+            visuals.apply_edit(
+                cur, visual_id=created["visual_id"], actor="test",
+                changes={
+                    "annotations": [
+                        {"kind": "regression_line", "text": "trend"}
+                    ]
+                },
+            )
+
+
 def test_a_figure_failing_the_critic_cannot_be_rendered(analysed):
     """§76 — an unfixed blocking problem must stop publication."""
     project_id, _, runs = analysed
