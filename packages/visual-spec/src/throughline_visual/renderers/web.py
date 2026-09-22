@@ -51,6 +51,7 @@ def render(spec: ResearchVisualSpec, data: VisualData) -> dict[str, Any]:
         "citations": spec.citations,
         "statistics": data.statistics,
         "sample_size": data.sample_size,
+        "note": data.note,
         "interaction": spec.interaction,
     }
     return chart
@@ -162,8 +163,10 @@ def _make_interactive(chart: dict[str, Any], spec: ResearchVisualSpec,
         target["params"] = existing + params
 
     #  — an interactive chart still needs a described, tabular fallback.
-    chart["description"] = (
-        f"{spec.title}. {spec.caption}" if spec.caption else spec.title)
+    description = f"{spec.title}. {spec.caption}" if spec.caption else spec.title
+    if data.note:
+        description = (description + " " + data.note).strip()
+    chart["description"] = description
 
     return chart
 
