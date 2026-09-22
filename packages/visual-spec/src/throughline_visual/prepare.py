@@ -228,17 +228,62 @@ def _forest(spec, result, statistics) -> VisualData:
 
 
 def _box(spec, result, sample, statistics) -> VisualData:
+    import numpy as np
+
     group_field = spec.group.field if spec.group else None
     value_field = spec.y.field if spec.y else None
-    groups = list(sample.get(group_field, []) or [])
-    values = [float(v) for v in (sample.get(value_field, []) or [])]
-    if len(groups) != len(values):
+    groups = [str(v) for v in (sample.get(group_field, []) or [])]
+    raw_values = list(sample.get(value_field, []) or [])
+    if len(groups) != len(raw_values):
         raise PreparationError("Box sample has mismatched group and value lengths.")
+
+    paired: list[tuple[str, float]] = []
+    for group, value in zip(groups, raw_values):
+        if _is_number(value):
+            paired.append((group, float(value)))
+    if not paired:
+        raise PreparationError("Box sample has no numeric values to draw.")
+
+    categories = sorted({group for group, _ in paired})
+    summaries: list[dict[str, Any]] = []
+    for category in categories:
+        values = np.asarray(
+            [value for group, value in paired if group == category], dtype=float
+        )
+        q1, median, q3 = np.percentile(values, [25, 50, 75])
+        iqr = float(q3 - q1)
+        lower_fence, upper_fence = float(q1 - 1.5 * iqr), float(q3 + 1.5 * iqr)
+        inside = values[(values >= lower_fence) & (values <= upper_fence)]
+        whisker_low = float(inside.min()) if inside.size else float(values.min())
+        whisker_high = float(inside.max()) if inside.size else float(values.max())
+        outliers = [
+            float(v) for v in values
+            if v < whisker_low or v > whisker_high
+        ]
+        summaries.append({
+            "group": category,
+            "n": int(values.size),
+            "q1": float(q1),
+            "median": float(median),
+            "q3": float(q3),
+            "whisker_low": whisker_low,
+            "whisker_high": whisker_high,
+            "outliers": outliers,
+        })
+
+    values = [value for _, value in paired]
+    paired_groups = [group for group, _ in paired]
+    full_n = int(result.get("sample_size") or len(values))
     return VisualData(
-        group_values=groups, y_values=values,
-        categories=sorted(set(groups)),
-        sample_size=int(result.get("sample_size") or len(values)),
+        group_values=paired_groups,
+        y_values=values,
+        categories=categories,
+        series=summaries,
+        sample_size=full_n,
         statistics=statistics,
+        note=("Boxes summarize the bounded plotted sample; the inferential "
+              "statistics come from the full analysis run."
+              if len(values) < full_n else ""),
     )
 
 
@@ -264,13 +309,35 @@ def _bar(spec, result, statistics) -> VisualData:
 
 
 def _histogram(spec, result, sample, statistics) -> VisualData:
+    import numpy as np
+
     field = spec.x.field if spec.x else None
-    values = [float(v) for v in (sample.get(field, []) or [])]
+    values = [
+        float(v) for v in (sample.get(field, []) or [])
+        if _is_number(v)
+    ]
     if not values:
         raise PreparationError(f"No sample values supplied for {field!r}.")
+
+    # Choose the bin edges once, here. Publication, web-spec and React clients
+    # all draw these exact bins instead of each renderer applying its own
+    # "auto" rule and potentially producing a different shape.
+    edges = np.histogram_bin_edges(np.asarray(values, dtype=float), bins="auto")
+    counts, _ = np.histogram(np.asarray(values, dtype=float), bins=edges)
+    bins = [
+        {"left": float(edges[index]), "right": float(edges[index + 1]),
+         "count": int(count)}
+        for index, count in enumerate(counts)
+    ]
+    full_n = int(result.get("sample_size") or len(values))
     return VisualData(
-        y_values=values, sample_size=int(result.get("sample_size") or len(values)),
+        y_values=values,
+        series=bins,
+        sample_size=full_n,
         statistics=statistics,
+        note=("Histogram bins summarize the bounded plotted sample; recorded "
+              "analysis statistics come from the full run."
+              if len(values) < full_n else ""),
     )
 
 
