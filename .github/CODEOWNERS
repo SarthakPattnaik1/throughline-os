@@ -3,14 +3,18 @@
 # The project owner remains the default code owner. More specific patterns below
 # assign primary review responsibility to area maintainers. In CODEOWNERS, the
 # last matching pattern takes precedence.
+#
+# Reproducibility/evaluation paths list both the area maintainer and project owner:
+# @ByungwoongYoo is the primary technical reviewer for that area, while
+# @SarthakPattnaik1 remains an additional reviewer for project-wide boundaries.
 
 * @SarthakPattnaik1
 
 # Reproducibility & Evaluation
 # Primary maintainer: Byungwoong Yoo (@ByungwoongYoo)
-/evals/ @ByungwoongYoo
-/packages/research-domain/src/throughline_domain/replay_*.py @ByungwoongYoo
-/packages/research-domain/src/throughline_domain/code_export.py @ByungwoongYoo
-/tests/test_replay_*.py @ByungwoongYoo
-/tests/test_statistical_conformance.py @ByungwoongYoo
-/tests/test_the_exported_code_reproduces_the_number.py @ByungwoongYoo
+/evals/ @ByungwoongYoo @SarthakPattnaik1
+/packages/research-domain/src/throughline_domain/replay_*.py @ByungwoongYoo @SarthakPattnaik1
+/packages/research-domain/src/throughline_domain/code_export.py @ByungwoongYoo @SarthakPattnaik1
+/tests/test_replay_*.py @ByungwoongYoo @SarthakPattnaik1
+/tests/test_statistical_conformance.py @ByungwoongYoo @SarthakPattnaik1
+/tests/test_the_exported_code_reproduces_the_number.py @ByungwoongYoo @SarthakPattnaik1
