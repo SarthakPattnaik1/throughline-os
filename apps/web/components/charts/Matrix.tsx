@@ -41,9 +41,14 @@ const M = { top: 8, right: 8, bottom: 8, left: 8 };
  * `color-mix` does the interpolation in the browser's own colour engine, which
  * keeps this honest without shipping a colour library.
  */
-function fillFor(value: number | null, max: number): string {
+function fillFor(
+  value: number | null, max: number, mode: "diverging" | "sequential",
+): string {
   if (value === null) return "var(--n-100)";
   const t = Math.min(Math.abs(value) / (max || 1), 1);
+  if (mode === "sequential") {
+    return `color-mix(in oklch, #0072B2 ${Math.round(t * 88)}%, var(--n-50))`;
+  }
   const hue = value < 0 ? "#0072B2" : "#D55E00";
   // Percentage of the hue mixed into the neutral: 0 at the anchor, 100 at the
   // extreme, so the anchor really does read as "no relationship".
@@ -52,7 +57,8 @@ function fillFor(value: number | null, max: number): string {
 
 export function Matrix({
   cells, rows, columns, title, caption, valueLabel = "correlation",
-  cellSize = 34, symmetricAt = 1,
+  cellSize = 34, symmetricAt = 1, scaleMode = "diverging",
+  diagonalNeutral = true,
 }: {
   cells: Cell[];
   /** Display names, in the order they should appear. */
@@ -64,6 +70,10 @@ export function Matrix({
   cellSize?: number;
   /** The value at which the scale saturates. 1 for correlations. */
   symmetricAt?: number;
+  /** Correlations need a signed scale; counts and intensities do not. */
+  scaleMode?: "diverging" | "sequential";
+  /** Only a same-variable matrix has a special self-comparison diagonal. */
+  diagonalNeutral?: boolean;
 }) {
   const clipId = useId();
   const hover = useChartHover();
@@ -136,7 +146,7 @@ export function Matrix({
               columns.map((column, c) => {
                 const cell = index.get(`${row}\u0000${column}`)
                   ?? { row, column, value: null };
-                const isDiagonal = row === column;
+                const isDiagonal = diagonalNeutral && row === column;
                 return (
                   // Keyed by its coordinates, so a reorder moves the cell rather
                   // than repainting the grid (Part D2).
@@ -150,7 +160,7 @@ export function Matrix({
                     // P5's signature: a diagonal reveal, capped so a large matrix
                     // does not keep the reader waiting.
                     style={{
-                      fill: isDiagonal ? "var(--n-200)" : fillFor(cell.value, symmetricAt),
+                      fill: isDiagonal ? "var(--n-200)" : fillFor(cell.value, symmetricAt, scaleMode),
                       opacity: hover.emphasis(`${row}\u0000${column}`),
                       animationDelay: `${Math.min((r + c) * 4, 400)}ms`,
                     }}
@@ -180,12 +190,28 @@ export function Matrix({
 
       <div className="matrix-key">
         {/* The scale, stated. A heatmap without a key is decoration. */}
-        <span className="matrix-swatch" style={{ background: fillFor(-symmetricAt, symmetricAt) }} />
-        <span>−{symmetricAt}</span>
-        <span className="matrix-swatch" style={{ background: fillFor(0, symmetricAt) }} />
-        <span>0 — no relationship</span>
-        <span className="matrix-swatch" style={{ background: fillFor(symmetricAt, symmetricAt) }} />
-        <span>+{symmetricAt}</span>
+        {scaleMode === "diverging" ? (
+          <>
+            <span className="matrix-swatch"
+                  style={{ background: fillFor(-symmetricAt, symmetricAt, scaleMode) }} />
+            <span>−{symmetricAt}</span>
+            <span className="matrix-swatch"
+                  style={{ background: fillFor(0, symmetricAt, scaleMode) }} />
+            <span>0 — no relationship</span>
+            <span className="matrix-swatch"
+                  style={{ background: fillFor(symmetricAt, symmetricAt, scaleMode) }} />
+            <span>+{symmetricAt}</span>
+          </>
+        ) : (
+          <>
+            <span className="matrix-swatch"
+                  style={{ background: fillFor(0, symmetricAt, scaleMode) }} />
+            <span>0</span>
+            <span className="matrix-swatch"
+                  style={{ background: fillFor(symmetricAt, symmetricAt, scaleMode) }} />
+            <span>{symmetricAt} {valueLabel}</span>
+          </>
+        )}
         {hovered && hovered.value !== null && (
           <span className="matrix-readout numeric">
             {hovered.row} × {hovered.column}: {hovered.value.toFixed(3)}
