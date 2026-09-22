@@ -12,6 +12,7 @@ can, because none of them ever sees the dataset.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Sequence
 
 from .spec import ResearchVisualSpec, VisualData, VisualType
@@ -38,6 +39,8 @@ def prepare(
 
     if spec.visual_type is VisualType.SCATTER:
         return _scatter(spec, result, sample, statistics)
+    if spec.visual_type is VisualType.HEXBIN:
+        return _hexbin(spec, result, sample, statistics)
     if spec.visual_type is VisualType.FOREST:
         return _forest(spec, result, statistics)
     if spec.visual_type is VisualType.BOX:
@@ -147,10 +150,10 @@ def _surface(spec: ResearchVisualSpec, result: dict[str, Any],
 
 def _is_number(value: Any) -> bool:
     try:
-        float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return False
-    return True
+    return math.isfinite(number)
 
 
 def _statistics(result: dict[str, Any]) -> dict[str, Any]:
@@ -194,19 +197,83 @@ def _statistics(result: dict[str, Any]) -> dict[str, Any]:
 def _scatter(spec, result, sample, statistics) -> VisualData:
     x_field = spec.x.field if spec.x else None
     y_field = spec.y.field if spec.y else None
-    xs = list(sample.get(x_field, []) or [])
-    ys = list(sample.get(y_field, []) or [])
-    if len(xs) != len(ys):
-        raise PreparationError("Scatter sample has mismatched x and y lengths.")
-    return VisualData(
-        x_values=xs, y_values=[float(v) for v in ys],
-        group_values=list(sample.get(spec.group.field, []) or []) if spec.group else [],
-        sample_size=int(result.get("sample_size") or len(xs)),
-        statistics=statistics,
-        note=("Points shown are a bounded sample of the dataset; all statistics come "
-              "from the full analysis run." if len(xs) < (result.get("sample_size") or 0)
-              else ""),
+    raw_x = list(sample.get(x_field, []) or [])
+    raw_y = list(sample.get(y_field, []) or [])
+    raw_group = (
+        list(sample.get(spec.group.field, []) or []) if spec.group else []
     )
+    if len(raw_x) != len(raw_y):
+        raise PreparationError("Scatter sample has mismatched x and y lengths.")
+    if raw_group and len(raw_group) != len(raw_x):
+        raise PreparationError("Scatter sample has mismatched group values.")
+
+    xs: list[float] = []
+    ys: list[float] = []
+    groups: list[str] = []
+    for index, (x, y) in enumerate(zip(raw_x, raw_y)):
+        if not _is_number(x) or not _is_number(y):
+            continue
+        xs.append(float(x))
+        ys.append(float(y))
+        if raw_group:
+            groups.append(str(raw_group[index]))
+
+    if not xs:
+        raise PreparationError(
+            "The sampled rows contain no complete numeric x/y pairs to draw."
+        )
+
+    full_n = int(result.get("sample_size") or len(xs))
+    return VisualData(
+        x_values=xs, y_values=ys, group_values=groups,
+        sample_size=full_n,
+        statistics=statistics,
+        note=("Points shown are a bounded complete-case sample; all statistics "
+              "come from the full analysis run." if len(xs) < full_n else ""),
+    )
+
+
+def _hexbin(spec, result, sample, statistics) -> VisualData:
+    """Prepare the cell counts once so every renderer draws the same bins."""
+    scatter = _scatter(spec, result, sample, statistics)
+    xs = [float(v) for v in scatter.x_values]
+    ys = [float(v) for v in scatter.y_values]
+    if not xs or not ys:
+        raise PreparationError("A binned figure needs complete numeric pairs.")
+
+    bins = int(spec.bin_count or 30)
+    x_low, x_high = min(xs), max(xs)
+    y_low, y_high = min(ys), max(ys)
+    x_step = (x_high - x_low) / bins or 1.0
+    y_step = (y_high - y_low) / bins or 1.0
+
+    counts: dict[tuple[int, int], int] = {}
+    for x, y in zip(xs, ys):
+        row = min(max(int((y - y_low) / y_step), 0), bins - 1)
+        shift = 0.5 if str(spec.bin_shape) == "hex" and row % 2 else 0.0
+        column = min(
+            max(int((x - x_low) / x_step - shift), 0), bins - 1
+        )
+        counts[(column, row)] = counts.get((column, row), 0) + 1
+
+    offset = 0.5 if str(spec.bin_shape) == "hex" else 0.0
+    cells = [
+        {
+            "x": x_low + (column + 0.5 + (offset if row % 2 else 0.0)) * x_step,
+            "y": y_low + (row + 0.5) * y_step,
+            "count": int(count),
+            "x_step": float(x_step),
+            "y_step": float(y_step),
+        }
+        for (column, row), count in sorted(counts.items())
+    ]
+    note = scatter.note
+    if note:
+        note = (
+            "Cells summarize a bounded complete-case sample of the analysis "
+            "population; inferential statistics come from the full analysis run."
+        )
+    return scatter.model_copy(update={"series": cells, "note": note})
 
 
 def _forest(spec, result, statistics) -> VisualData:
@@ -215,8 +282,15 @@ def _forest(spec, result, statistics) -> VisualData:
     for name, values in coefficients.items():
         if name == "const":
             continue  # the intercept is not a comparable effect
+        value = (
+            values.get("estimate")
+            if values.get("estimate") is not None
+            else values.get("odds_ratio")
+        )
+        if value is None or values.get("ci_low") is None or values.get("ci_high") is None:
+            continue
         names.append(name)
-        estimates.append(float(values["estimate"]))
+        estimates.append(float(value))
         lows.append(float(values["ci_low"]))
         highs.append(float(values["ci_high"]))
     if not names:
@@ -228,17 +302,62 @@ def _forest(spec, result, statistics) -> VisualData:
 
 
 def _box(spec, result, sample, statistics) -> VisualData:
+    import numpy as np
+
     group_field = spec.group.field if spec.group else None
     value_field = spec.y.field if spec.y else None
-    groups = list(sample.get(group_field, []) or [])
-    values = [float(v) for v in (sample.get(value_field, []) or [])]
-    if len(groups) != len(values):
+    groups = [str(v) for v in (sample.get(group_field, []) or [])]
+    raw_values = list(sample.get(value_field, []) or [])
+    if len(groups) != len(raw_values):
         raise PreparationError("Box sample has mismatched group and value lengths.")
+
+    paired: list[tuple[str, float]] = []
+    for group, value in zip(groups, raw_values):
+        if _is_number(value):
+            paired.append((group, float(value)))
+    if not paired:
+        raise PreparationError("Box sample has no numeric values to draw.")
+
+    categories = sorted({group for group, _ in paired})
+    summaries: list[dict[str, Any]] = []
+    for category in categories:
+        values = np.asarray(
+            [value for group, value in paired if group == category], dtype=float
+        )
+        q1, median, q3 = np.percentile(values, [25, 50, 75])
+        iqr = float(q3 - q1)
+        lower_fence, upper_fence = float(q1 - 1.5 * iqr), float(q3 + 1.5 * iqr)
+        inside = values[(values >= lower_fence) & (values <= upper_fence)]
+        whisker_low = float(inside.min()) if inside.size else float(values.min())
+        whisker_high = float(inside.max()) if inside.size else float(values.max())
+        outliers = [
+            float(v) for v in values
+            if v < whisker_low or v > whisker_high
+        ]
+        summaries.append({
+            "group": category,
+            "n": int(values.size),
+            "q1": float(q1),
+            "median": float(median),
+            "q3": float(q3),
+            "whisker_low": whisker_low,
+            "whisker_high": whisker_high,
+            "outliers": outliers,
+        })
+
+    values = [value for _, value in paired]
+    paired_groups = [group for group, _ in paired]
+    full_n = int(result.get("sample_size") or len(values))
     return VisualData(
-        group_values=groups, y_values=values,
-        categories=sorted(set(groups)),
-        sample_size=int(result.get("sample_size") or len(values)),
+        group_values=paired_groups,
+        y_values=values,
+        categories=categories,
+        series=summaries,
+        sample_size=full_n,
         statistics=statistics,
+        note=("Boxes summarize the bounded plotted sample; the inferential "
+              "statistics come from the full analysis run."
+              if len(values) < full_n else ""),
     )
 
 
@@ -264,13 +383,35 @@ def _bar(spec, result, statistics) -> VisualData:
 
 
 def _histogram(spec, result, sample, statistics) -> VisualData:
+    import numpy as np
+
     field = spec.x.field if spec.x else None
-    values = [float(v) for v in (sample.get(field, []) or [])]
+    values = [
+        float(v) for v in (sample.get(field, []) or [])
+        if _is_number(v)
+    ]
     if not values:
         raise PreparationError(f"No sample values supplied for {field!r}.")
+
+    # Choose the bin edges once, here. Publication, web-spec and React clients
+    # all draw these exact bins instead of each renderer applying its own
+    # "auto" rule and potentially producing a different shape.
+    edges = np.histogram_bin_edges(np.asarray(values, dtype=float), bins="auto")
+    counts, _ = np.histogram(np.asarray(values, dtype=float), bins=edges)
+    bins = [
+        {"left": float(edges[index]), "right": float(edges[index + 1]),
+         "count": int(count)}
+        for index, count in enumerate(counts)
+    ]
+    full_n = int(result.get("sample_size") or len(values))
     return VisualData(
-        y_values=values, sample_size=int(result.get("sample_size") or len(values)),
+        y_values=values,
+        series=bins,
+        sample_size=full_n,
         statistics=statistics,
+        note=("Histogram bins summarize the bounded plotted sample; recorded "
+              "analysis statistics come from the full run."
+              if len(values) < full_n else ""),
     )
 
 
@@ -278,9 +419,18 @@ def _heatmap(spec, result, statistics) -> VisualData:
     table = (result.get("extra") or {}).get("table") or {}
     if not table:
         raise PreparationError("The result carried no contingency table to plot.")
-    columns = sorted(table)
-    rows = sorted({row for column in table.values() for row in column})
-    matrix = [[float(table[column].get(row, 0)) for column in columns] for row in rows]
+
+    # pandas crosstab(...).to_dict() is column-oriented:
+    #   {y_category: {x_category: count}}
+    # The visual spec says x is the horizontal variable and y the vertical one,
+    # so transpose that dictionary shape once here rather than letting every
+    # renderer accidentally label y categories as x.
+    rows = sorted(table)  # y categories
+    columns = sorted({x for y_column in table.values() for x in y_column})
+    matrix = [
+        [float(table[row].get(column, 0)) for column in columns]
+        for row in rows
+    ]
     return VisualData(
         categories=columns, group_values=rows, matrix=matrix,
         sample_size=int(result.get("sample_size") or 0), statistics=statistics,

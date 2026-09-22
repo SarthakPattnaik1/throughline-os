@@ -4972,51 +4972,28 @@ def analysis_points(run_id: str, user: dict = Depends(current_user)) -> dict[str
             "grid_x": data.x_values if spec.visual_type is VisualType.SURFACE else [],
             "grid_y": data.y_values if spec.visual_type is VisualType.SURFACE else [],
             "observations": data.series if spec.visual_type is VisualType.SURFACE else [],
+            # Non-Cartesian prepared values. These are computed once by the
+            # visual preparation layer so React, web-spec, and publication
+            # renderers all draw the same summaries instead of recomputing.
+            "series": data.series if spec.visual_type is not VisualType.SURFACE else [],
+            "categories": data.categories,
+            "matrix": data.matrix if spec.visual_type is not VisualType.SURFACE else [],
         }
 
 
 def _binned_cells(spec, data) -> list[dict[str, Any]] | None:
-    """Counts per cell for a binned figure, or None for every other chart.
+    """Prepared cell counts for a binned figure, or None otherwise.
 
-    Without this the browser has points and no counts, so the workspace falls
-    back to drawing a scatter — which at the sample sizes that trigger this
-    recommendation is precisely the overplotted blob the binned primitive
-    exists to replace. The catalogue said P5 rendered; the figure a researcher
-    actually saw was a scatter.
+    Binning belongs to the visual preparation layer. The API only serialises
+    those recorded chart-ready values; it does not aggregate again.
     """
-    from throughline_visual.spec import BinShape, VisualType
+    from throughline_visual.spec import VisualType
 
     if spec.visual_type is not VisualType.HEXBIN:
         return None
-    xs, ys = data.x_values, data.y_values
-    if not xs or not ys:
-        return None
-
-    bins = spec.bin_count or 30
-    x_low, x_high = min(xs), max(xs)
-    y_low, y_high = min(ys), max(ys)
-    x_step = (x_high - x_low) / bins or 1.0
-    y_step = (y_high - y_low) / bins or 1.0
-
-    counts: dict[tuple[int, int], int] = {}
-    for x, y in zip(xs, ys):
-        column = min(int((x - x_low) / x_step), bins - 1)
-        row = min(int((y - y_low) / y_step), bins - 1)
-        if spec.bin_shape is BinShape.HEX:
-            # Offset alternate rows by half a cell, which is what makes the
-            # lattice hexagonal rather than square.
-            column = min(int((x - x_low) / x_step - (0.5 if row % 2 else 0)),
-                         bins - 1)
-        counts[(column, row)] = counts.get((column, row), 0) + 1
-
-    offset = 0.5 if spec.bin_shape is BinShape.HEX else 0.0
     return [
-        {
-            "x": x_low + (column + 0.5 + (offset if row % 2 else 0)) * x_step,
-            "y": y_low + (row + 0.5) * y_step,
-            "count": count,
-        }
-        for (column, row), count in sorted(counts.items())
+        {"x": float(cell["x"]), "y": float(cell["y"]), "count": int(cell["count"])}
+        for cell in data.series
     ]
 
 
@@ -5043,6 +5020,12 @@ def create_visual(project_id: str, payload: VisualCreate,
 
         spec = (ResearchVisualSpec.model_validate(payload.spec) if payload.spec
                 else recommendation["spec"])
+        if spec.analysis_run_id != payload.analysis_run_id:
+            raise HTTPException(
+                422,
+                "The figure spec names a different analysis run from the one "
+                "being published. A visual cannot mix two run identities.",
+            )
         # The account is discarded here on purpose: a stored visual records
         # its own provenance, and the figure endpoint above is what a reader
         # sees the sampling in.
@@ -5449,6 +5432,7 @@ STREAMABLE = {".csv", ".tsv"}
 
 def _sample_columns(
     path: Path, suffix: str, fields: list[str], limit: int,
+    filters: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     A bounded sample of `fields`, without loading the file to get it (§47).
@@ -5478,16 +5462,31 @@ def _sample_columns(
     import numpy as np
     import pandas as pd
 
-    if suffix not in STREAMABLE:
-        # Read whole, as before: these libraries offer nothing else, and the
-        # formats are not where the millions are.
-        from throughline_ingestion.datasets import read_dataset
+    filters = list(filters or [])
+    filter_fields = [
+        str(rule.get("column")) for rule in filters if rule.get("column")
+    ]
+    read_fields = list(dict.fromkeys([*fields, *filter_fields]))
 
-        frame, _ = read_dataset(path, suffix=suffix)
+    if suffix not in STREAMABLE:
+        # Match the scientific runtime's parser for formats it can analyse.
+        # Falling back to ingestion keeps this endpoint useful for legacy
+        # stored figures, but a completed analysis normally arrives through one
+        # of the three runtime-supported branches below.
+        if suffix in {".xlsx", ".xlsm"}:
+            frame = pd.read_excel(path)
+        elif suffix == ".json":
+            frame = pd.read_json(path)
+        else:
+            from throughline_ingestion.datasets import read_dataset
+            frame, _ = read_dataset(path, suffix=suffix)
+        for rule in filters:
+            frame = _apply_visual_filter(frame, rule)
         total = len(frame)
         chosen = (frame.sample(n=limit, random_state=0).sort_index()
                   if total > limit else frame)
-        return _columns_from(chosen, fields), _account(total, len(chosen), limit)
+        return _columns_from(chosen, fields), _account(
+            total, len(chosen), limit, filters_applied=len(filters))
 
     separator = "\t" if suffix == ".tsv" else _sniff(path)
 
@@ -5505,12 +5504,14 @@ def _sample_columns(
     # 45MB with the pack and 23MB without it (T187). Python strings are what
     # the reservoir keeps either way.
     reader = pd.read_csv(
-        path, sep=separator, usecols=lambda name: name in set(fields),
-        dtype=object, keep_default_na=False, encoding="utf-8",
+        path, sep=separator, usecols=lambda name: name in set(read_fields),
+        dtype=object, encoding="utf-8",
         encoding_errors="replace", chunksize=SAMPLE_CHUNK_ROWS,
         low_memory=False,
     )
     for chunk in reader:
+        for rule in filters:
+            chunk = _apply_visual_filter(chunk, rule)
         if not columns:
             columns = list(chunk.columns)
         rows = chunk.to_numpy(dtype=object)
@@ -5531,8 +5532,9 @@ def _sample_columns(
                 kept[int(draws[index])] = rest[index]
         seen += len(rows)
 
-    frame = pd.DataFrame(kept, columns=columns or fields)
-    return _columns_from(frame, fields), _account(seen, len(frame), limit)
+    frame = pd.DataFrame(kept, columns=columns or read_fields)
+    return _columns_from(frame, fields), _account(
+        seen, len(frame), limit, filters_applied=len(filters))
 
 
 def _sniff(path: Path) -> str:
@@ -5556,14 +5558,50 @@ def _columns_from(frame: Any, fields: list[str]) -> dict[str, Any]:
     return sample
 
 
-def _account(total: int, drawn: int, limit: int) -> dict[str, Any]:
+def _account(
+    total: int, drawn: int, limit: int, *, filters_applied: int = 0,
+) -> dict[str, Any]:
     return {
         "sampled": total > limit,
         "rows_total": int(total),
         "rows_drawn": int(drawn),
         "method": "uniform random without replacement, fixed seed"
                   if total > limit else "every row",
+        "filters_applied": int(filters_applied),
+        "population": "after analysis filters" if filters_applied else "analysis dataset",
     }
+
+
+def _apply_visual_filter(frame: Any, rule: dict[str, Any]):
+    """Mirror the sandbox's declarative filter semantics for figure rows.
+
+    This is intentionally expression-free. A conformance test exercises every
+    allowed operator against the scientific runtime's implementation so these
+    two execution paths cannot drift silently.
+    """
+    import pandas as pd
+
+    column, operator, value = rule["column"], rule["operator"], rule.get("value")
+    if column not in frame.columns:
+        raise ValueError(f"Filter references unknown column {column!r}")
+    series = frame[column]
+    if operator in {"gt", "gte", "lt", "lte"}:
+        series = pd.to_numeric(series, errors="coerce")
+        comparisons = {
+            "gt": series > value, "gte": series >= value,
+            "lt": series < value, "lte": series <= value,
+        }
+        return frame[comparisons[operator].fillna(False)]
+    if operator == "eq":
+        return frame[series.astype(str) == str(value)]
+    if operator == "ne":
+        return frame[series.astype(str) != str(value)]
+    if operator == "in":
+        allowed = {str(v) for v in (value or [])}
+        return frame[series.astype(str).isin(allowed)]
+    if operator == "not_null":
+        return frame[series.notna()]
+    raise ValueError(f"Unsupported filter operator {operator!r}")
 
 
 def _visual_sample(cur, spec: ResearchVisualSpec,
@@ -5590,7 +5628,27 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
     is that sampling must be clearly communicated, and a caption can only say
     what the endpoint tells it.
     """
+    # Some figures are derived entirely from the recorded result and have no
+    # raw-row fields to sample. Their encoding names (for example "estimate"
+    # and "predictor") are chart semantics, not dataset columns.
+    if spec.visual_type in {VisualType.FOREST, VisualType.HEATMAP, VisualType.BAR}:
+        return {}, {
+            "sampled": False,
+            "rows_drawn": 0,
+            "method": "not applicable — figure derived from recorded result",
+        }
+
     fields = spec.data_fields()
+
+    # A fitted surface has two predictor encodings, while the measured outcome
+    # is the third coordinate. It lives in the recorded model result rather
+    # than in ResearchVisualSpec's 2D axis encodings, so add it explicitly.
+    if spec.visual_type is VisualType.SURFACE:
+        run = analysis.get_run(cur, spec.analysis_run_id)
+        outcome = ((run or {}).get("result") or {}).get("extra", {}).get("outcome")
+        if outcome:
+            fields = list(dict.fromkeys([*fields, str(outcome)]))
+
     if not fields or not spec.dataset_version_id:
         return {}, {"sampled": False}
     cur.execute(
@@ -5610,7 +5668,7 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
     return _sample_columns(
         storage.path_for(row["storage_key"]),
         Path(row["filename"] or "").suffix.lower(),
-        list(fields), limit)
+        list(fields), limit, filters=list(spec.filters or []))
 
 
 # ---------------------------------------------------------------------------
