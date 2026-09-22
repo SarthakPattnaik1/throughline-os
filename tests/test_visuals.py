@@ -388,6 +388,60 @@ def test_a_visual_is_linked_to_the_analysis_it_draws(analysed):
     assert "analysis" in types and "dataset" in types, ancestors
 
 
+def test_creation_refuses_a_different_dataset_population_or_axis(analysed):
+    project_id, version_id, runs = analysed
+    with connection() as conn, conn.cursor() as cur:
+        run = analysis.get_run(cur, runs["correlation"])
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=runs["correlation"]
+        )
+        sample = _sample_for(cur, run, ["consumption_ddd", "resistance_pct"])
+        spec = recommendation["spec"]
+
+        with pytest.raises(visuals.VisualError, match="dataset"):
+            visuals.create_visual(
+                cur, project_id=project_id, actor="test", sample=sample,
+                spec=spec.model_copy(update={"dataset_version_id": "dsv_wrong"}),
+            )
+
+        with pytest.raises(visuals.VisualError, match="filters"):
+            visuals.create_visual(
+                cur, project_id=project_id, actor="test", sample=sample,
+                spec=spec.model_copy(update={
+                    "filters": [
+                        {"column": "consumption_ddd", "operator": "lt", "value": 30}
+                    ]
+                }),
+            )
+
+        from throughline_visual.spec import Encoding
+        with pytest.raises(visuals.VisualError, match="axes"):
+            visuals.create_visual(
+                cur, project_id=project_id, actor="test", sample=sample,
+                spec=spec.model_copy(update={
+                    "x": Encoding(field="resistance_pct"),
+                    "y": Encoding(field="consumption_ddd"),
+                }),
+            )
+
+
+def test_creation_refuses_a_chart_type_not_supported_by_the_run(analysed):
+    project_id, _, runs = analysed
+    with connection() as conn, conn.cursor() as cur:
+        run = analysis.get_run(cur, runs["correlation"])
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=runs["correlation"]
+        )
+        sample = _sample_for(cur, run, ["consumption_ddd", "resistance_pct"])
+        with pytest.raises(visuals.VisualError, match="not a supported figure"):
+            visuals.create_visual(
+                cur, project_id=project_id, actor="test", sample=sample,
+                spec=recommendation["spec"].model_copy(
+                    update={"visual_type": VisualType.HISTOGRAM}
+                ),
+            )
+
+
 def test_presentation_edits_are_allowed(analysed):
     project_id, _, runs = analysed
     with connection() as conn, conn.cursor() as cur:
