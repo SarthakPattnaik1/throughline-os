@@ -31,6 +31,7 @@ def render(spec: ResearchVisualSpec, data: VisualData) -> dict[str, Any]:
         VisualType.BAR: _bar,
         VisualType.HISTOGRAM: _histogram,
         VisualType.HEATMAP: _heatmap,
+        VisualType.HEXBIN: _hexbin,
     }
     builder = builders.get(spec.visual_type)
     if builder is None:
@@ -256,17 +257,34 @@ def _forest(spec, data: VisualData) -> dict[str, Any]:
 
 
 def _box(spec, data: VisualData) -> dict[str, Any]:
-    rows = [{"group": g, "value": v}
-            for g, v in zip(data.group_values, data.y_values)]
+    rows = list(data.series)
+    if not rows:
+        raise WebRenderError("Prepared box summaries are missing.")
+    x = {"field": "group", "type": "nominal", "title": _label(spec.x)}
     return {
         "data": {"values": rows},
-        "mark": {"type": "boxplot", "extent": 1.5},
-        "encoding": {
-            "x": {"field": "group", "type": "nominal", "title": _label(spec.x)},
-            "y": {"field": "value", "type": "quantitative", "title": _label(spec.y),
-                  "scale": {"zero": bool(spec.y and spec.y.include_zero)}},
-            "color": {"field": "group", "type": "nominal", "legend": None},
-        },
+        "layer": [
+            {"mark": {"type": "rule", "size": 1.5},
+             "encoding": {
+                 "x": x,
+                 "y": {"field": "low", "type": "quantitative",
+                       "title": _label(spec.y)},
+                 "y2": {"field": "high"},
+             }},
+            {"mark": {"type": "bar", "size": 28, "opacity": 0.35},
+             "encoding": {
+                 "x": x,
+                 "y": {"field": "q1", "type": "quantitative",
+                       "title": _label(spec.y)},
+                 "y2": {"field": "q3"},
+                 "color": {"field": "group", "type": "nominal", "legend": None},
+             }},
+            {"mark": {"type": "tick", "thickness": 2, "size": 28},
+             "encoding": {
+                 "x": x,
+                 "y": {"field": "median", "type": "quantitative"},
+             }},
+        ],
     }
 
 
@@ -298,13 +316,17 @@ def _bar(spec, data: VisualData) -> dict[str, Any]:
 
 
 def _histogram(spec, data: VisualData) -> dict[str, Any]:
+    rows = list(data.series)
+    if not rows:
+        raise WebRenderError("Prepared histogram bins are missing.")
     return {
-        "data": {"values": [{"value": v} for v in data.y_values]},
+        "data": {"values": rows},
         "mark": "bar",
         "encoding": {
-            "x": {"field": "value", "type": "quantitative", "bin": True,
+            "x": {"field": "left", "type": "quantitative",
                   "title": _label(spec.x)},
-            "y": {"aggregate": "count", "type": "quantitative", "title": "count",
+            "x2": {"field": "right"},
+            "y": {"field": "count", "type": "quantitative", "title": "count",
                   "scale": {"zero": True}},
         },
     }
@@ -330,3 +352,30 @@ def _heatmap(spec, data: VisualData) -> dict[str, Any]:
                           "text": {"field": "value", "type": "quantitative"}}},
         ],
     }
+
+def _hexbin(spec, data: VisualData) -> dict[str, Any]:
+    """A web-safe rendering of the exact occupied cells prepared by the server."""
+    rows = list(data.series)
+    if not rows:
+        raise WebRenderError("Prepared binned-density cells are missing.")
+    # Vega-Lite has no native hexbin mark that accepts already-counted cells.
+    # A fixed symbol at each occupied cell centre preserves the prepared counts
+    # without asking Vega to aggregate the data again.
+    return {
+        "data": {"values": rows},
+        "mark": {"type": "point", "filled": True, "size": 90},
+        "encoding": {
+            "x": {"field": "x", "type": "quantitative", "title": _label(spec.x)},
+            "y": {"field": "y", "type": "quantitative", "title": _label(spec.y)},
+            "color": {"field": "count", "type": "quantitative",
+                      "scale": {"scheme": "viridis"},
+                      "title": "observations per cell"},
+            "tooltip": [
+                {"field": "x", "type": "quantitative"},
+                {"field": "y", "type": "quantitative"},
+                {"field": "count", "type": "quantitative"},
+            ],
+        },
+    }
+
+
