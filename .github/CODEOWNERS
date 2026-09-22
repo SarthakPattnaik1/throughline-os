@@ -1,20 +1,22 @@
 # Throughline repository ownership
 #
-# The project owner remains the default code owner. More specific patterns below
-# assign primary review responsibility to area maintainers. In CODEOWNERS, the
-# last matching pattern takes precedence.
+# Project-level ownership is shared by:
+#   @SarthakPattnaik1
+#   @thephenyl02-creator
 #
-# Reproducibility/evaluation paths list both the area maintainer and project owner:
-# @ByungwoongYoo is the primary technical reviewer for that area, while
-# @SarthakPattnaik1 remains an additional reviewer for project-wide boundaries.
+# More specific patterns below add the relevant area maintainer. In CODEOWNERS,
+# the last matching pattern takes precedence.
 
-* @SarthakPattnaik1
+* @SarthakPattnaik1 @thephenyl02-creator
 
 # Reproducibility & Evaluation
 # Primary maintainer: Byungwoong Yoo (@ByungwoongYoo)
-/evals/ @ByungwoongYoo @SarthakPattnaik1
-/packages/research-domain/src/throughline_domain/replay_*.py @ByungwoongYoo @SarthakPattnaik1
-/packages/research-domain/src/throughline_domain/code_export.py @ByungwoongYoo @SarthakPattnaik1
-/tests/test_replay_*.py @ByungwoongYoo @SarthakPattnaik1
-/tests/test_statistical_conformance.py @ByungwoongYoo @SarthakPattnaik1
-/tests/test_the_exported_code_reproduces_the_number.py @ByungwoongYoo @SarthakPattnaik1
+#
+# The area maintainer is listed together with both project co-owners so review
+# responsibility is real without removing project-level oversight.
+/evals/ @ByungwoongYoo @SarthakPattnaik1 @thephenyl02-creator
+/packages/research-domain/src/throughline_domain/replay_*.py @ByungwoongYoo @SarthakPattnaik1 @thephenyl02-creator
+/packages/research-domain/src/throughline_domain/code_export.py @ByungwoongYoo @SarthakPattnaik1 @thephenyl02-creator
+/tests/test_replay_*.py @ByungwoongYoo @SarthakPattnaik1 @thephenyl02-creator
+/tests/test_statistical_conformance.py @ByungwoongYoo @SarthakPattnaik1 @thephenyl02-creator
+/tests/test_the_exported_code_reproduces_the_number.py @ByungwoongYoo @SarthakPattnaik1 @thephenyl02-creator

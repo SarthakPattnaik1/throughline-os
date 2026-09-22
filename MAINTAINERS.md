@@ -1,9 +1,25 @@
 # Maintainers
 
-Throughline uses area-level maintainership to make technical ownership explicit.
-Maintainers are expected to shape standards, review changes, and make decisions
-within their stated scope. Repository permissions and branch rules still govern
-who can merge changes.
+Throughline uses project-level and area-level maintainership to make technical ownership
+explicit. Maintainers are expected to shape standards, review changes, and make decisions
+within their stated scope. Repository permissions and branch rules still govern who can
+merge changes.
+
+## Project Co-Owners
+
+**@SarthakPattnaik1**  
+**@thephenyl02-creator**
+
+The project co-owners jointly steward Throughline at the project level, including overall
+product direction, repository governance, cross-cutting architecture, security and privacy
+boundaries, release policy, maintainer appointments, and external project partnerships.
+
+Area maintainers have real decision authority inside their documented scope. Changes that
+cross into project-wide concerns require project-level review.
+
+"Project Co-Owner" describes governance of the open-source project. It does not by itself
+create or document company equity, employment, or other legal ownership rights outside
+the repository.
 
 ## Reproducibility & Evaluation
 
@@ -33,9 +49,9 @@ require the relevant additional review.
 ### Role boundaries
 
 This maintainer role grants technical ownership within the scope above. It does not by
-itself grant ownership of the Throughline project, equity, employment, company authority,
-administrative control of the repository, access to secrets, or decision authority outside
-the maintainer's documented area.
+itself grant project co-ownership, equity, employment, company authority, administrative
+control of the repository, access to secrets, or decision authority outside the
+maintainer's documented area.
 
 Repository access should follow least privilege. Changes to `main` should go through pull
 requests, required CI, and independent review under the repository ruleset.

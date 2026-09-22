@@ -57,7 +57,7 @@ For a change that falls inside a maintainer-owned area:
 
 - request review from the relevant area maintainer;
 - treat that maintainer as the primary reviewer for area-specific standards and acceptance criteria;
-- involve additional maintainers or the project owner when the change crosses architecture,
+- involve additional maintainers or the project co-owners when the change crosses architecture,
   security/privacy, persistence, release, or other ownership boundaries.
 
 Repository permissions and branch-protection rules remain the authority for merge access.
