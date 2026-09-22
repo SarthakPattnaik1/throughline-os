@@ -94,7 +94,7 @@ function legendTicks(peak: number, scale: CountScale): number[] {
 export function Binned({
   cells, xLabel, yLabel, xUnit, yUnit, binCount, sampleSize,
   binShape = "hex", countScale = "log",
-  title, caption, fit,
+  title, caption, fit, sampled = false,
   width = 620, height = 340,
 }: {
   cells: Cell[];
@@ -112,6 +112,8 @@ export function Binned({
   caption?: string;
   /** Optional least-squares line, for orientation only. */
   fit?: { slope: number; intercept: number };
+  /** Counts came from a bounded sample rather than every analysis row. */
+  sampled?: boolean;
   width?: number;
   height?: number;
 }) {
@@ -194,7 +196,7 @@ export function Binned({
         width="100%" height={height} role="img"
         aria-label={
           `Binned density of ${yLabel} against ${xLabel}. `
-          + `${sampleSize.toLocaleString()} observations in ${cells.length} `
+          + `${sampleSize.toLocaleString()} ${sampled ? "sampled " : ""}observations in ${cells.length} `
           + `occupied cells, ${binCount} cells across each axis. `
           + `The densest cell holds ${peak.toLocaleString()} observations.`
         }
@@ -270,9 +272,10 @@ export function Binned({
       </svg>
 
       <p className="chart-caption">
-        {sampleSize.toLocaleString()} observations, binned into {binCount}{" "}
+        {sampleSize.toLocaleString()} {sampled ? "sampled " : ""}observations,
+        binned into {binCount}{" "}
         {binShape === "square" ? "square" : "hexagonal"} cells per axis. Shade
-        shows observations per cell
+        shows {sampled ? "sampled " : ""}observations per cell
         {countScale !== "linear" && ` on a ${countScale} scale`}; empty cells are
         left blank rather than shaded, so no data and a little data stay
         distinguishable.
@@ -286,7 +289,8 @@ export function Binned({
       <ChartTooltip pointer={hover.pointer} rows={hoveredCell ? [
         { label: xLabel, value: readable(hoveredCell.x) },
         { label: yLabel, value: readable(hoveredCell.y) },
-        { label: "observations", value: readable(hoveredCell.count) },
+        { label: sampled ? "sampled observations" : "observations",
+          value: readable(hoveredCell.count) },
       ] : []} />
 
       <ChartTable
