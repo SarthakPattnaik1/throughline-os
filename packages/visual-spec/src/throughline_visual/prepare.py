@@ -38,6 +38,8 @@ def prepare(
 
     if spec.visual_type is VisualType.SCATTER:
         return _scatter(spec, result, sample, statistics)
+    if spec.visual_type is VisualType.HEXBIN:
+        return _hexbin(spec, result, sample, statistics)
     if spec.visual_type is VisualType.FOREST:
         return _forest(spec, result, statistics)
     if spec.visual_type is VisualType.BOX:
@@ -209,16 +211,70 @@ def _scatter(spec, result, sample, statistics) -> VisualData:
     )
 
 
+def _hexbin(spec, result, sample, statistics) -> VisualData:
+    """Prepare one deterministic set of occupied cells for every renderer."""
+    import math
+
+    x_field = spec.x.field if spec.x else None
+    y_field = spec.y.field if spec.y else None
+    xs = [float(v) for v in (sample.get(x_field, []) or [])]
+    ys = [float(v) for v in (sample.get(y_field, []) or [])]
+    if len(xs) != len(ys):
+        raise PreparationError("Binned sample has mismatched x and y lengths.")
+    if not xs:
+        raise PreparationError("A binned figure needs observations to bin.")
+
+    bins = spec.bin_count or 30
+    x_low, x_high = min(xs), max(xs)
+    y_low, y_high = min(ys), max(ys)
+    x_step = (x_high - x_low) / bins or 1.0
+    y_step = (y_high - y_low) / bins or 1.0
+    counts: dict[tuple[int, int], int] = {}
+    for x, y in zip(xs, ys):
+        row = min(max(int((y - y_low) / y_step), 0), bins - 1)
+        raw = (x - x_low) / x_step
+        if str(spec.bin_shape) == "hex" and row % 2:
+            raw -= 0.5
+        column = min(max(int(raw), 0), bins - 1)
+        counts[(column, row)] = counts.get((column, row), 0) + 1
+
+    offset = 0.5 if str(spec.bin_shape) == "hex" else 0.0
+    cells = [
+        {
+            "x": x_low + (column + 0.5 + (offset if row % 2 else 0)) * x_step,
+            "y": y_low + (row + 0.5) * y_step,
+            "count": count,
+        }
+        for (column, row), count in sorted(counts.items())
+    ]
+    return VisualData(
+        x_values=xs, y_values=ys, series=cells,
+        sample_size=int(result.get("sample_size") or len(xs)),
+        statistics=statistics,
+        note=("Binned density is computed from a bounded uniform sample of the "
+              "filtered dataset; analysis statistics come from the complete filtered run."
+              if len(xs) < int(result.get("sample_size") or len(xs)) else ""),
+    )
+
+
 def _forest(spec, result, statistics) -> VisualData:
     coefficients = (result.get("extra") or {}).get("coefficients") or {}
     names, estimates, lows, highs = [], [], [], []
+    odds_ratio = result.get("method") == "logistic_regression"
+    if odds_ratio:
+        import math
     for name, values in coefficients.items():
         if name == "const":
             continue  # the intercept is not a comparable effect
         names.append(name)
-        estimates.append(float(values["estimate"]))
-        lows.append(float(values["ci_low"]))
-        highs.append(float(values["ci_high"]))
+        estimate = float(values["estimate"])
+        low = float(values["ci_low"])
+        high = float(values["ci_high"])
+        if odds_ratio:
+            estimate, low, high = math.exp(estimate), math.exp(low), math.exp(high)
+        estimates.append(estimate)
+        lows.append(low)
+        highs.append(high)
     if not names:
         raise PreparationError("The regression result carried no coefficients to plot.")
     return VisualData(
@@ -228,17 +284,40 @@ def _forest(spec, result, statistics) -> VisualData:
 
 
 def _box(spec, result, sample, statistics) -> VisualData:
+    import numpy as np
+
     group_field = spec.group.field if spec.group else None
     value_field = spec.y.field if spec.y else None
     groups = list(sample.get(group_field, []) or [])
     values = [float(v) for v in (sample.get(value_field, []) or [])]
     if len(groups) != len(values):
         raise PreparationError("Box sample has mismatched group and value lengths.")
+    categories = sorted(set(groups))
+    summaries: list[dict[str, Any]] = []
+    for name in categories:
+        observed = np.asarray(
+            [v for v, g in zip(values, groups) if g == name], dtype=float)
+        if observed.size == 0:
+            continue
+        q1, median, q3 = np.percentile(observed, [25, 50, 75])
+        iqr = q3 - q1
+        lower_fence, upper_fence = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        inside = observed[(observed >= lower_fence) & (observed <= upper_fence)]
+        summaries.append({
+            "group": str(name),
+            "q1": float(q1), "median": float(median), "q3": float(q3),
+            "low": float(inside.min() if inside.size else observed.min()),
+            "high": float(inside.max() if inside.size else observed.max()),
+            "n": int(observed.size),
+        })
     return VisualData(
-        group_values=groups, y_values=values,
-        categories=sorted(set(groups)),
+        group_values=groups, y_values=values, categories=categories,
+        series=summaries,
         sample_size=int(result.get("sample_size") or len(values)),
         statistics=statistics,
+        note=("Box summaries are computed from the bounded plotted sample; "
+              "the analysis statistics still come from the complete filtered run."
+              if len(values) < int(result.get("sample_size") or len(values)) else ""),
     )
 
 
@@ -264,13 +343,25 @@ def _bar(spec, result, statistics) -> VisualData:
 
 
 def _histogram(spec, result, sample, statistics) -> VisualData:
+    import numpy as np
+
     field = spec.x.field if spec.x else None
     values = [float(v) for v in (sample.get(field, []) or [])]
     if not values:
         raise PreparationError(f"No sample values supplied for {field!r}.")
+    counts, edges = np.histogram(np.asarray(values, dtype=float), bins="auto")
+    bins = [
+        {"left": float(edges[i]), "right": float(edges[i + 1]),
+         "count": int(counts[i])}
+        for i in range(len(counts))
+    ]
     return VisualData(
-        y_values=values, sample_size=int(result.get("sample_size") or len(values)),
+        y_values=values, series=bins,
+        sample_size=int(result.get("sample_size") or len(values)),
         statistics=statistics,
+        note=("Histogram bins are computed from the bounded plotted sample; "
+              "the analysis statistics still come from the complete filtered run."
+              if len(values) < int(result.get("sample_size") or len(values)) else ""),
     )
 
 
