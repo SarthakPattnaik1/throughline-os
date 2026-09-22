@@ -982,3 +982,185 @@ def test_a_figure_for_an_unfinished_analysis_is_refused_with_a_reason(client):
                           json={"analysis_run_id": queued})
     assert refused.status_code == 409, refused.text
     assert "completed" in refused.json()["detail"]
+
+
+def test_every_runtime_model_has_a_visual_recommendation():
+    """The scientific runtime and figure recommender must not drift apart."""
+    logistic = visual_recommend.recommend(
+        analysis_run_id="arun_logit",
+        method="logistic_regression",
+        dataset_version_id="dsv_1",
+        variables={"outcome": "event", "predictors": ["dose", "age"]},
+        result={
+            "sample_size": 120,
+            "p_value": 0.01,
+            "effect_size": {"name": "pseudo_r_squared", "value": 0.2},
+            "extra": {
+                "coefficients": {
+                    "const": {"odds_ratio": 0.5, "ci_low": 0.2, "ci_high": 1.1},
+                    "dose": {"odds_ratio": 2.0, "ci_low": 1.2, "ci_high": 3.3},
+                    "age": {"odds_ratio": 1.1, "ci_low": 1.0, "ci_high": 1.2},
+                }
+            },
+        },
+    )
+    mixed = visual_recommend.recommend(
+        analysis_run_id="arun_mixed",
+        method="mixed_model",
+        dataset_version_id="dsv_1",
+        variables={"outcome": "score", "predictors": ["dose", "age"], "group": "site"},
+        result={
+            "sample_size": 120,
+            "p_value": 0.01,
+            "effect_size": {"name": "intraclass_correlation", "value": 0.2},
+            "extra": {
+                "coefficients": {
+                    "const": {"estimate": 3.0, "ci_low": 2.0, "ci_high": 4.0},
+                    "dose": {"estimate": 0.8, "ci_low": 0.4, "ci_high": 1.2},
+                    "age": {"estimate": -0.1, "ci_low": -0.2, "ci_high": 0.0},
+                }
+            },
+        },
+    )
+
+    assert logistic["visual_type"] is VisualType.FOREST
+    assert mixed["visual_type"] is VisualType.FOREST
+    logistic_null = next(
+        a.value for a in logistic["spec"].annotations if a.kind == "reference_line")
+    mixed_null = next(
+        a.value for a in mixed["spec"].annotations if a.kind == "reference_line")
+    assert logistic_null == 1.0
+    assert mixed_null == 0.0
+
+    logistic_data = visual_prepare.prepare(
+        logistic["spec"], analysis_result={
+            "sample_size": 120,
+            "extra": {
+                "coefficients": {
+                    "const": {"odds_ratio": 0.5, "ci_low": 0.2, "ci_high": 1.1},
+                    "dose": {"odds_ratio": 2.0, "ci_low": 1.2, "ci_high": 3.3},
+                    "age": {"odds_ratio": 1.1, "ci_low": 1.0, "ci_high": 1.2},
+                }
+            },
+        })
+    assert logistic_data.y_values == [2.0, 1.1]
+
+    web_chart = web.render(logistic["spec"], logistic_data)
+    reference = web_chart["layer"][0]["encoding"]["x"]["datum"]
+    assert reference == 1.0
+
+
+def test_contingency_preparation_keeps_x_horizontal_and_y_vertical():
+    recommendation = visual_recommend.recommend(
+        analysis_run_id="arun_chi",
+        method="chi_square",
+        dataset_version_id="dsv_1",
+        variables={"x": "exposure", "y": "outcome"},
+        result={
+            "sample_size": 10,
+            "p_value": 0.2,
+            "effect_size": {"name": "cramers_v", "value": 0.1},
+            # pandas crosstab(x, y).to_dict(): outer keys are y.
+            "extra": {
+                "table": {
+                    "case": {"no": 1, "yes": 4},
+                    "control": {"no": 3, "yes": 2},
+                }
+            },
+        },
+    )
+    data = visual_prepare.prepare(
+        recommendation["spec"],
+        analysis_result={
+            "sample_size": 10,
+            "extra": {
+                "table": {
+                    "case": {"no": 1, "yes": 4},
+                    "control": {"no": 3, "yes": 2},
+                }
+            },
+        },
+    )
+
+    assert data.categories == ["no", "yes"]          # x / exposure
+    assert data.group_values == ["case", "control"]  # y / outcome
+    assert data.matrix == [[1.0, 4.0], [3.0, 2.0]]
+
+
+def test_publication_export_keeps_the_sampling_caveat(tmp_path):
+    spec = ResearchVisualSpec(
+        visual_type=VisualType.SCATTER,
+        analysis_run_id="arun_sampled",
+        x=Encoding(field="x", label="x"),
+        y=Encoding(field="y", label="y"),
+        title="Sampled figure",
+        caption="Recorded relationship.",
+    )
+    data = VisualData(
+        x_values=[1.0, 2.0],
+        y_values=[2.0, 4.0],
+        sample_size=1000,
+        note="Points shown are a bounded complete-case sample; all statistics come from the full analysis run.",
+    )
+    path = publication.render(spec, data, path=tmp_path / "sampled.svg", fmt="svg")
+    body = path.read_text(encoding="utf-8")
+    assert "bounded complete-case sample" in body
+    assert "full analysis run" in body
+
+
+def test_filtered_run_carries_its_population_into_the_visual_spec(analysed):
+    project_id, version_id, _ = analysed
+    with connection() as conn, conn.cursor() as cur:
+        created = analysis.create_spec(
+            cur,
+            project_id=project_id,
+            spec={
+                "method": "pearson_correlation",
+                "dataset_version_ids": [version_id],
+                "variables": {"x": "consumption_ddd", "y": "resistance_pct"},
+                "filters": [{
+                    "column": "country", "operator": "eq", "value": "IND",
+                }],
+            },
+            actor="test",
+        )
+        run_id = analysis.create_run(
+            cur, project_id=project_id, spec_id=created["spec_id"])
+        workflow.enqueue(
+            cur, workflow_name="analysis.run", project_id=project_id,
+            payload={"analysis_run_id": run_id},
+            idempotency_key=f"analysis:{run_id}",
+        )
+    _drain()
+
+    with connection() as conn, conn.cursor() as cur:
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=run_id)
+
+    assert recommendation["spec"].filters == [
+        {"column": "country", "operator": "eq", "value": "IND"}
+    ]
+
+
+def test_hexbin_preparation_produces_cells_instead_of_refusing():
+    spec = ResearchVisualSpec(
+        visual_type=VisualType.HEXBIN,
+        analysis_run_id="arun_hex",
+        x=Encoding(field="x", label="x"),
+        y=Encoding(field="y", label="y"),
+        bin_count=12,
+    )
+    sample = {
+        "x": list(range(500)),
+        "y": [float(v * 2) for v in range(500)],
+    }
+    data = visual_prepare.prepare(
+        spec,
+        analysis_result={"sample_size": 10_000},
+        sample=sample,
+    )
+
+    assert data.series
+    assert sum(int(cell["count"]) for cell in data.series) == 500
+    assert all({"x", "y", "count", "x_step", "y_step"} <= set(cell)
+               for cell in data.series)
