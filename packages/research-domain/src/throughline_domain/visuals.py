@@ -50,12 +50,12 @@ class EditRequiresRecomputation(VisualError):
 #: Spec fields whose change alters *what is being shown*, not how it looks.
 #: Editing one of these means a different analysis, not a different drawing.
 _DATA_BEARING_FIELDS = {"x", "y", "group", "facet", "filters", "aggregation",
-                        "analysis_run_id", "dataset_version_id"}
+                        "analysis_run_id", "dataset_version_id", "visual_type"}
 
 #: Fields that only affect presentation and may be edited freely.
 _PRESENTATION_FIELDS = {"title", "subtitle", "caption", "citations", "theme",
                         "uncertainty", "annotations", "interaction",
-                        "animation_semantics", "visual_type", "category_labels"}
+                        "animation_semantics", "category_labels"}
 
 
 def spec_hash(spec: ResearchVisualSpec) -> str:
@@ -198,11 +198,11 @@ def _validate_visual_binding(run: dict[str, Any], spec: ResearchVisualSpec) -> N
         "linear_regression": {VisualType.SCATTER, VisualType.FOREST, VisualType.SURFACE},
         "logistic_regression": {VisualType.FOREST},
         "mixed_model": {VisualType.FOREST},
-        "t_test": {VisualType.BOX, VisualType.BAR},
-        "mann_whitney": {VisualType.BOX, VisualType.BAR},
-        "anova": {VisualType.BOX, VisualType.BAR},
-        "kruskal_wallis": {VisualType.BOX, VisualType.BAR},
-        "chi_square": {VisualType.HEATMAP, VisualType.BAR},
+        "t_test": {VisualType.BOX},
+        "mann_whitney": {VisualType.BOX},
+        "anova": {VisualType.BOX},
+        "kruskal_wallis": {VisualType.BOX},
+        "chi_square": {VisualType.HEATMAP},
         "descriptive": {VisualType.HISTOGRAM},
     }
     if kind not in allowed_types.get(method, set()):
