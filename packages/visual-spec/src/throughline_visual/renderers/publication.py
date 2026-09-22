@@ -353,55 +353,57 @@ def _draw(spec: ResearchVisualSpec, data: VisualData, axes, look: Look) -> None:
 
 
 def _hexbin(spec, data: VisualData, axes, look: Look) -> None:
-    """Density by cell, for sample sizes where marks would overplot.
+    """Draw the prepared cell counts; never bin observations in a renderer."""
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import Normalize
+    from matplotlib.patches import Rectangle, RegularPolygon
 
-    Hexagons rather than squares: a square grid produces horizontal and vertical
-    banding that reads as structure in the data, and every point in a hexagon is
-    closer to its centre than in a square of equal area, so the count in a cell
-    is a fairer summary of the neighbourhood.
+    cells = list(data.series)
+    if not cells:
+        raise RenderError("A binned figure needs prepared cells.")
 
-    A sequential, perceptually uniform colour map, because the encoded quantity
-    is a count — ordered, single-ended, with a meaningful zero. Diverging would
-    invent a midpoint that does not exist.
-    """
-    xs = np.asarray(data.x_values, dtype=float)
-    ys = np.asarray(data.y_values, dtype=float)
-    if xs.size == 0:
-        raise RenderError("A binned figure needs observations to bin.")
-
-    bins = spec.bin_count or 30
+    counts = np.asarray([float(cell["count"]) for cell in cells], dtype=float)
+    maximum = max(1.0, float(counts.max()))
     scale = str(spec.count_scale)
-
-    if spec.bin_shape is BinShape.SQUARE:
-        norm = (LogNorm() if scale == "log"
-                else PowerNorm(0.5) if scale == "sqrt" else None)
-        counts, _, _, mesh = axes.hist2d(xs, ys, bins=bins, cmap=tokens.SEQUENTIAL,
-                                         norm=norm, cmin=1)
+    if scale == "log":
+        norm = LogNorm(vmin=max(1.0, float(counts.min())), vmax=maximum)
+    elif scale == "sqrt":
+        norm = PowerNorm(0.5, vmin=0.0, vmax=maximum)
     else:
-        # matplotlib's own log binning for hexagons; sqrt via PowerNorm.
-        mesh = axes.hexbin(
-            xs, ys, gridsize=bins, cmap=tokens.SEQUENTIAL, mincnt=1,
-            linewidths=0.2, edgecolors=look.ink["edge"],
-            bins="log" if scale == "log" else None,
-            norm=PowerNorm(0.5) if scale == "sqrt" else None,
-        )
+        norm = Normalize(vmin=0.0, vmax=maximum)
+    cmap = plt.get_cmap(tokens.SEQUENTIAL)
 
-    bar = axes.get_figure().colorbar(mesh, ax=axes, pad=0.02)
-    # The scale is named, not implied. A reader assuming linear when the ramp is
-    # logarithmic misjudges the ratio between two cells by an order of
-    # magnitude — the same class of error as an unstated bin width.
+    for cell in cells:
+        x, y = float(cell["x"]), float(cell["y"])
+        x_step, y_step = float(cell.get("x_step", 1.0)), float(cell.get("y_step", 1.0))
+        face = cmap(norm(float(cell["count"])))
+        if spec.bin_shape is BinShape.SQUARE:
+            patch = Rectangle(
+                (x - x_step / 2, y - y_step / 2), x_step, y_step,
+                facecolor=face, edgecolor=look.ink["edge"], linewidth=0.25,
+            )
+        else:
+            patch = RegularPolygon(
+                (x, y), numVertices=6, radius=min(x_step, y_step) * 0.58,
+                orientation=np.radians(30), facecolor=face,
+                edgecolor=look.ink["edge"], linewidth=0.25,
+            )
+        axes.add_patch(patch)
+
+    x_step = float(cells[0].get("x_step", 1.0))
+    y_step = float(cells[0].get("y_step", 1.0))
+    axes.set_xlim(min(float(c["x"]) for c in cells) - x_step,
+                  max(float(c["x"]) for c in cells) + x_step)
+    axes.set_ylim(min(float(c["y"]) for c in cells) - y_step,
+                  max(float(c["y"]) for c in cells) + y_step)
+
+    mapper = ScalarMappable(norm=norm, cmap=cmap)
+    mapper.set_array(counts)
+    bar = axes.get_figure().colorbar(mapper, ax=axes, pad=0.02)
     suffix = "" if scale == "linear" else f" ({scale} scale)"
     bar.set_label(f"observations per cell{suffix}", fontsize=tokens.TYPE["tick"])
     bar.ax.tick_params(labelsize=tokens.TYPE["note"])
     bar.outline.set_visible(False)
-
-    # Empty cells are left unpainted (mincnt=1) rather than drawn as the lowest
-    # colour, so "no data here" and "a little data here" stay distinguishable.
-    if any(a.kind == "regression_line" for a in spec.annotations) and xs.size > 1:
-        slope, intercept = np.polyfit(xs, ys, 1)
-        line_x = np.linspace(xs.min(), xs.max(), 100)
-        axes.plot(line_x, slope * line_x + intercept, color=look.ink["emphasis"],
-                  linewidth=1.4, linestyle="--", label="_nolegend_")
 
 
 def _scatter(spec, data: VisualData, axes, look: Look) -> None:
