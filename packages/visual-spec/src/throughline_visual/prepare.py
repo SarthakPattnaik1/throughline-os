@@ -213,7 +213,6 @@ def _scatter(spec, result, sample, statistics) -> VisualData:
 
 def _hexbin(spec, result, sample, statistics) -> VisualData:
     """Prepare one deterministic set of occupied cells for every renderer."""
-    import math
 
     x_field = spec.x.field if spec.x else None
     y_field = spec.y.field if spec.y else None
