@@ -33,7 +33,8 @@ export function PreparedHistogram({ bins, xLabel, title, caption }: {
   return (
     <figure className="chart">
       {title && <figcaption className="chart-title">{title}</figcaption>}
-      <svg className="chart-svg" viewBox={"0 0 " + width + " " + height}
+      <svg className="chart-svg" style={{ maxWidth: width }}
+           viewBox={"0 0 " + width + " " + height}
            width="100%" role="img"
            aria-label={(title ?? "Histogram") + ". " + bins.length + " prepared bins."}>
         <line className="chart-axis" x1={margin.left} x2={margin.left + innerW}
@@ -87,7 +88,8 @@ export function PreparedBoxPlot({ summaries, xLabel, yLabel, title, caption }: {
   return (
     <figure className="chart">
       {title && <figcaption className="chart-title">{title}</figcaption>}
-      <svg className="chart-svg" viewBox={"0 0 " + width + " " + height}
+      <svg className="chart-svg" style={{ maxWidth: width }}
+           viewBox={"0 0 " + width + " " + height}
            width="100%" role="img"
            aria-label={(title ?? "Box plot") + ". " + summaries.length + " groups."}>
         <line className="chart-axis" x1={margin.left} x2={margin.left + innerW}
@@ -155,7 +157,8 @@ export function PreparedCountHeatmap({ cells, rows, columns, xLabel, yLabel, tit
   return (
     <figure className="chart">
       {title && <figcaption className="chart-title">{title}</figcaption>}
-      <svg className="chart-svg" viewBox={"0 0 " + width + " " + height}
+      <svg className="chart-svg" style={{ maxWidth: width }}
+           viewBox={"0 0 " + width + " " + height}
            width="100%" role="img"
            aria-label={(title ?? "Contingency heatmap") + ". Counts printed in every cell."}>
         {columns.map((column, index) => (
@@ -187,7 +190,10 @@ export function PreparedCountHeatmap({ cells, rows, columns, xLabel, yLabel, tit
                   <text className="chart-cell-value"
                         x={left + columnIndex * cell + cell / 2}
                         y={top + rowIndex * cell + cell / 2 + 4}
-                        textAnchor="middle">{value}</text>
+                        textAnchor="middle"
+                        style={{
+                          fill: strength >= 55 ? "var(--on-accent)" : "var(--ink)",
+                        }}>{value}</text>
                 </g>
               );
             })}
