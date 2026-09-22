@@ -1218,3 +1218,21 @@ def test_simple_regression_visual_cannot_swap_predictor_and_outcome(analysed):
                 cur, project_id=project_id, spec=swapped, actor="test",
                 recommendation=recommendation,
             )
+
+
+def test_saved_visual_cannot_change_chart_type_without_repreparing_data(analysed):
+    project_id, _, runs = analysed
+    with connection() as conn, conn.cursor() as cur:
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=runs["groups"])
+        run = analysis.get_run(cur, runs["groups"])
+        sample = _sample_for(cur, run, ["country", "resistance_pct"])
+        created = visuals.create_visual(
+            cur, project_id=project_id, spec=recommendation["spec"],
+            actor="test", sample=sample, recommendation=recommendation,
+        )
+        with pytest.raises(visuals.EditRequiresRecomputation, match="visual_type"):
+            visuals.apply_edit(
+                cur, visual_id=created["visual_id"], actor="test",
+                changes={"visual_type": "histogram"},
+            )
