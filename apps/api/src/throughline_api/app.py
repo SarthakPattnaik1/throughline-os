@@ -4982,47 +4982,18 @@ def analysis_points(run_id: str, user: dict = Depends(current_user)) -> dict[str
 
 
 def _binned_cells(spec, data) -> list[dict[str, Any]] | None:
-    """Counts per cell for a binned figure, or None for every other chart.
+    """Prepared cell counts for a binned figure, or None otherwise.
 
-    Without this the browser has points and no counts, so the workspace falls
-    back to drawing a scatter — which at the sample sizes that trigger this
-    recommendation is precisely the overplotted blob the binned primitive
-    exists to replace. The catalogue said P5 rendered; the figure a researcher
-    actually saw was a scatter.
+    Binning belongs to the visual preparation layer. The API only serialises
+    those recorded chart-ready values; it does not aggregate again.
     """
-    from throughline_visual.spec import BinShape, VisualType
+    from throughline_visual.spec import VisualType
 
     if spec.visual_type is not VisualType.HEXBIN:
         return None
-    xs, ys = data.x_values, data.y_values
-    if not xs or not ys:
-        return None
-
-    bins = spec.bin_count or 30
-    x_low, x_high = min(xs), max(xs)
-    y_low, y_high = min(ys), max(ys)
-    x_step = (x_high - x_low) / bins or 1.0
-    y_step = (y_high - y_low) / bins or 1.0
-
-    counts: dict[tuple[int, int], int] = {}
-    for x, y in zip(xs, ys):
-        column = min(int((x - x_low) / x_step), bins - 1)
-        row = min(int((y - y_low) / y_step), bins - 1)
-        if spec.bin_shape is BinShape.HEX:
-            # Offset alternate rows by half a cell, which is what makes the
-            # lattice hexagonal rather than square.
-            column = min(int((x - x_low) / x_step - (0.5 if row % 2 else 0)),
-                         bins - 1)
-        counts[(column, row)] = counts.get((column, row), 0) + 1
-
-    offset = 0.5 if spec.bin_shape is BinShape.HEX else 0.0
     return [
-        {
-            "x": x_low + (column + 0.5 + (offset if row % 2 else 0)) * x_step,
-            "y": y_low + (row + 0.5) * y_step,
-            "count": count,
-        }
-        for (column, row), count in sorted(counts.items())
+        {"x": float(cell["x"]), "y": float(cell["y"]), "count": int(cell["count"])}
+        for cell in data.series
     ]
 
 
