@@ -38,15 +38,26 @@ from throughline_domain import (
     objects,
     replay_receipt,
     storage,
+    visuals,
     workflow,
 )
 from throughline_domain.db import connection
 from throughline_domain.ids import new_id
 from throughline_schemas.enums import SourceType
+from throughline_visual.spec import VisualType
 from throughline_workers.runner import Worker
 
 
 DATA = Path(__file__).parent / "fixtures" / "pilot_01" / "penguins.csv"
+
+# Frozen independently from Throughline using the public CSV itself.
+# These are not generated from a Throughline run, so agreement cannot pass
+# merely because two Throughline surfaces share the same wrong value.
+EXPECTED_N = 342
+EXPECTED_R = 0.8712017673060112
+EXPECTED_P = 4.370680963000641e-107
+EXPECTED_CI_LOW = 0.8430410511899511
+EXPECTED_CI_HIGH = 0.8945989840406315
 
 
 def _drain() -> None:
@@ -223,10 +234,86 @@ def test_supported_run_replays_under_the_frozen_contract(
         paired["flipper_length_mm"], paired["body_mass_g"]
     )
 
-    assert run["result"]["sample_size"] == len(paired) == 342
+    assert run["result"]["sample_size"] == len(paired) == EXPECTED_N
+    assert run["result"]["estimate"] == pytest.approx(EXPECTED_R, abs=1e-12)
+    assert run["result"]["p_value"] == pytest.approx(EXPECTED_P, rel=1e-10)
+    assert run["result"]["ci_low"] == pytest.approx(EXPECTED_CI_LOW, abs=1e-10)
+    assert run["result"]["ci_high"] == pytest.approx(EXPECTED_CI_HIGH, abs=1e-10)
+
+    # A second implementation check against scipy on the raw public rows.
     assert run["result"]["estimate"] == pytest.approx(float(independent.statistic))
     assert run["result"]["p_value"] == pytest.approx(float(independent.pvalue))
 
+
+
+
+def test_supported_run_produces_a_faithful_publishable_figure(penguins_project):
+    """The figure must carry the same numbers as the run, not recompute them."""
+    project_id, version_id = penguins_project
+    run_id = _analyse(project_id, version_id)
+    run = _run(run_id)
+    assert run["status"] == "completed", run["error"]
+
+    frame = pd.read_csv(DATA)
+    paired = frame[["flipper_length_mm", "body_mass_g"]].dropna()
+    sample = {
+        "flipper_length_mm": paired["flipper_length_mm"].tolist(),
+        "body_mass_g": paired["body_mass_g"].tolist(),
+    }
+
+    with connection() as conn, conn.cursor() as cur:
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=run_id
+        )
+        assert recommendation["visual_type"] is VisualType.SCATTER
+        spec = recommendation["spec"]
+
+        # Human-facing labels/titles must not expose raw schema underscores.
+        assert spec.x.label == "flipper length mm"
+        assert spec.y.label == "body mass g"
+        assert spec.title == "body mass g against flipper length mm"
+        assert "Association does not establish causation." in spec.caption
+        assert "pearson_r = 0.871" in spec.caption
+        assert "n = 342" in spec.caption
+
+        made = visuals.create_visual(
+            cur,
+            project_id=project_id,
+            spec=spec,
+            actor="pilot-01",
+            sample=sample,
+            recommendation=recommendation,
+        )
+        assert made["publishable"] is True
+        assert made["exportable"] is True
+
+        # The figure's statistics are copied from the immutable run.
+        figure_stats = made["data"].statistics
+        assert figure_stats["sample_size"] == EXPECTED_N
+        assert figure_stats["estimate"] == pytest.approx(EXPECTED_R, abs=1e-12)
+        assert figure_stats["p_value"] == pytest.approx(EXPECTED_P, rel=1e-10)
+        assert figure_stats["ci_low"] == pytest.approx(EXPECTED_CI_LOW, abs=1e-10)
+        assert figure_stats["ci_high"] == pytest.approx(EXPECTED_CI_HIGH, abs=1e-10)
+
+        # At 342 complete cases the plot is small enough to show every point.
+        assert len(made["data"].x_values) == EXPECTED_N
+        assert len(made["data"].y_values) == EXPECTED_N
+
+        rendered = visuals.render_visual(
+            cur, visual_id=made["visual_id"], fmt="svg"
+        )
+
+    svg_path = storage.path_for(rendered["storage_key"])
+    assert svg_path.exists() and svg_path.stat().st_size > 1_000
+    svg = svg_path.read_text(encoding="utf-8")
+
+    # Matplotlib keeps SVG text as text, so the exported figure can be audited.
+    assert "body mass g against flipper length mm" in svg
+    assert "flipper length mm" in svg
+    assert "body mass g" in svg
+    assert "pearson_r = 0.871" in svg
+    assert "n = 342" in svg
+    assert "Association does not establish causation." in svg
 
 def test_species_filtered_neighbor_is_refused_for_the_declared_reason(
     penguins_project,
