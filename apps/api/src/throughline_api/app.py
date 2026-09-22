@@ -5532,6 +5532,7 @@ def _aggregate_binned_columns(
 def _sample_columns(
     path: Path, suffix: str, fields: list[str], limit: int,
     filters: list[dict[str, Any]] | None = None,
+    numeric_fields: list[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     A bounded sample of `fields`, without loading the file to get it (§47).
@@ -5568,6 +5569,7 @@ def _sample_columns(
 
         frame, _ = read_dataset(path, suffix=suffix)
         frame = _apply_visual_filters(frame, filters or [])
+        frame = _complete_visual_rows(frame, numeric_fields or [])
         total = len(frame)
         chosen = (frame.sample(n=limit, random_state=0).sort_index()
                   if total > limit else frame)
@@ -5599,6 +5601,7 @@ def _sample_columns(
     )
     for chunk in reader:
         chunk = _apply_visual_filters(chunk, filters or [])
+        chunk = _complete_visual_rows(chunk, numeric_fields or [])
         if not columns:
             columns = [name for name in chunk.columns if name in set(fields)]
         rows = chunk[[name for name in fields if name in chunk.columns]].to_numpy(dtype=object)
@@ -5627,6 +5630,24 @@ def _sniff(path: Path) -> str:
     from throughline_ingestion.datasets import sniff_delimiter
 
     return sniff_delimiter(path)
+
+
+def _complete_visual_rows(frame: Any, numeric_fields: list[str]):
+    """Keep exactly the numeric complete cases the plotted method can use."""
+    if not numeric_fields:
+        return frame
+
+    import pandas as pd
+
+    used = frame.copy()
+    valid = pd.Series(True, index=used.index)
+    for field in numeric_fields:
+        if field not in used.columns:
+            raise ValueError(f"Figure references unknown numeric column {field!r}")
+        numeric = pd.to_numeric(used[field], errors="coerce")
+        valid &= numeric.notna()
+        used[field] = numeric
+    return used[valid]
 
 
 def _apply_visual_filters(frame: Any, filters: list[dict[str, Any]]):
@@ -5780,8 +5801,21 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
             hex_shape=str(spec.bin_shape) == "hex",
         )
 
+    numeric_fields: list[str] = []
+    if spec.visual_type is VisualType.SCATTER:
+        numeric_fields = [
+            encoding.field for encoding in (spec.x, spec.y) if encoding is not None
+        ]
+    elif spec.visual_type is VisualType.BOX and spec.y is not None:
+        numeric_fields = [spec.y.field]
+    elif spec.visual_type is VisualType.HISTOGRAM and spec.x is not None:
+        numeric_fields = [spec.x.field]
+    elif spec.visual_type is VisualType.SURFACE:
+        numeric_fields = list(fields)
+
     return _sample_columns(
-        path, suffix, list(fields), limit, filters=list(spec.filters or []))
+        path, suffix, list(fields), limit,
+        filters=list(spec.filters or []), numeric_fields=numeric_fields)
 
 
 # ---------------------------------------------------------------------------
