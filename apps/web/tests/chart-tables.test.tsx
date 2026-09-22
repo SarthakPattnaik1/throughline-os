@@ -155,6 +155,32 @@ describe("keys built from two labels", () => {
     expect(bodyRows(container)).toHaveLength(4);
   });
 
+  it("does not suppress same-named contingency categories as a diagonal", () => {
+    const { container } = render(
+      <Matrix
+        rows={["yes", "no"]}
+        columns={["yes", "no"]}
+        cells={[
+          { row: "yes", column: "yes", value: 12 },
+          { row: "yes", column: "no", value: 3 },
+          { row: "no", column: "yes", value: 4 },
+          { row: "no", column: "no", value: 9 },
+        ]}
+        valueLabel="count"
+        symmetricAt={12}
+        scaleMode="sequential"
+        diagonalNeutral={false}
+      />,
+    );
+
+    const titles = Array.from(container.querySelectorAll("svg title"))
+      .map((node) => node.textContent?.replace(/\s+/g, " ").trim());
+    expect(titles).toContain("yes × yes: 12.000");
+    expect(titles).toContain("no × no: 9.000");
+    expect(container.textContent).not.toContain("no relationship");
+    expect(container.textContent).not.toContain("−12");
+  });
+
   it("decodes a set combination back to the sets it came from", () => {
     // `split("")` would turn a combination key into single characters, so a
     // two-set intersection would report a nonsense membership.
