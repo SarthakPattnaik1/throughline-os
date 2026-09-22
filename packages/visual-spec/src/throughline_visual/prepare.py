@@ -12,6 +12,7 @@ can, because none of them ever sees the dataset.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Sequence
 
 from .spec import ResearchVisualSpec, VisualData, VisualType
@@ -149,10 +150,10 @@ def _surface(spec: ResearchVisualSpec, result: dict[str, Any],
 
 def _is_number(value: Any) -> bool:
     try:
-        float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return False
-    return True
+    return math.isfinite(number)
 
 
 def _statistics(result: dict[str, Any]) -> dict[str, Any]:
