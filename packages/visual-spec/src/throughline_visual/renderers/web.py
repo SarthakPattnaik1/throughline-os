@@ -208,7 +208,11 @@ def _hexbin(spec, data: VisualData) -> dict[str, Any]:
             "y": {"field": "y", "type": "quantitative", "title": _label(spec.y)},
             "color": {
                 "field": "count", "type": "quantitative",
-                "title": "observations per cell", "scale": color_scale,
+                "title": (
+                    "sampled observations per cell"
+                    if data.note else "observations per cell"
+                ),
+                "scale": color_scale,
             },
             "tooltip": [
                 {"field": "count", "type": "quantitative", "title": "observations"},
