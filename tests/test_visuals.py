@@ -1164,3 +1164,57 @@ def test_hexbin_preparation_produces_cells_instead_of_refusing():
     assert sum(int(cell["count"]) for cell in data.series) == 500
     assert all({"x", "y", "count", "x_step", "y_step"} <= set(cell)
                for cell in data.series)
+
+
+def test_visual_creation_refuses_unrelated_dataset_columns(analysed):
+    project_id, _, runs = analysed
+    with connection() as conn, conn.cursor() as cur:
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=runs["correlation"])
+        wrong = recommendation["spec"].model_copy(
+            update={"x": Encoding(field="gdp_per_capita", label="GDP")}
+        )
+        with pytest.raises(visuals.VisualError, match="axes do not match"):
+            visuals.create_visual(
+                cur, project_id=project_id, spec=wrong, actor="test",
+                recommendation=recommendation,
+            )
+
+
+def test_simple_regression_visual_cannot_swap_predictor_and_outcome(analysed):
+    project_id, version_id, _ = analysed
+    with connection() as conn, conn.cursor() as cur:
+        created = analysis.create_spec(
+            cur,
+            project_id=project_id,
+            spec={
+                "method": "linear_regression",
+                "dataset_version_ids": [version_id],
+                "variables": {
+                    "outcome": "resistance_pct",
+                    "predictors": ["consumption_ddd"],
+                },
+            },
+            actor="test",
+        )
+        run_id = analysis.create_run(
+            cur, project_id=project_id, spec_id=created["spec_id"])
+        workflow.enqueue(
+            cur, workflow_name="analysis.run", project_id=project_id,
+            payload={"analysis_run_id": run_id},
+            idempotency_key=f"analysis:{run_id}",
+        )
+    _drain()
+
+    with connection() as conn, conn.cursor() as cur:
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=run_id)
+        swapped = recommendation["spec"].model_copy(update={
+            "x": Encoding(field="resistance_pct", label="resistance"),
+            "y": Encoding(field="consumption_ddd", label="consumption"),
+        })
+        with pytest.raises(visuals.VisualError, match="recorded predictor"):
+            visuals.create_visual(
+                cur, project_id=project_id, spec=swapped, actor="test",
+                recommendation=recommendation,
+            )
