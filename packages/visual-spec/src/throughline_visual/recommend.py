@@ -128,6 +128,20 @@ def _correlation_interval_note(result: dict[str, Any]) -> str:
 #: because it shows every observation; above it the scatter is showing ink.
 OVERPLOTTING_THRESHOLD = 5_000
 
+def _estimate_interval_note(result: dict[str, Any]) -> str:
+    """The recorded headline estimate and its interval, in reader-facing notation."""
+    estimate = result.get("estimate")
+    if estimate is None:
+        return "estimate not recorded"
+    name = _statistic_label(result.get("estimate_name"))
+    text = f"{name} = {float(estimate):.3g}"
+    low, high = result.get("ci_low"), result.get("ci_high")
+    if low is not None and high is not None:
+        level = round(float(result.get("confidence_level") or 0.95) * 100)
+        text += f"; {level}% CI [{float(low):.3g}, {float(high):.3g}]"
+    return text
+
+
 
 def _correlation(run_id, version_id, variables, result, audience,
                  book=_NO_LABELS) -> dict[str, Any]:
@@ -271,11 +285,16 @@ def _regression(run_id, version_id, variables, result, audience,
             analysis_run_id=run_id, dataset_version_id=version_id,
             x=book.encoding(predictors[0]),
             y=book.encoding(outcome),
-            uncertainty=UncertaintyDisplay.BAND,
-            annotations=[Annotation(kind="regression_line", text="fitted line with interval")],
+            # The coefficient interval is an interval on the slope, not a
+            # vertical band around the fitted line. Draw the recorded fit and
+            # state its interval in text rather than inventing a prediction band.
+            uncertainty=UncertaintyDisplay.NONE,
+            annotations=[Annotation(kind="regression_line",
+                                    text="fitted line from recorded coefficients")],
             title=f"{book.label(outcome)} against {book.label(predictors[0])}",
             caption=(f"Simple linear regression of {book.described(outcome)} on "
-                     f"{book.described(predictors[0])}. {_significance_note(result)}. "
+                     f"{book.described(predictors[0])}. "
+                     f"{_estimate_interval_note(result)}; {_significance_note(result)}. "
                      "Association does not establish causation."),
         )
         reason = ("A single predictor is best shown as a scatter plot with the fitted "
