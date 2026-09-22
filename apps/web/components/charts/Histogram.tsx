@@ -43,7 +43,7 @@ export function Histogram({
                     textAnchor="end">{t}</text>
             </g>
           ))}
-          {bins.map((b, i) => {
+          {bins.map((b) => {
             const left = x(b.left);
             const right = x(b.right);
             return (
