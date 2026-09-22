@@ -44,6 +44,24 @@ git push -u origin feat/<short-description>
 
 `scripts/sync.sh` can be used by collaborators working in the canonical repository to inspect overlapping branches. Fork-based contributors do not need it.
 
+## Maintainer areas
+
+Throughline may assign maintainers to specific technical areas. Area maintainers have
+primary review and decision responsibility within their documented scope rather than
+serving only as informal reviewers.
+
+Current roles and responsibilities are listed in `MAINTAINERS.md`. Automatic review
+routing is defined in `.github/CODEOWNERS`.
+
+For a change that falls inside a maintainer-owned area:
+
+- request review from the relevant area maintainer;
+- treat that maintainer as the primary reviewer for area-specific standards and acceptance criteria;
+- involve additional maintainers or the project owner when the change crosses architecture,
+  security/privacy, persistence, release, or other ownership boundaries.
+
+Repository permissions and branch-protection rules remain the authority for merge access.
+
 ## Tests
 
 Write tests against behavior and invariants, not incidental implementation shape. A better implementation should be free to change internal structure without breaking a test whose actual guarantee still holds.
