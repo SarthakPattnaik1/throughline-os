@@ -275,8 +275,15 @@ def _forest(spec, result, statistics) -> VisualData:
     for name, values in coefficients.items():
         if name == "const":
             continue  # the intercept is not a comparable effect
+        value = (
+            values.get("estimate")
+            if values.get("estimate") is not None
+            else values.get("odds_ratio")
+        )
+        if value is None or values.get("ci_low") is None or values.get("ci_high") is None:
+            continue
         names.append(name)
-        estimates.append(float(values["estimate"]))
+        estimates.append(float(value))
         lows.append(float(values["ci_low"]))
         highs.append(float(values["ci_high"]))
     if not names:
