@@ -368,6 +368,8 @@ describe("run provenance", () => {
     brush.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 200 }));
     brush.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: 200 }));
 
+    await userEvent.click(await screen.findByRole("button",
+      { name: /record as a subset/i }));
     await userEvent.type(await screen.findByLabelText("Subset name"), "Middle range");
     await userEvent.click(screen.getByRole("button", { name: "Record subset" }));
 
