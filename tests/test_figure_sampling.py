@@ -153,3 +153,78 @@ def test_the_sample_is_not_taken_from_the_top(tmp_path):
     assert drawn.min() < rows * 0.1, "the sample never reaches the top either"
     # And it is spread, not clustered at one end.
     assert rows * 0.3 < np.median(drawn) < rows * 0.7
+
+
+@pytest.mark.parametrize(
+    ("operator", "value", "expected"),
+    [
+        ("gt", 3, [4, 5]),
+        ("gte", 3, [3, 4, 5]),
+        ("lt", 3, [1, 2]),
+        ("lte", 3, [1, 2, 3]),
+        ("eq", "3", [3]),
+        ("ne", "3", [1, 2, 4, 5]),
+        ("in", [2, 4], [2, 4]),
+        ("not_null", None, [1, 2, 3, 4, 5]),
+    ],
+)
+def test_visual_filters_match_the_runtime_filter_language(operator, value, expected):
+    from throughline_api.app import _apply_visual_filters
+
+    frame = pd.DataFrame({"x": [1, 2, 3, 4, 5], "label": ["a", "b", "c", "d", "e"]})
+    filtered = _apply_visual_filters(
+        frame,
+        [{"column": "x", "operator": operator, "value": value}],
+    )
+    assert filtered["x"].tolist() == expected
+
+
+def test_filtered_sampling_accounts_for_the_filtered_population(tmp_path):
+    """
+    The figure must sample *after* applying the analysis population rule.
+
+    Otherwise a run on species == Adelie can display other species while still
+    printing the Adelie-only coefficient beside them.
+    """
+    from throughline_api.app import _sample_columns
+
+    path = tmp_path / "filtered.csv"
+    frame = pd.DataFrame({
+        "x": range(2_000),
+        "species": ["Adelie"] * 700 + ["Gentoo"] * 1_300,
+    })
+    frame.to_csv(path, index=False)
+
+    sample, account = _sample_columns(
+        path, ".csv", ["x"], 500,
+        filters=[{"column": "species", "operator": "eq", "value": "Adelie"}],
+    )
+
+    assert account["rows_total"] == 700
+    assert account["rows_drawn"] == 500
+    assert account["sampled"] is True
+    assert len(sample["x"]) == 500
+    assert max(sample["x"]) < 700
+
+
+def test_small_filtered_population_draws_every_filtered_row(tmp_path):
+    from throughline_api.app import _sample_columns
+
+    path = tmp_path / "small-filtered.csv"
+    pd.DataFrame({
+        "x": range(1_000),
+        "arm": ["keep"] * 80 + ["drop"] * 920,
+    }).to_csv(path, index=False)
+
+    sample, account = _sample_columns(
+        path, ".csv", ["x"], 500,
+        filters=[{"column": "arm", "operator": "eq", "value": "keep"}],
+    )
+
+    assert account == {
+        "sampled": False,
+        "rows_total": 80,
+        "rows_drawn": 80,
+        "method": "every row",
+    }
+    assert sample["x"] == list(range(80))
