@@ -46,6 +46,12 @@ type Recommendation = {
     y?: { field: string; label?: string; unit?: string; scale?: string };
     dataset_version_id?: string | null;
     category_labels?: Record<string, string>;
+    annotations?: Array<{
+      kind: string;
+      value?: number | null;
+      text?: string;
+      orientation?: string;
+    }>;
     title?: string;
   };
 };
@@ -243,8 +249,9 @@ export function Figures({ projectId, runs, focusId = null,
    */
   const supportedMethods = new Set([
     "pearson_correlation", "spearman_correlation", "bootstrap_correlation",
-    "linear_regression", "t_test", "mann_whitney", "anova",
-    "kruskal_wallis", "chi_square", "descriptive",
+    "linear_regression", "logistic_regression", "mixed_model",
+    "t_test", "mann_whitney", "anova", "kruskal_wallis",
+    "chi_square", "descriptive",
   ]);
   const plottable = (runs.data ?? []).filter(
     (r) => r.status === "completed" && supportedMethods.has(r.method),
@@ -800,6 +807,12 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
           <Interval
             estimates={forestEstimates}
             xLabel={axisLabel("estimate", labels, recommendation.spec.x)}
+            nullValue={
+              recommendation.spec.annotations?.find(
+                (annotation) => annotation.kind === "reference_line"
+                  && annotation.value != null,
+              )?.value ?? 0
+            }
             title={recommendation.spec?.title}
             caption={recommendation.caption}
           />
