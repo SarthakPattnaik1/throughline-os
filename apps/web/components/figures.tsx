@@ -17,6 +17,8 @@ import { ApiState, useApi } from "@/lib/useApi";
 // Aliased: Matrix exports a `Cell` too, and its shape is row/column/value
 // rather than x/y/count.
 import { Binned, Cell as BinnedCell } from "./charts/Binned";
+import { BoxPlot, BoxSummary } from "./charts/BoxPlot";
+import { Histogram, HistogramBin } from "./charts/Histogram";
 import { Surface } from "./charts/Surface";
 import { Cartesian, CartesianMark, Datum } from "./charts/Cartesian";
 import { Estimate, Interval } from "./charts/Interval";
@@ -48,6 +50,10 @@ type Recommendation = {
 type Points = {
   x: number[];
   y: number[];
+  group?: string[];
+  categories?: string[];
+  matrix?: number[][];
+  series?: Array<Record<string, string | number>>;
   statistics?: Record<string, number | string | null>;
   sample_size?: number;
   sampling?: {
@@ -72,6 +78,7 @@ type Points = {
   grid_x?: number[];
   grid_y?: number[];
   observations?: Array<{ x: number; y: number; z: number }>;
+  surface_outcome?: string | null;
   note?: string;
 };
 
@@ -507,6 +514,7 @@ function MatrixView({ state }: {
           </tbody>
         </table>
       </details>
+      )}
     </>
   );
 }
@@ -694,28 +702,52 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
     })),
     [points.data]);
 
+  const cells = points.data?.cells;
+  const binned = recommendation.visual_type === "hexbin" && Boolean(cells?.length);
+  const forest = recommendation.visual_type === "forest"
+    && Boolean(points.data?.categories?.length)
+    && Boolean(points.data?.y?.length)
+    && Boolean(points.data?.ci_low?.length)
+    && Boolean(points.data?.ci_high?.length);
+  const box = recommendation.visual_type === "box"
+    && Boolean(points.data?.series?.length);
+  const histogram = recommendation.visual_type === "histogram"
+    && Boolean(points.data?.series?.length);
+  const heatmap = recommendation.visual_type === "heatmap"
+    && Boolean(points.data?.matrix?.length)
+    && Boolean(points.data?.categories?.length)
+    && Boolean(points.data?.group?.length);
+
+  const forestEstimates: Estimate[] = forest
+    ? (points.data!.categories ?? []).map((name, index) => ({
+        id: name,
+        label: labels[name] ?? name.replace(/_/g, " "),
+        estimate: points.data!.y[index],
+        lo: points.data!.ci_low?.[index] ?? points.data!.y[index],
+        hi: points.data!.ci_high?.[index] ?? points.data!.y[index],
+      }))
+    : [];
+  const boxSummaries = (box ? points.data?.series ?? [] : []) as BoxSummary[];
+  const histogramBins = (histogram ? points.data?.series ?? [] : []) as HistogramBin[];
+  const heatmapCells: Cell[] = heatmap
+    ? (points.data!.group ?? []).flatMap((row, rowIndex) =>
+        (points.data!.categories ?? []).map((column, columnIndex) => ({
+          row,
+          column,
+          value: points.data!.matrix?.[rowIndex]?.[columnIndex] ?? null,
+        })))
+    : [];
+  const preparedCaption = [
+    recommendation.caption,
+    points.data?.note,
+  ].filter(Boolean).join(" ");
+
   if (points.error) return <Failure error={points.error} retry={points.reload} />;
   if (points.loading) return <Loading rows={4} label="Reading the plotted values" />;
-  if (!data.length) {
+  if (!(data.length || surface || binned || forest || box || heatmap || histogram)) {
     return <Empty title="No plottable values recorded"
-                  hint="This analysis did not store the points behind its estimate." />;
+                  hint="The analysis completed, but no prepared figure values were recorded." />;
   }
-
-  /**
-   * A binned recommendation must draw a binned figure.
-   *
-   * `MARK_FOR` has no entry for it and falls back to a point mark, so this used
-   * to render a scatter — at the sample size that triggers the recommendation,
-   * exactly the overplotted blob the primitive exists to replace. The
-   * recommender said one thing and the screen showed another.
-   *
-   * Cells arrive already counted from the same endpoint as the points, because
-   * binning is aggregation and a browser that re-aggregated could disagree with
-   * the analysis (LAW 2).
-   */
-  const cells = points.data?.cells;
-  const binned = recommendation.visual_type === "hexbin" && cells?.length;
-
 
   async function recordSubset() {
     if (!recording || !versionId) return;
@@ -745,12 +777,16 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
             observations={surfaceObservations}
             xLabel={xLabel}
             yLabel={yLabel}
-            zLabel={axisLabel(fields.y, labels, recommendation.spec.y)}
-            caption={points.data?.note ?? ""}
+            zLabel={axisLabel(
+              points.data?.surface_outcome ?? "fitted outcome",
+              labels,
+              undefined,
+            )}
+            caption={preparedCaption}
           />
         ) : binned ? (
           <Binned
-            cells={cells}
+            cells={cells!}
             xLabel={xLabel}
             yLabel={yLabel}
             binCount={points.data?.bin_count ?? 30}
@@ -759,9 +795,46 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
               points.data?.count_scale === "linear" ? "linear"
               : points.data?.count_scale === "sqrt" ? "sqrt" : "log"
             }
-            sampleSize={points.data?.sample_size ?? data.length}
+            sampleSize={
+              points.data?.sampling?.rows_drawn
+              ?? points.data?.sample_size
+              ?? data.length
+            }
             title={recommendation.spec?.title}
-            caption={recommendation.caption}
+            caption={preparedCaption}
+          />
+        ) : forest ? (
+          <Interval
+            estimates={forestEstimates}
+            xLabel={xLabel}
+            title={recommendation.spec?.title}
+            caption={preparedCaption}
+            nullValue={run.method === "logistic_regression" ? 1 : 0}
+          />
+        ) : box ? (
+          <BoxPlot
+            summaries={boxSummaries}
+            xLabel={xLabel}
+            yLabel={yLabel}
+            title={recommendation.spec?.title}
+            caption={preparedCaption}
+          />
+        ) : heatmap ? (
+          <Matrix
+            cells={heatmapCells}
+            rows={points.data?.group ?? []}
+            columns={points.data?.categories ?? []}
+            title={recommendation.spec?.title}
+            caption={preparedCaption}
+            valueLabel="count"
+            symmetricAt={Math.max(1, ...heatmapCells.map((cell) => Number(cell.value ?? 0)))}
+          />
+        ) : histogram ? (
+          <Histogram
+            bins={histogramBins}
+            xLabel={xLabel}
+            title={recommendation.spec?.title}
+            caption={preparedCaption}
           />
         ) : (
           <Cartesian
@@ -802,7 +875,7 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
             */
             onRecordRegion={versionId ? setRecording : undefined}
             title={recommendation.spec?.title}
-            caption={recommendation.caption}
+            caption={preparedCaption}
           />
         )}
       </div>
@@ -895,7 +968,10 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
         </span>
       </div>
 
-      {/* Part P — an always-available table alternative. */}
+      {/* Point-based figures use this table; prepared summary primitives carry
+          their own numeric table so the screen does not show a misleading
+          empty x/y table underneath them. */}
+      {data.length > 0 && (
       <details className="fold kg-table">
         <summary>The numbers behind this figure<span className="fold-count">· {data.length} rows</span></summary>
         <table>
