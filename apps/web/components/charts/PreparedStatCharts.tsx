@@ -128,3 +128,80 @@ export function PreparedBoxPlot({ summaries, xLabel, yLabel, title, caption }: {
     </figure>
   );
 }
+
+
+export type PreparedHeatmapCell = {
+  row: string;
+  column: string;
+  value: number;
+};
+
+export function PreparedCountHeatmap({ cells, rows, columns, xLabel, yLabel, title, caption }: {
+  cells: PreparedHeatmapCell[];
+  rows: string[];
+  columns: string[];
+  xLabel: string;
+  yLabel: string;
+  title?: string;
+  caption?: string;
+}) {
+  const cell = 52;
+  const left = 120, top = 74, right = 18, bottom = 54;
+  const width = left + columns.length * cell + right;
+  const height = top + rows.length * cell + bottom;
+  const max = Math.max(1, ...cells.map((item) => item.value));
+  const byKey = new Map(cells.map((item) => [item.row + "\u0000" + item.column, item.value]));
+
+  return (
+    <figure className="chart">
+      {title && <figcaption className="chart-title">{title}</figcaption>}
+      <svg className="chart-svg" viewBox={"0 0 " + width + " " + height}
+           width="100%" role="img"
+           aria-label={(title ?? "Contingency heatmap") + ". Counts printed in every cell."}>
+        {columns.map((column, index) => (
+          <text key={column} className="chart-tick"
+                transform={"translate(" + (left + index * cell + cell / 2)
+                  + "," + (top - 8) + ") rotate(-35)"}
+                textAnchor="start">{column}</text>
+        ))}
+        {rows.map((row, rowIndex) => (
+          <g key={row}>
+            <text className="chart-tick" x={left - 8}
+                  y={top + rowIndex * cell + cell / 2 + 4}
+                  textAnchor="end">{row}</text>
+            {columns.map((column, columnIndex) => {
+              const value = byKey.get(row + "\u0000" + column) ?? 0;
+              const strength = Math.max(6, Math.round((value / max) * 90));
+              return (
+                <g key={column}>
+                  <rect className="chart-cell"
+                        x={left + columnIndex * cell}
+                        y={top + rowIndex * cell}
+                        width={cell - 1} height={cell - 1}
+                        style={{
+                          fill: "color-mix(in oklch, var(--accent) " + strength
+                            + "%, var(--n-50))",
+                        }}>
+                    <title>{row + " × " + column + ": " + value}</title>
+                  </rect>
+                  <text className="chart-cell-value"
+                        x={left + columnIndex * cell + cell / 2}
+                        y={top + rowIndex * cell + cell / 2 + 4}
+                        textAnchor="middle">{value}</text>
+                </g>
+              );
+            })}
+          </g>
+        ))}
+        <text className="chart-axis-label"
+              x={left + columns.length * cell / 2} y={height - 12}
+              textAnchor="middle">{xLabel}</text>
+        <text className="chart-axis-label"
+              transform={"translate(16," + (top + rows.length * cell / 2) + ") rotate(-90)"}
+              textAnchor="middle">{yLabel}</text>
+      </svg>
+      <p className="chart-caption">Darker cells contain more observations. Exact counts are printed.</p>
+      {caption && <figcaption className="chart-caption">{caption}</figcaption>}
+    </figure>
+  );
+}
