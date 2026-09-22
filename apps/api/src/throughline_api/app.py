@@ -5628,7 +5628,27 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
     is that sampling must be clearly communicated, and a caption can only say
     what the endpoint tells it.
     """
+    # Some figures are derived entirely from the recorded result and have no
+    # raw-row fields to sample. Their encoding names (for example "estimate"
+    # and "predictor") are chart semantics, not dataset columns.
+    if spec.visual_type in {VisualType.FOREST, VisualType.HEATMAP, VisualType.BAR}:
+        return {}, {
+            "sampled": False,
+            "rows_drawn": 0,
+            "method": "not applicable — figure derived from recorded result",
+        }
+
     fields = spec.data_fields()
+
+    # A fitted surface has two predictor encodings, while the measured outcome
+    # is the third coordinate. It lives in the recorded model result rather
+    # than in ResearchVisualSpec's 2D axis encodings, so add it explicitly.
+    if spec.visual_type is VisualType.SURFACE:
+        run = analysis.get_run(cur, spec.analysis_run_id)
+        outcome = ((run or {}).get("result") or {}).get("extra", {}).get("outcome")
+        if outcome:
+            fields = list(dict.fromkeys([*fields, str(outcome)]))
+
     if not fields or not spec.dataset_version_id:
         return {}, {"sampled": False}
     cur.execute(
