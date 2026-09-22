@@ -589,6 +589,72 @@ function ForestView({ state }: { state: ApiState<EstimatePayload> }) {
   );
 }
 
+export function inlineSvgPresentation(
+  source: SVGSVGElement, clone: SVGSVGElement,
+): void {
+  const sourceNodes = [source, ...Array.from(source.querySelectorAll<SVGElement>("*"))];
+  const cloneNodes = [clone, ...Array.from(clone.querySelectorAll<SVGElement>("*"))];
+  const properties = [
+    "fill", "fill-opacity", "stroke", "stroke-opacity", "stroke-width",
+    "stroke-dasharray", "stroke-linecap", "stroke-linejoin", "opacity",
+    "font-family", "font-size", "font-weight", "font-style",
+  ];
+
+  sourceNodes.forEach((node, index) => {
+    const target = cloneNodes[index];
+    if (!target) return;
+    const computed = window.getComputedStyle(node);
+    for (const property of properties) {
+      const value = computed.getPropertyValue(property);
+      if (value) target.style.setProperty(property, value);
+    }
+  });
+}
+
+function appendQuickExportCaption(
+  svg: SVGSVGElement, title: string | undefined, caption: string,
+): void {
+  const viewBox = svg.viewBox.baseVal;
+  const x = viewBox.x;
+  const y = viewBox.y;
+  const width = viewBox.width || 620;
+  const height = viewBox.height || 340;
+  const text = [title, caption].filter(Boolean).join(". ").trim();
+  if (!text) return;
+
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (candidate.length > 92 && line) {
+      lines.push(line);
+      line = word;
+      if (lines.length === 3) break;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line && lines.length < 4) lines.push(line);
+  const extra = 22 + lines.length * 15;
+  svg.setAttribute("viewBox", `${x} ${y} ${width} ${height + extra}`);
+
+  const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  label.setAttribute("x", String(x + 10));
+  label.setAttribute("y", String(y + height + 18));
+  label.setAttribute("fill", "#4F4F4B");
+  label.setAttribute("font-size", "10");
+  label.setAttribute("font-family", "Inter, Arial, sans-serif");
+  lines.forEach((content, index) => {
+    const span = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+    span.setAttribute("x", String(x + 10));
+    span.setAttribute("dy", index === 0 ? "0" : "15");
+    span.textContent = content;
+    label.appendChild(span);
+  });
+  svg.appendChild(label);
+}
+
 function Figure({ run, recommendation, labels, projectId, versionId }: {
   run: AnalysisRunRow;
   recommendation: Recommendation;
@@ -622,6 +688,11 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
     return p.x.map((x, i) => ({ id: String(i), x, y: p.y[i] }));
   }, [points.data]);
 
+  const quickExportCaption = [
+    recommendation.caption,
+    points.data?.note,
+  ].filter(Boolean).join(" ");
+
   /**
    * Export the live SVG.
    *
@@ -633,6 +704,12 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
     const svg = svgHost.current?.querySelector("svg");
     if (!svg) return;
     const clone = svg.cloneNode(true) as SVGSVGElement;
+    // Classes and CSS variables do not travel with a downloaded standalone SVG.
+    // Resolve the on-screen presentation before detaching it.
+    inlineSvgPresentation(svg, clone);
+    appendQuickExportCaption(
+      clone, recommendation.spec?.title, quickExportCaption,
+    );
     // Publication figures are light. A figure built in dark mode and dropped
     // into a manuscript must not arrive as a black rectangle, so the export
     // pins light values regardless of the app&apos;s theme (Part A).
@@ -653,7 +730,7 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
     link.download = `${fields.x}-${fields.y}.svg`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [fields]);
+  }, [fields, quickExportCaption, recommendation.spec?.title]);
 
   const mark = MARK_FOR[recommendation.visual_type] ?? "point";
   const xLabel = axisLabel(fields.x, labels, recommendation.spec.x);
@@ -959,7 +1036,7 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
       <div className="chart-export" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={exportSvg}>Save this view</button>
         <span className="note" style={{ margin: 0 }}>
-          The SVG on screen, as it is. Quick, and related to nothing — for a
+          A standalone copy of the current chart, including its visible caveat. Quick and related to nothing — for a
           figure that has to be traceable back to its analysis, export it
           {/* "below" until §4.12 moved the export above this row. A sentence
               that names a place has to be re-read when the place moves, or it
