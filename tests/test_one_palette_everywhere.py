@@ -20,7 +20,7 @@ from matplotlib import image as mpimg
 from throughline_visual import tokens
 from throughline_visual.renderers import blender, publication, web
 from throughline_visual.spec import (
-    Annotation, Encoding, ResearchVisualSpec, UncertaintyDisplay, VisualData, VisualType,
+    Encoding, ResearchVisualSpec, VisualData, VisualType,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -152,9 +152,7 @@ def _scatter():
         visual_type=VisualType.SCATTER, analysis_run_id="run",
         title="Recall by sleep", x=Encoding(field="sleep", label="Sleep"),
         y=Encoding(field="recall", label="Recall"),
-        group=Encoding(field="arm", label="Arm"),
-        annotations=[Annotation(kind="regression_line")],
-        uncertainty=UncertaintyDisplay.BAND)
+        group=Encoding(field="arm", label="Arm"))
     data = VisualData(x_values=xs, y_values=[v * 0.5 for v in xs],
                       group_values=["a", "b", "c"] * 20, sample_size=60)
     return spec, data

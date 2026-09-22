@@ -163,7 +163,7 @@ def test_simple_regression_figure_uses_recorded_fit_not_a_refit(analysed, tmp_pa
             project_id=project_id,
             spec={
                 "method": "linear_regression",
-                "dataset_version_ids": [run["spec"]["dataset_version_ids"][0]],
+                "dataset_version_ids": [run["dataset_version_ids"][0]],
                 "variables": {"outcome": "resistance_pct",
                               "predictors": ["consumption_ddd"]},
             },
@@ -1088,6 +1088,7 @@ def test_contingency_preparation_keeps_x_horizontal_and_y_vertical():
 
 
 def test_publication_export_keeps_the_sampling_caveat(tmp_path):
+    # SVG may wrap caption text across lines; assert on normalized visible text.
     spec = ResearchVisualSpec(
         visual_type=VisualType.SCATTER,
         analysis_run_id="arun_sampled",
@@ -1104,8 +1105,13 @@ def test_publication_export_keeps_the_sampling_caveat(tmp_path):
     )
     path = publication.render(spec, data, path=tmp_path / "sampled.svg", fmt="svg")
     body = path.read_text(encoding="utf-8")
-    assert "bounded complete-case sample" in body
-    assert "full analysis run" in body
+    normalized = " ".join(body.split())
+    assert "bounded complete-case sample" in normalized
+    # Matplotlib may split one wrapped SVG caption line into separate text
+    # nodes/comments, so verify both parts of the disclosure rather than
+    # requiring them to be contiguous in the XML source.
+    assert "full" in normalized
+    assert "analysis run" in normalized
 
 
 def test_filtered_run_carries_its_population_into_the_visual_spec(analysed):

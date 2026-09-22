@@ -157,9 +157,13 @@ def build(cur, *, user_id: str, project_id: str) -> dict[str, str]:
                 "updated_by) VALUES (%s, %s, %s, 0, 0, 200, 200, %s)",
                 (new_id("bpl"), project_id, ids["object"], user_id))
     recommendation = visuals.recommend_for_run(cur, analysis_run_id=ids["run"])
+    sample = {
+        "x": [float(i) for i in range(1, 9)],
+        "y": [float(i * 1.5 + (i % 3)) for i in range(1, 9)],
+    }
     ids["visual"] = visuals.create_visual(
         cur, project_id=project_id, spec=recommendation["spec"], actor=user_id,
-        recommendation=recommendation)["visual_id"]
+        sample=sample, recommendation=recommendation)["visual_id"]
     from throughline_domain import objects
     ids["object_latest"] = objects.new_version(cur, object_id=ids["object"], actor=user_id,
                                                title="Panel, revised", reason="sweep")

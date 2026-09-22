@@ -24,7 +24,7 @@ from throughline_domain.db import connection
 from throughline_domain.storage import storage_root
 from throughline_schemas.enums import WorkflowState
 from throughline_visual.renderers import blender
-from throughline_visual.spec import ResearchVisualSpec, VisualType
+from throughline_visual.spec import Encoding, ResearchVisualSpec, VisualType
 from throughline_workers.runner import Worker
 import throughline_workers.handlers  # noqa: F401 — registers the job
 
@@ -49,9 +49,13 @@ def _surface(fixture) -> tuple[str, str]:
                                         "resistance_pct"])
         created = visuals.create_visual(
             cur, project_id=project_id, actor="test", sample=sample,
-            spec=ResearchVisualSpec(visual_type=VisualType.SURFACE,
-                                    analysis_run_id=runs["regression"],
-                                    dataset_version_id=version_id))
+            spec=ResearchVisualSpec(
+                visual_type=VisualType.SURFACE,
+                analysis_run_id=runs["regression"],
+                dataset_version_id=version_id,
+                x=Encoding(field="consumption_ddd", label="Antibiotic consumption"),
+                y=Encoding(field="gdp_per_capita", label="GDP per capita"),
+            ))
     assert created["publishable"], created["critique"]
     # Publishable and exportable are different questions: a surface passes
     # every check and still has no flat publication format.
