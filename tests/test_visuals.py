@@ -163,7 +163,7 @@ def test_simple_regression_figure_uses_recorded_fit_not_a_refit(analysed, tmp_pa
             project_id=project_id,
             spec={
                 "method": "linear_regression",
-                "dataset_version_ids": [run["spec"]["dataset_version_ids"][0]],
+                "dataset_version_ids": [run["dataset_version_ids"][0]],
                 "variables": {"outcome": "resistance_pct",
                               "predictors": ["consumption_ddd"]},
             },
@@ -1104,8 +1104,9 @@ def test_publication_export_keeps_the_sampling_caveat(tmp_path):
     )
     path = publication.render(spec, data, path=tmp_path / "sampled.svg", fmt="svg")
     body = path.read_text(encoding="utf-8")
-    assert "bounded complete-case sample" in body
-    assert "full analysis run" in body
+    normalized = " ".join(body.split())
+    assert "bounded complete-case sample" in normalized
+    assert "full analysis run" in normalized
 
 
 def test_filtered_run_carries_its_population_into_the_visual_spec(analysed):
