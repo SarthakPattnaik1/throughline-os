@@ -42,6 +42,7 @@ const RECOMMENDATION = {
   spec: {
     x: { field: "consumption", label: "Consumption (DDD)" },
     y: { field: "resistance", label: "Resistance (%)" },
+    dataset_version_id: "dsv_run",
   },
 };
 
@@ -205,6 +206,32 @@ describe("the picker", () => {
 
     await waitFor(() => expect(get)
       .toHaveBeenCalledWith("/api/analyses/arun_2/visual-recommendation"));
+  });
+});
+
+describe("run provenance", () => {
+  it("uses the active run's dataset when recording a brushed subset", async () => {
+    const post = vi.spyOn(api, "post").mockResolvedValue(
+      { sentence: "Recorded subset." } as never);
+    serve();
+    await openOneRelationship([run()]);
+
+    const plot = await screen.findByRole("img");
+    const brush = plot.querySelector(".chart-brush-surface") as SVGRectElement;
+    Object.defineProperty(brush, "getBoundingClientRect", {
+      value: () => ({ left: 0, width: 500, top: 0, height: 300,
+                      right: 500, bottom: 300, x: 0, y: 0, toJSON() {} }),
+    });
+    brush.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 100 }));
+    brush.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 200 }));
+    brush.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: 200 }));
+
+    await userEvent.type(await screen.findByLabelText("Subset name"), "Middle range");
+    await userEvent.click(screen.getByRole("button", { name: "Record subset" }));
+
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    const [, body] = post.mock.calls[0];
+    expect(body).toMatchObject({ dataset_version_id: "dsv_run" });
   });
 });
 
