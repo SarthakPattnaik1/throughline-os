@@ -401,7 +401,8 @@ def _hexbin(spec, data: VisualData, axes, look: Look) -> None:
     mapper.set_array(counts)
     bar = axes.get_figure().colorbar(mapper, ax=axes, pad=0.02)
     suffix = "" if scale == "linear" else f" ({scale} scale)"
-    bar.set_label(f"observations per cell{suffix}", fontsize=tokens.TYPE["tick"])
+    population = "sampled observations" if data.note else "observations"
+    bar.set_label(f"{population} per cell{suffix}", fontsize=tokens.TYPE["tick"])
     bar.ax.tick_params(labelsize=tokens.TYPE["note"])
     bar.outline.set_visible(False)
 
