@@ -5427,6 +5427,108 @@ SAMPLE_CHUNK_ROWS = 50_000
 STREAMABLE = {".csv", ".tsv"}
 
 
+def _aggregate_binned_columns(
+    path: Path, suffix: str, *, x_field: str, y_field: str,
+    filters: list[dict[str, Any]], bins: int, hex_shape: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Aggregate every complete filtered x/y pair with bounded memory.
+
+    A hexbin is the large-data alternative to drawing every point. Sampling 500
+    rows and then binning those rows defeats that purpose: the apparent density
+    becomes the density of the sample. Delimited files are therefore read in
+    two bounded passes — first for the global range, then for exact cell counts.
+    """
+    import pandas as pd
+
+    needed = {x_field, y_field} | {
+        str(rule.get("column")) for rule in filters if rule.get("column")
+    }
+
+    def pairs(frame):
+        frame = _apply_visual_filters(frame, filters)
+        x = pd.to_numeric(frame[x_field], errors="coerce")
+        y = pd.to_numeric(frame[y_field], errors="coerce")
+        valid = x.notna() & y.notna()
+        return x[valid].astype(float), y[valid].astype(float)
+
+    if suffix not in STREAMABLE:
+        from throughline_ingestion.datasets import read_dataset
+
+        frame, _ = read_dataset(path, suffix=suffix)
+        xs, ys = pairs(frame)
+        if xs.empty:
+            return {"__binned_cells__": [], "__binned_rows__": 0}, {
+                "sampled": False, "rows_total": 0, "rows_drawn": 0,
+                "method": "aggregated every complete plotted row",
+            }
+        x_low, x_high = float(xs.min()), float(xs.max())
+        y_low, y_high = float(ys.min()), float(ys.max())
+        counts: dict[tuple[int, int], int] = {}
+        for x, y in zip(xs, ys):
+            key = visual_prepare.binned_cell_index(
+                float(x), float(y), x_low=x_low, x_high=x_high,
+                y_low=y_low, y_high=y_high, bins=bins, hex_shape=hex_shape,
+            )
+            counts[key] = counts.get(key, 0) + 1
+        total = len(xs)
+    else:
+        separator = "\t" if suffix == ".tsv" else _sniff(path)
+        read = dict(
+            sep=separator, usecols=lambda name: name in needed,
+            dtype=object, keep_default_na=False, encoding="utf-8",
+            encoding_errors="replace", chunksize=SAMPLE_CHUNK_ROWS,
+            low_memory=False,
+        )
+
+        total = 0
+        x_low = y_low = float("inf")
+        x_high = y_high = float("-inf")
+        for chunk in pd.read_csv(path, **read):
+            xs, ys = pairs(chunk)
+            if xs.empty:
+                continue
+            total += len(xs)
+            x_low = min(x_low, float(xs.min()))
+            x_high = max(x_high, float(xs.max()))
+            y_low = min(y_low, float(ys.min()))
+            y_high = max(y_high, float(ys.max()))
+
+        if total == 0:
+            return {"__binned_cells__": [], "__binned_rows__": 0}, {
+                "sampled": False, "rows_total": 0, "rows_drawn": 0,
+                "method": "aggregated every complete plotted row",
+            }
+
+        counts: dict[tuple[int, int], int] = {}
+        for chunk in pd.read_csv(path, **read):
+            xs, ys = pairs(chunk)
+            for x, y in zip(xs, ys):
+                key = visual_prepare.binned_cell_index(
+                    float(x), float(y), x_low=x_low, x_high=x_high,
+                    y_low=y_low, y_high=y_high, bins=bins,
+                    hex_shape=hex_shape,
+                )
+                counts[key] = counts.get(key, 0) + 1
+
+    cells = []
+    for (column, row), count in sorted(counts.items()):
+        x, y = visual_prepare.binned_cell_center(
+            column, row, x_low=x_low, x_high=x_high,
+            y_low=y_low, y_high=y_high, bins=bins, hex_shape=hex_shape,
+        )
+        cells.append({"x": x, "y": y, "count": count})
+
+    return {
+        "__binned_cells__": cells,
+        "__binned_rows__": total,
+    }, {
+        "sampled": False,
+        "rows_total": total,
+        "rows_drawn": total,
+        "method": "aggregated every complete plotted row",
+    }
+
+
 def _sample_columns(
     path: Path, suffix: str, fields: list[str], limit: int,
     filters: list[dict[str, Any]] | None = None,
@@ -5655,10 +5757,21 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
     if not row:
         return {}, {"sampled": False}
 
+    path = storage.path_for(row["storage_key"])
+    suffix = Path(row["filename"] or "").suffix.lower()
+    if spec.visual_type is VisualType.HEXBIN:
+        if spec.x is None or spec.y is None:
+            return {}, {"sampled": False}
+        return _aggregate_binned_columns(
+            path, suffix,
+            x_field=spec.x.field, y_field=spec.y.field,
+            filters=list(spec.filters or []),
+            bins=spec.bin_count or 30,
+            hex_shape=str(spec.bin_shape) == "hex",
+        )
+
     return _sample_columns(
-        storage.path_for(row["storage_key"]),
-        Path(row["filename"] or "").suffix.lower(),
-        list(fields), limit, filters=list(spec.filters or []))
+        path, suffix, list(fields), limit, filters=list(spec.filters or []))
 
 
 # ---------------------------------------------------------------------------
