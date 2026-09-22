@@ -277,7 +277,7 @@ def render(
             layout="constrained" if height_px is not None else None)
         try:
             draw_panel(spec, data, axes, look)
-            _caption(spec, figure, look)
+            _caption(spec, data, figure, look)
             figure.savefig(path, **saving)
         finally:
             plt.close(figure)
@@ -353,56 +353,33 @@ def _draw(spec: ResearchVisualSpec, data: VisualData, axes, look: Look) -> None:
 
 
 def _hexbin(spec, data: VisualData, axes, look: Look) -> None:
-    """Density by cell, for sample sizes where marks would overplot.
-
-    Hexagons rather than squares: a square grid produces horizontal and vertical
-    banding that reads as structure in the data, and every point in a hexagon is
-    closer to its centre than in a square of equal area, so the count in a cell
-    is a fairer summary of the neighbourhood.
-
-    A sequential, perceptually uniform colour map, because the encoded quantity
-    is a count — ordered, single-ended, with a meaningful zero. Diverging would
-    invent a midpoint that does not exist.
-    """
-    xs = np.asarray(data.x_values, dtype=float)
-    ys = np.asarray(data.y_values, dtype=float)
-    if xs.size == 0:
-        raise RenderError("A binned figure needs observations to bin.")
-
-    bins = spec.bin_count or 30
+    """Draw the exact occupied cells prepared once by prepare.py."""
+    cells = list(data.series)
+    if not cells:
+        raise RenderError("Prepared binned-density cells are missing.")
+    xs = np.asarray([float(item["x"]) for item in cells], dtype=float)
+    ys = np.asarray([float(item["y"]) for item in cells], dtype=float)
+    counts = np.asarray([float(item["count"]) for item in cells], dtype=float)
     scale = str(spec.count_scale)
 
-    if spec.bin_shape is BinShape.SQUARE:
-        norm = (LogNorm() if scale == "log"
-                else PowerNorm(0.5) if scale == "sqrt" else None)
-        counts, _, _, mesh = axes.hist2d(xs, ys, bins=bins, cmap=tokens.SEQUENTIAL,
-                                         norm=norm, cmin=1)
+    if scale == "log":
+        norm = LogNorm(vmin=max(1.0, float(counts.min())),
+                       vmax=max(1.0, float(counts.max())))
+    elif scale == "sqrt":
+        norm = PowerNorm(0.5, vmin=0.0, vmax=max(1.0, float(counts.max())))
     else:
-        # matplotlib's own log binning for hexagons; sqrt via PowerNorm.
-        mesh = axes.hexbin(
-            xs, ys, gridsize=bins, cmap=tokens.SEQUENTIAL, mincnt=1,
-            linewidths=0.2, edgecolors=look.ink["edge"],
-            bins="log" if scale == "log" else None,
-            norm=PowerNorm(0.5) if scale == "sqrt" else None,
-        )
+        norm = None
 
+    marker = "h" if spec.bin_shape is BinShape.HEX else "s"
+    mesh = axes.scatter(
+        xs, ys, c=counts, cmap=tokens.SEQUENTIAL, norm=norm,
+        marker=marker, s=70, linewidths=0.25, edgecolors=look.ink["edge"],
+    )
     bar = axes.get_figure().colorbar(mesh, ax=axes, pad=0.02)
-    # The scale is named, not implied. A reader assuming linear when the ramp is
-    # logarithmic misjudges the ratio between two cells by an order of
-    # magnitude — the same class of error as an unstated bin width.
     suffix = "" if scale == "linear" else f" ({scale} scale)"
     bar.set_label(f"observations per cell{suffix}", fontsize=tokens.TYPE["tick"])
     bar.ax.tick_params(labelsize=tokens.TYPE["note"])
     bar.outline.set_visible(False)
-
-    # Empty cells are left unpainted (mincnt=1) rather than drawn as the lowest
-    # colour, so "no data here" and "a little data here" stay distinguishable.
-    if any(a.kind == "regression_line" for a in spec.annotations) and xs.size > 1:
-        slope, intercept = np.polyfit(xs, ys, 1)
-        line_x = np.linspace(xs.min(), xs.max(), 100)
-        axes.plot(line_x, slope * line_x + intercept, color=look.ink["emphasis"],
-                  linewidth=1.4, linestyle="--", label="_nolegend_")
-
 
 def _scatter(spec, data: VisualData, axes, look: Look) -> None:
     xs = np.asarray(data.x_values, dtype=float)
@@ -472,26 +449,39 @@ def _forest(spec, data: VisualData, axes, look: Look) -> None:
 
 
 def _box(spec, data: VisualData, axes, look: Look) -> None:
-    categories = data.categories or sorted(set(data.group_values))
-    grouped = [
-        [v for v, g in zip(data.y_values, data.group_values) if g == name]
-        for name in categories
+    summaries = list(data.series)
+    if not summaries:
+        raise RenderError("Prepared box summaries are missing.")
+    stats = [
+        {
+            "label": str(item["group"]),
+            "med": float(item["median"]),
+            "q1": float(item["q1"]),
+            "q3": float(item["q3"]),
+            "whislo": float(item["low"]),
+            "whishi": float(item["high"]),
+            "fliers": [],
+        }
+        for item in summaries
     ]
-    parts = axes.boxplot(grouped, tick_labels=[str(c) for c in categories],
-                         patch_artist=True, widths=0.55,
-                         medianprops={"color": look.ink["ink"], "linewidth": 1.4},
-                         whiskerprops={"color": look.ink["muted"]},
-                         capprops={"color": look.ink["muted"]},
-                         flierprops={"markeredgecolor": look.ink["muted"]})
+    parts = axes.bxp(
+        stats, patch_artist=True, widths=0.55, showfliers=False,
+        medianprops={"color": look.ink["ink"], "linewidth": 1.4},
+        whiskerprops={"color": look.ink["muted"]},
+        capprops={"color": look.ink["muted"]},
+    )
     for index, box in enumerate(parts["boxes"]):
         box.set_facecolor(look.hue(index))
         box.set_alpha(0.35)
         box.set_edgecolor(look.ink["muted"])
-    # Individual points, jittered, so the reader sees the sample not just the box.
-    rng = np.random.default_rng(0)
-    for index, values in enumerate(grouped, start=1):
+
+    # Raw drawn observations remain visible where the sample is small enough,
+    # but they do not determine the box geometry here; prepare.py already did.
+    for index, name in enumerate([str(item["group"]) for item in summaries], start=1):
+        values = [v for v, g in zip(data.y_values, data.group_values) if str(g) == name]
         if not values or len(values) > 400:
             continue
+        rng = np.random.default_rng(index)
         jitter = rng.normal(0, 0.045, len(values))
         axes.scatter(np.full(len(values), index) + jitter, values, s=8, alpha=0.35,
                      color=look.ink["ink"], linewidths=0)
@@ -517,10 +507,16 @@ def _bar(spec, data: VisualData, axes, look: Look) -> None:
 
 
 def _histogram(spec, data: VisualData, axes, look: Look) -> None:
-    axes.hist(data.y_values, bins="auto", color=look.hue(0), alpha=0.8,
-              edgecolor=look.ink["edge"], linewidth=0.5)
-    if spec.y is not None and spec.y.include_zero:
-        axes.set_ylim(bottom=0)
+    bins = list(data.series)
+    if not bins:
+        raise RenderError("Prepared histogram bins are missing.")
+    left = np.asarray([float(item["left"]) for item in bins], dtype=float)
+    right = np.asarray([float(item["right"]) for item in bins], dtype=float)
+    count = np.asarray([float(item["count"]) for item in bins], dtype=float)
+    axes.bar(left, count, width=right - left, align="edge",
+             color=look.hue(0), alpha=0.8,
+             edgecolor=look.ink["edge"], linewidth=0.5)
+    axes.set_ylim(bottom=0)
 
 
 def _heatmap(spec, data: VisualData, axes, look: Look) -> None:
@@ -562,11 +558,16 @@ def _decorate(spec: ResearchVisualSpec, data: VisualData, axes, look: Look) -> N
         axes.set_title(title, loc="left")
 
 
-def _caption(spec: ResearchVisualSpec, figure, look: Look) -> None:
-    """The caption and sources, under the whole figure."""
-    if spec.caption:
-        #  — the caption travels with the figure, not in a separate document.
-        figure.text(0.0, -0.06, _wrap(spec.caption), fontsize=tokens.TYPE["caption"],
+def _caption(spec: ResearchVisualSpec, data: VisualData, figure, look: Look) -> None:
+    """The caption, sampling/data note and sources, under the whole figure."""
+    caption = spec.caption.strip()
+    if data.note:
+        caption = (caption + " " + data.note.strip()).strip()
+    if caption:
+        # The caveat travels with the exported figure. A sampling disclosure
+        # that exists only in the app disappears at exactly the moment the
+        # picture becomes easiest to misread.
+        figure.text(0.0, -0.06, _wrap(caption), fontsize=tokens.TYPE["caption"],
                     color=look.ink["muted"], ha="left", va="top", wrap=True)
     if spec.citations:
         figure.text(1.0, -0.06, "Sources: " + "; ".join(spec.citations[:3]),
