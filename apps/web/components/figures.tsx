@@ -116,9 +116,22 @@ export function axisFields(
  * would be the figure that goes into the paper.
  */
 export function axisLabel(
-  field: string, labels: Record<string, string>, encoding?: { label?: string },
+  field: string,
+  labels: Record<string, string>,
+  encoding?: { label?: string; unit?: string },
 ): string {
-  return labels[field] ?? (encoding?.label || field);
+  const base = labels[field] ?? (encoding?.label || field);
+  const unit = encoding?.unit?.trim();
+  if (!unit) return base;
+
+  // The backend spec is the source of truth for the unit. A project-approved
+  // label may replace the wording but not erase the measurement unit.
+  // Avoid doubling a label that already includes it.
+  const lowered = base.trim().toLowerCase();
+  const suffixes = [` (${unit.toLowerCase()})`, ` [${unit.toLowerCase()}]`];
+  return suffixes.some((suffix) => lowered.endsWith(suffix))
+    ? base
+    : `${base} (${unit})`;
 }
 
 /**
