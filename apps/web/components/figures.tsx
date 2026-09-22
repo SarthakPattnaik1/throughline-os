@@ -861,7 +861,12 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
               points.data?.count_scale === "linear" ? "linear"
               : points.data?.count_scale === "sqrt" ? "sqrt" : "log"
             }
-            sampleSize={points.data?.sample_size ?? data.length}
+            sampleSize={
+              points.data?.sampling?.rows_drawn
+              ?? points.data?.sample_size
+              ?? data.length
+            }
+            sampled={Boolean(points.data?.sampling?.sampled)}
             title={recommendation.spec?.title}
             caption={recommendation.caption}
           />
