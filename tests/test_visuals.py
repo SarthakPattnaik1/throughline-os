@@ -419,6 +419,27 @@ def test_an_edit_that_changes_the_data_requires_a_new_analysis(analysed):
     assert "new AnalysisSpec" in str(exc.value)
 
 
+def test_a_visual_type_edit_requires_recomputation(analysed):
+    project_id, _, runs = analysed
+    with connection() as conn, conn.cursor() as cur:
+        run = analysis.get_run(cur, runs["correlation"])
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=runs["correlation"]
+        )
+        sample = _sample_for(cur, run, ["consumption_ddd", "resistance_pct"])
+        created = visuals.create_visual(
+            cur, project_id=project_id,
+            spec=recommendation["spec"], actor="test",
+            sample=sample, recommendation=recommendation,
+        )
+        with pytest.raises(visuals.EditRequiresRecomputation) as exc:
+            visuals.apply_edit(
+                cur, visual_id=created["visual_id"], actor="test",
+                changes={"visual_type": "histogram"},
+            )
+    assert "visual_type" in str(exc.value)
+
+
 def test_a_figure_failing_the_critic_cannot_be_rendered(analysed):
     """§76 — an unfixed blocking problem must stop publication."""
     project_id, _, runs = analysed
