@@ -273,6 +273,40 @@ def test_a_missing_confidence_interval_is_added():
     assert report.spec.uncertainty is not UncertaintyDisplay.NONE
 
 
+def test_scalar_interval_is_kept_textual_not_turned_into_an_error_bar():
+    spec = ResearchVisualSpec(
+        visual_type=VisualType.SCATTER, analysis_run_id="arun_test",
+        x=Encoding(field="x"), y=Encoding(field="y"),
+        title="Association",
+        caption="r = 0.6; 95% CI [0.4, 0.75]. Association does not establish causation.",
+    )
+    data = VisualData(x_values=[1.0, 2.0, 3.0], y_values=[2.0, 3.0, 5.0],
+                      sample_size=3)
+    report = visual_critic.critique(
+        spec, data,
+        analysis={"ci_low": 0.4, "ci_high": 0.75, "confidence_level": 0.95},
+    )
+    uncertainty = next(c for c in report.critiques
+                       if c.check == "uncertainty_representation")
+    assert uncertainty.outcome == "passed"
+    assert report.spec.uncertainty is UncertaintyDisplay.NONE
+
+
+def test_missing_scalar_interval_is_added_to_caption_not_to_marks():
+    spec = ResearchVisualSpec(
+        visual_type=VisualType.SCATTER, analysis_run_id="arun_test",
+        x=Encoding(field="x"), y=Encoding(field="y"),
+        caption="Association only.",
+    )
+    data = VisualData(x_values=[1.0, 2.0], y_values=[2.0, 4.0], sample_size=2)
+    report = visual_critic.critique(
+        spec, data,
+        analysis={"ci_low": 0.2, "ci_high": 0.8, "confidence_level": 0.95},
+    )
+    assert report.spec.uncertainty is UncertaintyDisplay.NONE
+    assert "95% CI [0.2, 0.8]" in report.spec.caption
+
+
 def test_sample_size_is_added_to_the_caption():
     spec = _bar_spec(y=Encoding(field="value", include_zero=True))
     data = VisualData(categories=["a"], y_values=[1.0], sample_size=137)
