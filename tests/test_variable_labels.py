@@ -247,6 +247,39 @@ def test_machine_style_unit_suffix_is_removed_before_rendering(labelled):
     assert entry.described() == "flipper length (mm)"
 
 
+
+
+def test_profiled_unit_aliases_are_removed_before_rendering(labelled):
+    """Stored display units may differ from the raw suffix the profiler recognized."""
+    project_id, version_id, _ = labelled
+    cases = [
+        ("response_pct", "%", "response"),
+        ("duration_mins", "min", "duration"),
+        ("dose_ug", "µg", "dose"),
+    ]
+    with connection() as conn, conn.cursor() as cur:
+        for name, unit, _ in cases:
+            cur.execute(
+                "UPDATE dataset_columns SET name = %s, original_name = %s, unit = %s "
+                "WHERE dataset_version_id = %s AND name = %s",
+                (name, name, unit, version_id, COUNTRY_HEADER),
+            )
+            book = visuals.variable_labels(
+                cur, project_id=project_id, dataset_version_id=version_id
+            )
+            expected = next(label for raw, _, label in cases if raw == name)
+            entry = book.get(name)
+            assert entry.label == expected
+            assert entry.unit == unit
+
+            # Restore the fixture row for the next alias.
+            cur.execute(
+                "UPDATE dataset_columns SET name = %s, original_name = %s, unit = NULL "
+                "WHERE dataset_version_id = %s AND name = %s",
+                (COUNTRY_HEADER, COUNTRY_HEADER, version_id, name),
+            )
+
+
 def test_a_suggested_mapping_is_not_a_mapping(labelled):
     """§21 — a suggestion must not relabel a figure before anyone approves it."""
     project_id, version_id, _ = labelled
