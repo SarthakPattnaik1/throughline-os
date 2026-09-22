@@ -611,10 +611,6 @@ function Workspace({ user }: { user: SignedInUser }) {
         crumbs={crumbs}
         onDropFiles={upload}
         onCommand={() => setPaletteOpen(true)}
-        bar={
-          <OneBar commands={commands} onVerb={runVerb} size="compact"
-                  placeholder="Ask for anything…" />
-        }
         projectMenu={
           <ProjectMenu
             projects={projects.data}
@@ -681,40 +677,6 @@ function Workspace({ user }: { user: SignedInUser }) {
 
         {section === "overview" && (
           <>
-            {/*
-              The front door (T189). Overview is where the workspace lands, so
-              the first thing on it is one box — the shape a person already
-              knows from every other product they use — with the project's own
-              next step as the first chip beside it. Everything below stays:
-              this is an additional way in, not a replacement for the screen.
-            */}
-            <div className="asklanding">
-              <h1 className="asklanding-greet">What do you want to do?</h1>
-              <p className="asklanding-sub">
-                Type it, or press one of these. Everything in {project.name} is
-                reachable from here.
-              </p>
-              <OneBar
-                commands={commands}
-                onVerb={runVerb}
-                size="home"
-                suggestions={[
-                  // The loop's own answer to "what next", first and filled.
-                  ...(target?.label
-                    ? [{ label: target.label.replace(/\s*→\s*$/, ""),
-                         run: takeStep, primary: true }]
-                    : []),
-                  { label: "Add data", run: () => runVerb(
-                      { section: "sources", view: "library", act: "upload" }, "") },
-                  { label: "Find papers", run: () => runVerb(
-                      { section: "sources", view: "papers" }, "") },
-                  { label: "Test every pair", run: () => runVerb(
-                      { section: "discover" }, "") },
-                  { label: "Draft a report", run: () => runVerb(
-                      { section: "reports" }, "") },
-                ]}
-              />
-            </div>
             <Overview project={project} map={map.data} onGo={goSection}
                       onOpen={(kind, id) => open(kind, id)} onAddSources={upload}
                       onLineage={() => go({ section: "graph", item: null },
@@ -790,7 +752,13 @@ function Workspace({ user }: { user: SignedInUser }) {
                 )}
                 {view === "papers" && (
                   <>
-                    <Literature projectId={project.id} />
+                    {/* The topic the bar carried in — "find papers about
+                        soil" arrives with the box filled (T195). `key` so a
+                        second ask re-seeds it, the way `DataSearch` does; the
+                        prop existed since T189 and nothing ever passed it, so
+                        every bar-driven paper search landed on an empty box. */}
+                    <Literature projectId={project.id} initialQuery={dataQuery}
+                                key={dataQuery ?? ""} />
                     {/*
                       Beneath search, not instead of it. Searching four databases
                       and harvesting one repository are different acts — one asks
@@ -1134,6 +1102,37 @@ function Workspace({ user }: { user: SignedInUser }) {
           </>
         )}
       </Shell>
+
+      {/*
+        * The bar, always there (T195).
+        *
+        * Outside `Shell` because it is fixed to the window, not to the
+        * scrolling column — inside, it would scroll away with the content it
+        * is meant to stay in front of. One bar, one position, on every screen,
+        * which is the whole point: a researcher never has to find it.
+        */}
+      <div className="askdock">
+        <OneBar
+          commands={commands}
+          onVerb={runVerb}
+          size="dock"
+          historyKey={project.id}
+          placeholder="Ask for anything — “find papers about soil”, “what’s next”, “add data”"
+          suggestions={[
+            ...(target?.label
+              ? [{ label: target.label.replace(/\s*→\s*$/, ""),
+                   run: takeStep, primary: true }]
+              : []),
+            { label: "Add data", run: () => runVerb(
+                { section: "sources", view: "library", act: "upload" }, "") },
+            { label: "Find papers", run: () => runVerb(
+                { section: "sources", view: "papers" }, "") },
+            { label: "Test every pair", run: () => runVerb(
+                { section: "discover" }, "") },
+            { label: "Draft a report", run: () => runVerb({ section: "reports" }, "") },
+          ]}
+        />
+      </div>
 
       <CommandPalette
         open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands}

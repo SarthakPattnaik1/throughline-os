@@ -8162,24 +8162,106 @@ input.onebar-input::placeholder { color: var(--ink-faint); }
   color: var(--ink-soft);
 }
 
-/* The landing: one box, centred, and nothing competing with it. */
-.asklanding { max-width: 720px; margin: 0 auto; padding: 8px 0 26px; }
-.asklanding-greet {
-  text-align: center;
-  margin: 0 0 16px;
-  font-size: 22px;
-  font-weight: 560;
-  color: var(--ink-strong);
-  letter-spacing: -0.01em;
-}
-.asklanding-sub {
-  text-align: center;
-  margin: -10px 0 18px;
-  font-size: 13.5px;
-  color: var(--ink-soft);
-}
-
 @media (max-width: 720px) {
   .verbsheet-group li { grid-template-columns: 1fr; gap: 0; }
   .onebar-home .onebar-field { font-size: 15px; }
+}
+
+/* ---------------------------------------------------------------------------
+   The dock (T195)
+
+   The bar, always there, at the foot of every screen — the shape people
+   already know from every assistant they use. A thin line at rest; focusing it
+   opens what is worth doing now and where you have been, upward, over the
+   screen rather than pushing it about.
+   --------------------------------------------------------------------------- */
+.askdock {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+  /* A wash rather than a hard edge, so content scrolling under it fades out
+     instead of being cut off mid-row. */
+  background: linear-gradient(to top,
+    var(--paper) 42%, color-mix(in srgb, var(--paper) 72%, transparent) 76%, transparent);
+}
+.askdock > * { pointer-events: auto; }
+.askdock .onebar { width: 100%; max-width: 760px; }
+
+/* The dock's own field: a pill, and a visible key hint. */
+.onebar-dock .onebar-field {
+  padding: 10px 14px;
+  font-size: 14.5px;
+  border-radius: 999px;
+  border-color: var(--line-strong);
+  box-shadow: 0 6px 20px -10px rgb(0 0 0 / 0.30);
+}
+.onebar-dock .onebar-mark { font-size: 16px; }
+
+/* Offers open upward: the box is at the foot of the screen. */
+.onebar-dock .onebar-offers {
+  top: auto;
+  bottom: 100%;
+  margin: 0 0 8px;
+  border-radius: 14px;
+}
+
+/* The empty state: chips and the trail, above the box. */
+.onebar-start {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 100%;
+  margin-bottom: 8px;
+  padding: 14px 16px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 30px -14px rgb(0 0 0 / 0.30);
+  max-height: 64vh;
+  overflow-y: auto;
+}
+.onebar-start-block { margin-bottom: 12px; }
+.onebar-start h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+.onebar-start .onebar-chips { margin-top: 0; justify-content: flex-start; }
+.onebar-start .onebar-help-open { margin: 0; }
+
+.onebar-trail { margin: 0; padding: 0; list-style: none; }
+.onebar-trail li { margin: 0; }
+.onebar-trail-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 5px 8px;
+  margin-left: -8px;
+  border-radius: 7px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.onebar-trail-item:hover { background: var(--hover); color: var(--ink-strong); }
+/* A small mark, so a trail reads as a path rather than as more chips. */
+.onebar-trail-item::before { content: "↩ "; color: var(--ink-faint); }
+
+/* The workspace keeps clear of the dock, so the last row of a table is not
+   sitting underneath it. The scrolling column is `.workspace`; 60px of its own
+   bottom padding was already there, and the dock needs about 90. */
+.workspace { padding-bottom: 96px; }
+
+@media (max-width: 720px) {
+  .askdock { padding-left: 10px; padding-right: 10px; }
+  .onebar-dock .onebar-field { font-size: 14px; }
 }
