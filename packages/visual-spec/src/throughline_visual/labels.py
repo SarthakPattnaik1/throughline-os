@@ -58,10 +58,26 @@ def strip_trailing_unit(header: str, unit: str | None) -> str:
     if not unit:
         return text
     suffix = str(unit).strip().lower()
+    lowered = text.lower()
     for opener, closer in (("(", ")"), ("[", "]")):
         candidate = f"{opener}{suffix}{closer}"
-        if text.lower().endswith(candidate):
+        if lowered.endswith(candidate):
             return text[: -len(candidate)].strip() or text
+
+    # A profiler-inferred unit can come from a machine-style suffix such as
+    # `flipper_length_mm`, `height-cm`, or `duration mins`. Once the unit
+    # is stored separately on the encoding, leaving that suffix in the label
+    # makes the renderer print it twice: "flipper length mm (mm)".
+    #
+    # Only strip an exact, already-known unit after a separator. We do not infer
+    # a unit here, and we deliberately do not strip arbitrary trailing letters.
+    # That keeps ambiguous names such as `count_c` untouched unless the
+    # profiler has independently established that "c" is a unit.
+    for separator in ("_", "-", " "):
+        candidate = f"{separator}{suffix}"
+        if lowered.endswith(candidate):
+            cleaned = text[: -len(candidate)].rstrip("_- ").strip()
+            return cleaned or text
     return text
 
 
