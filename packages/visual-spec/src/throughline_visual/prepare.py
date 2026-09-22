@@ -267,7 +267,13 @@ def _hexbin(spec, result, sample, statistics) -> VisualData:
         }
         for (column, row), count in sorted(counts.items())
     ]
-    return scatter.model_copy(update={"series": cells})
+    note = scatter.note
+    if note:
+        note = (
+            "Cells summarize a bounded complete-case sample of the analysis "
+            "population; inferential statistics come from the full analysis run."
+        )
+    return scatter.model_copy(update={"series": cells, "note": note})
 
 
 def _forest(spec, result, statistics) -> VisualData:
