@@ -293,7 +293,8 @@ def test_a_suggested_mapping_is_not_a_mapping(labelled):
         book = visuals.variable_labels(cur, project_id=project_id,
                                        dataset_version_id=version_id)
     entry = book.get(RESISTANCE_HEADER)
-    assert entry.label == "resistance pct"
+    assert entry.label == "resistance"
+    assert entry.unit == "%"
     assert entry.source == labels_module.COLUMN_NAME
 
 
