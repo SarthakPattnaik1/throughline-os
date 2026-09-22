@@ -114,20 +114,31 @@ def variable_labels(cur, *, project_id: str, dataset_version_id: str) -> LabelBo
         unit = column_unit or (canonical_unit if not transformed else "")
 
         if canonical_label:
-            label, source = canonical_label, labels_module.CANONICAL
+            # A project label may itself include the unit. The encoding carries
+            # that unit separately, so keep it once rather than trusting every
+            # renderer to notice and de-duplicate it.
+            label = labels_module.strip_trailing_unit(canonical_label, unit)
+            source = labels_module.CANONICAL
         elif header and header != row["name"]:
-            # The header the researcher typed. Not curated, but written by a
-            # person for people, which the normalised key never was.
+            # The header the researcher typed. Strip only a unit the *column*
+            # profiler read from that header. A canonical unit supplied later
+            # was not declared by the header and must not rewrite its wording.
             label = labels_module.humanise(
-                labels_module.strip_trailing_unit(header, unit))
+                labels_module.strip_trailing_unit(header, column_unit))
             source = labels_module.DATASET_HEADER
         else:
-            # Machine-style column names can carry an inferred unit suffix
-            # (for example `flipper_length_mm`). The unit already travels
-            # separately on the encoding, so remove only that exact known
-            # suffix before humanising or the axis becomes
-            # "flipper length mm (mm)".
-            bare_name = labels_module.strip_trailing_unit(row["name"], unit)
+            # Here the header and storage key are the same machine-style name.
+            # If the profiler found a unit, its own closed vocabulary has
+            # already proved the last token is a unit declaration. Remove that
+            # token rather than comparing spellings: aliases such as _pct -> %
+            # and _mins -> min deliberately store a different display unit.
+            bare_name = row["name"]
+            if column_unit:
+                exact = labels_module.strip_trailing_unit(bare_name, column_unit)
+                bare_name = (
+                    exact if exact != bare_name
+                    else labels_module.strip_profiled_unit_suffix(bare_name)
+                )
             label, source = labels_module.humanise(bare_name), labels_module.COLUMN_NAME
 
         entry = {"label": label, "unit": unit or None, "source": source}
