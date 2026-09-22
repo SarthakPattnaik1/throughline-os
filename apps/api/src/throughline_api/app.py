@@ -4972,6 +4972,12 @@ def analysis_points(run_id: str, user: dict = Depends(current_user)) -> dict[str
             "grid_x": data.x_values if spec.visual_type is VisualType.SURFACE else [],
             "grid_y": data.y_values if spec.visual_type is VisualType.SURFACE else [],
             "observations": data.series if spec.visual_type is VisualType.SURFACE else [],
+            # Non-Cartesian prepared values. These are computed once by the
+            # visual preparation layer so React, web-spec, and publication
+            # renderers all draw the same summaries instead of recomputing.
+            "series": data.series if spec.visual_type is not VisualType.SURFACE else [],
+            "categories": data.categories,
+            "matrix": data.matrix if spec.visual_type is not VisualType.SURFACE else [],
         }
 
 
