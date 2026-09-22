@@ -18,11 +18,18 @@ Frozen acceptance criteria for this internal dry run:
    declarative filters are outside replay receipt v1.
 6. A refusal is a pass only when it happens for the predeclared contract reason.
 
-This is an internal executable dry run, not the external second-person audit.
+Audit gates:
+- Gate A: this internal executable dry run. It may be run by the author or CI.
+- Gate B: a separate second-person audit performed from a clean checkout under
+  tests/fixtures/pilot_01/AUDIT_PROTOCOL.md.
+
+Passing Gate A never satisfies Gate B. Pilot 01 is frozen only after both gates
+pass against the same commit and the exact source bytes pinned below.
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 import subprocess
@@ -50,6 +57,13 @@ from throughline_workers.runner import Worker
 
 DATA = Path(__file__).parent / "fixtures" / "pilot_01" / "penguins.csv"
 
+# Audit gate: these identify the exact source bytes, not merely a filename or
+# an upstream repository that could change. If the fixture changes for any
+# reason, Pilot 01 is no longer the same frozen evaluation and both audit gates
+# must be rerun deliberately.
+DATA_SHA256 = "f204db2c753b0937caac3cb35258562c14f073e4bbc76be24b4c51ce22767a93"
+DATA_BYTES = 15_241
+
 # Frozen independently from Throughline using the public CSV itself.
 # These are not generated from a Throughline run, so agreement cannot pass
 # merely because two Throughline surfaces share the same wrong value.
@@ -60,6 +74,25 @@ EXPECTED_CI_LOW = 0.8430410511899511
 EXPECTED_CI_HIGH = 0.8945989840406315
 
 
+def _frozen_source_bytes() -> bytes:
+    payload = DATA.read_bytes()
+    actual = hashlib.sha256(payload).hexdigest()
+    assert len(payload) == DATA_BYTES, (
+        f"Pilot 01 source CSV byte length changed: {len(payload)} != {DATA_BYTES}. "
+        "This is a different evaluation input; do not update the pin silently."
+    )
+    assert actual == DATA_SHA256, (
+        f"Pilot 01 source CSV SHA-256 changed: {actual} != {DATA_SHA256}. "
+        "This is a different evaluation input; do not update the pin silently."
+    )
+    return payload
+
+
+def test_source_csv_is_exactly_the_frozen_input():
+    """Gate A fails immediately if the Pilot 01 source bytes drift."""
+    _frozen_source_bytes()
+
+
 def _drain() -> None:
     while Worker(worker_id="pilot-01").run_once():
         pass
@@ -67,6 +100,7 @@ def _drain() -> None:
 
 @pytest.fixture()
 def penguins_project():
+    payload = _frozen_source_bytes()
     user_id, project_id = new_id("usr"), new_id("prj")
     with connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -87,9 +121,10 @@ def penguins_project():
             cur,
             project_id=project_id,
             filename="penguins.csv",
-            stream=io.BytesIO(DATA.read_bytes()),
+            stream=io.BytesIO(payload),
             media_type="text/csv",
         )
+        assert str(record["content_hash"]) == DATA_SHA256
         source_id = objects.create_source(
             cur,
             project_id=project_id,
@@ -196,7 +231,7 @@ def test_supported_run_replays_under_the_frozen_contract(
     run = _run(run_id)
 
     assert run["status"] == "completed", run["error"]
-    assert run["input_hashes"]["dataset_content_hash"]
+    assert run["input_hashes"]["dataset_content_hash"] == DATA_SHA256
     assert run["input_hashes"]["spec_content_hash"]
     assert run["dependency_versions"]["pandas"]
     assert run["dependency_versions"]["scipy"]
@@ -212,6 +247,7 @@ def test_supported_run_replays_under_the_frozen_contract(
     assert (
         receipt["inputs"]["dataset_content_hash"]
         == run["input_hashes"]["dataset_content_hash"]
+        == DATA_SHA256
     )
 
     printed = _execute_exported_script(script, tmp_path)
