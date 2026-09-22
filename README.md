@@ -7,6 +7,8 @@
 
 **Papers → datasets → analysis → validation → findings → reports, with the chain of evidence intact.**
 
+**An open-source research system of record for AI-assisted science: source → data → exact computation → validation → finding.**
+
 <br />
 
 [![CI](https://github.com/SarthakPattnaik1/throughline-os/actions/workflows/ci.yml/badge.svg)](https://github.com/SarthakPattnaik1/throughline-os/actions/workflows/ci.yml)
@@ -28,15 +30,15 @@
 
 Research increasingly happens across papers, datasets, notebooks, AI chats, figures, and draft documents. The result is often a conclusion that is hard to audit: **which source supported it, which data produced it, which computation generated it, and what happened when the result was challenged?**
 
-Throughline is built to keep that chain visible.
+Throughline is built to keep that chain visible as a durable research record — not just to help someone find evidence or run code, but to preserve what source and data were used, what computation actually ran, what validation followed, what finding was recorded, and how the result can later be audited.
 
 > **AI can help read and reason. It does not get to silently invent the analysis.**
 
 Numerical results come from recorded scientific computation. Findings remain connected to sources, dataset versions, analyses, validation runs, figures, and reports.
 
-| **Traceable** | **Reproducible** | **Local-first** |
+| **Traceable** | **Replay-aware** | **Local-first** |
 |---|---|---|
-| Follow a finding back to the evidence and computation that produced it. | Analyses are recorded and can be challenged, rerun, and inspected. | Core workflows run on your machine. Hosted AI is optional and explicit. |
+| Follow a finding back to the evidence and computation that produced it. | Replay support is explicit: eligible runs carry a defined contract, and unsupported runs are refused rather than mislabeled as reproducible. | Core workflows run on your machine. Hosted AI is optional and explicit. |
 
 ---
 
@@ -70,6 +72,16 @@ A strong first demo is:
 
 > [!IMPORTANT]
 > **Throughline is an early research release.** It is not medical or clinical decision software. Review statistical conclusions independently, and use synthetic or non-sensitive data when evaluating a new installation.
+
+### Replayability is explicit
+
+Running a statistical method and faithfully replaying a particular recorded run are different capabilities. Throughline records that distinction instead of treating every completed analysis as reproducible by default.
+
+For a run inside the current replay contract, Throughline can bind the recorded dataset and analysis specification by hash, record the execution environment, export a companion reproduction script, and issue a portable replay receipt containing the expected headline outputs and comparison rules. If the current contract cannot faithfully represent the run, Throughline refuses to label it replayable.
+
+The current explicit replay scope is deliberately narrow: eligible Pearson and Spearman correlation runs. Filters, unsupported input representations, unresolved column-name translation, missing input hashes, and other out-of-contract cases are refused rather than approximated. The source of truth lives in `packages/research-domain/src/throughline_domain/replay_capability.py`.
+
+**Run-level replay is not the same claim as independent scientific replication of a finding.** Assumption checks, multiple-comparison decisions, findings, data availability, and independent replication remain separate questions.
 
 ---
 
@@ -133,7 +145,7 @@ This project benefits most from people trying to break its assumptions.
 - Can you identify a research object that should be connected but is not?
 - Can you make the local-first/security boundary fail?
 
-If you care about reproducible AI-assisted research, **try it, open an issue, or contribute a test case.**
+If you care about auditable, reproducible AI-assisted research, **try it, open an issue, or contribute a test case.**
 
 <div align="center">
 
@@ -209,6 +221,7 @@ A model may assist with reading or interpretation. It does **not** replace the r
 | **Validation** | Re-run results under resampling, outlier, missingness, sensitivity, and selected confounder checks. |
 | **Pre-registration** | Record planned analyses and compare the executed analysis with the registered plan. |
 | **Provenance & lineage** | Keep sources, analyses, findings, artifacts, forks, and derivations traceable. |
+| **Replayability** | Explicitly classify replay support, export faithful reproduction code where supported, and issue replay receipts that bind inputs, execution context, expected outputs, and comparison criteria. |
 | **Communication** | Build provenance-aware figures, reports, and exports from recorded evidence. |
 | **Visualization** | 2D and spatial/3D visualization primitives with explicit accounting for hidden or lossy representation. |
 | **Imaging comparison** | Comparability-first handling for supported imaging workflows rather than naive similarity ranking. |
@@ -315,9 +328,15 @@ Language models may help interpret, classify, locate, compare, or explain. **The
 
 A failed request, missing provider, skipped test, absent citation, unavailable check, or infrastructure failure is represented as missing verification—not quietly promoted into success.
 
+## Replayability is a contract, not a label
+
+Throughline does not infer replay support merely because a method can run. Replay-supported runs must satisfy an explicit eligibility contract and have a faithful executable path. Runs outside that boundary are refused rather than replayed approximately.
+
+The replay receipt records what the replay claim actually covers: the immutable run/spec/data identity, execution context, expected headline values, and comparison tolerances. It deliberately does not claim that the entire scientific finding has been independently replicated.
+
 ## Refusal is a valid research outcome
 
-When evidence is incompatible or insufficient, the system is designed to say so rather than manufacture certainty.
+When evidence is incompatible or insufficient — including when a run cannot be replayed faithfully under the current contract — the system is designed to say so rather than manufacture certainty.
 
 ## Local-first includes recovery
 
