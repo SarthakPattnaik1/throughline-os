@@ -25,7 +25,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { Empty, Failure, Loading } from "./primitives";
-import { SourceChip, SourceMark } from "./SourceMark";
+import { SearchingSources, SourceChip, SourceMark } from "./SourceMark";
 import { PaperReader } from "./literature/PaperReader";
 import type { Excerpt, PaperSource } from "@/lib/literature/excerpt";
 
@@ -330,8 +330,10 @@ export function Literature({ projectId, initialQuery }: {
         * connector changes both, or neither.
         */}
       <p className="lede">
-        Searches {capabilities ? `all ${capabilities.length}` : "every"} source
-        below at once. Records that appear in more than one are merged — and
+        {/* "all 10 source" — the count was made structural and the noun was
+            left singular beside it (T196). */}
+        Searches {capabilities ? `all ${capabilities.length} sources` : "every source"}
+        {" "}below at once. Records that appear in more than one are merged — and
         where the databases disagree, every version is kept rather than quietly
         resolved.
       </p>
@@ -374,7 +376,12 @@ export function Literature({ projectId, initialQuery }: {
       )}
 
       {error ? <Failure error={error} /> : null}
-      {busy && <Loading rows={4} label="Asking four databases" />}
+      {/* Named, not counted, and counted from the list rather than from a
+          literal: this said "Asking four databases" while asking ten (T196). */}
+      {busy && (
+        <SearchingSources names={(capabilities ?? []).map((c) => c.name)}
+                          kind="databases" />
+      )}
 
       {results && (
         <>

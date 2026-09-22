@@ -36,7 +36,7 @@ import { useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { plainText } from "@/lib/plain-text";
 import { Empty, Failure, Loading } from "./primitives";
-import { SourceChip, SourceMark } from "./SourceMark";
+import { SearchingSources, SourceChip, SourceMark } from "./SourceMark";
 
 type Usability = {
   usable: boolean;
@@ -236,19 +236,15 @@ export function DataSearch({ projectId, onImported, initialQuery }: {
       {error ? <Failure error={error} /> : null}
       {busy && (
         /*
-         * Counted from the list the chips above are built from, not written
-         * in the sentence. "Asking four repositories" was true when it was
-         * written and is one connector away from being false — which is
-         * exactly how the Find papers header came to say it searched four
-         * sources while searching ten, and why that count was made structural
-         * rather than corrected. The same repair, before the same rot.
-         *
-         * Without the list — the request for it can fail — the sentence drops
-         * the number rather than guessing one.
+         * The shared panel (T196): every repository named while it is being
+         * waited on, and the count taken from the list rather than written in
+         * a sentence. The literal this replaced was right when written and
+         * one connector from being wrong — which is exactly how Find papers
+         * came to say it asked four databases while asking ten.
          */
-        <Loading rows={4} label={repositories
-          ? `Asking ${repositories.length} repositories`
-          : "Asking the dataset repositories"} />
+        <SearchingSources names={(repositories ?? []).map((r) => r.name)}
+                          kind="repositories"
+                          whenUnknown="the dataset repositories" />
       )}
 
       {results && (
