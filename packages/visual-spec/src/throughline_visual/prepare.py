@@ -38,6 +38,8 @@ def prepare(
 
     if spec.visual_type is VisualType.SCATTER:
         return _scatter(spec, result, sample, statistics)
+    if spec.visual_type is VisualType.HEXBIN:
+        return _hexbin(spec, result, sample, statistics)
     if spec.visual_type is VisualType.FOREST:
         return _forest(spec, result, statistics)
     if spec.visual_type is VisualType.BOX:
@@ -228,6 +230,43 @@ def _scatter(spec, result, sample, statistics) -> VisualData:
         note=("Points shown are a bounded complete-case sample; all statistics "
               "come from the full analysis run." if len(xs) < full_n else ""),
     )
+
+
+def _hexbin(spec, result, sample, statistics) -> VisualData:
+    """Prepare the cell counts once so every renderer draws the same bins."""
+    scatter = _scatter(spec, result, sample, statistics)
+    xs = [float(v) for v in scatter.x_values]
+    ys = [float(v) for v in scatter.y_values]
+    if not xs or not ys:
+        raise PreparationError("A binned figure needs complete numeric pairs.")
+
+    bins = int(spec.bin_count or 30)
+    x_low, x_high = min(xs), max(xs)
+    y_low, y_high = min(ys), max(ys)
+    x_step = (x_high - x_low) / bins or 1.0
+    y_step = (y_high - y_low) / bins or 1.0
+
+    counts: dict[tuple[int, int], int] = {}
+    for x, y in zip(xs, ys):
+        row = min(max(int((y - y_low) / y_step), 0), bins - 1)
+        shift = 0.5 if str(spec.bin_shape) == "hex" and row % 2 else 0.0
+        column = min(
+            max(int((x - x_low) / x_step - shift), 0), bins - 1
+        )
+        counts[(column, row)] = counts.get((column, row), 0) + 1
+
+    offset = 0.5 if str(spec.bin_shape) == "hex" else 0.0
+    cells = [
+        {
+            "x": x_low + (column + 0.5 + (offset if row % 2 else 0.0)) * x_step,
+            "y": y_low + (row + 0.5) * y_step,
+            "count": int(count),
+            "x_step": float(x_step),
+            "y_step": float(y_step),
+        }
+        for (column, row), count in sorted(counts.items())
+    ]
+    return scatter.model_copy(update={"series": cells})
 
 
 def _forest(spec, result, statistics) -> VisualData:
