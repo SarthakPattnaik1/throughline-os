@@ -4975,6 +4975,10 @@ def analysis_points(run_id: str, user: dict = Depends(current_user)) -> dict[str
             "grid_x": data.x_values if spec.visual_type is VisualType.SURFACE else [],
             "grid_y": data.y_values if spec.visual_type is VisualType.SURFACE else [],
             "observations": data.series if spec.visual_type is VisualType.SURFACE else [],
+            "surface_outcome": (
+                ((row["result"] or {}).get("extra") or {}).get("outcome")
+                if spec.visual_type is VisualType.SURFACE else None
+            ),
         }
 
 
