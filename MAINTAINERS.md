@@ -30,5 +30,15 @@ Changes that also alter project-wide architecture, public API contracts, securit
 privacy boundaries, persistence schemas, release policy, or other maintainer-owned areas
 require the relevant additional review.
 
+### Role boundaries
+
+This maintainer role grants technical ownership within the scope above. It does not by
+itself grant ownership of the Throughline project, equity, employment, company authority,
+administrative control of the repository, access to secrets, or decision authority outside
+the maintainer's documented area.
+
+Repository access should follow least privilege. Changes to `main` should go through pull
+requests, required CI, and independent review under the repository ruleset.
+
 The operational review paths are recorded in `.github/CODEOWNERS`. As the area grows,
 those paths should be updated so code ownership continues to match actual responsibility.
