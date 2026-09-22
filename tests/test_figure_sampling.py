@@ -262,3 +262,26 @@ def test_binned_density_aggregates_every_complete_filtered_pair(tmp_path):
     assert sample["__binned_rows__"] == 6_998
     assert sum(int(cell["count"]) for cell in sample["__binned_cells__"]) == 6_998
     assert 1 <= len(sample["__binned_cells__"]) <= 30 * 30
+
+
+
+def test_numeric_complete_cases_are_selected_before_sampling(tmp_path):
+    from throughline_api.app import _sample_columns
+
+    path = tmp_path / "complete-cases.csv"
+    pd.DataFrame({
+        "x": ["1", "2", "", "bad", "5", "6"],
+        "y": ["2", "", "4", "5", "10", "12"],
+        "group": ["a", "a", "b", "b", "c", "c"],
+    }).to_csv(path, index=False)
+
+    sample, account = _sample_columns(
+        path, ".csv", ["x", "y", "group"], 500,
+        numeric_fields=["x", "y"],
+    )
+
+    assert account["rows_total"] == 3
+    assert account["rows_drawn"] == 3
+    assert sample["x"] == [1.0, 5.0, 6.0]
+    assert sample["y"] == [2.0, 10.0, 12.0]
+    assert sample["group"] == ["a", "c", "c"]
