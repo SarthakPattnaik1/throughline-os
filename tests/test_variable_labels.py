@@ -223,6 +223,30 @@ def test_a_column_with_nothing_better_uses_its_own_name(labelled):
     assert entry.source == labels_module.COLUMN_NAME
 
 
+
+
+def test_machine_style_unit_suffix_is_removed_before_rendering(labelled):
+    """A known unit must appear once, not once in the label and again in parentheses."""
+    project_id, version_id, _ = labelled
+    with connection() as conn, conn.cursor() as cur:
+        # Model the Palmer Penguins shape directly in the profiled schema:
+        # the profiler recognizes _mm and stores mm separately.
+        cur.execute(
+            "UPDATE dataset_columns SET name = %s, original_name = %s, unit = %s "
+            "WHERE dataset_version_id = %s AND name = %s",
+            ("flipper_length_mm", "flipper_length_mm", "mm",
+             version_id, COUNTRY_HEADER),
+        )
+        book = visuals.variable_labels(
+            cur, project_id=project_id, dataset_version_id=version_id
+        )
+
+    entry = book.get("flipper_length_mm")
+    assert entry.label == "flipper length"
+    assert entry.unit == "mm"
+    assert entry.described() == "flipper length (mm)"
+
+
 def test_a_suggested_mapping_is_not_a_mapping(labelled):
     """§21 — a suggestion must not relabel a figure before anyone approves it."""
     project_id, version_id, _ = labelled
@@ -383,6 +407,17 @@ def test_labels_may_be_handed_in_as_plain_dictionaries():
     assert picked["spec"].x.label == "Antibiotic consumption"
     assert picked["spec"].x.unit == "DDD"
     assert picked["spec"].y.label == "Resistance"
+
+
+
+
+def test_strip_trailing_unit_handles_machine_style_suffixes_without_guessing():
+    assert labels_module.strip_trailing_unit("flipper_length_mm", "mm") == "flipper_length"
+    assert labels_module.strip_trailing_unit("height-cm", "cm") == "height"
+    assert labels_module.strip_trailing_unit("duration mins", "mins") == "duration"
+
+    # No unit means no stripping. The label layer never invents semantics.
+    assert labels_module.strip_trailing_unit("count_c", None) == "count_c"
 
 
 def test_an_entry_with_no_label_does_not_claim_to_be_canonical():
