@@ -277,7 +277,7 @@ def render(
             layout="constrained" if height_px is not None else None)
         try:
             draw_panel(spec, data, axes, look)
-            _caption(spec, figure, look)
+            _caption(spec, data, figure, look)
             figure.savefig(path, **saving)
         finally:
             plt.close(figure)
@@ -353,55 +353,58 @@ def _draw(spec: ResearchVisualSpec, data: VisualData, axes, look: Look) -> None:
 
 
 def _hexbin(spec, data: VisualData, axes, look: Look) -> None:
-    """Density by cell, for sample sizes where marks would overplot.
+    """Draw the prepared cell counts; never bin observations in a renderer."""
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import Normalize
+    from matplotlib.patches import Rectangle, RegularPolygon
 
-    Hexagons rather than squares: a square grid produces horizontal and vertical
-    banding that reads as structure in the data, and every point in a hexagon is
-    closer to its centre than in a square of equal area, so the count in a cell
-    is a fairer summary of the neighbourhood.
+    cells = list(data.series)
+    if not cells:
+        raise RenderError("A binned figure needs prepared cells.")
 
-    A sequential, perceptually uniform colour map, because the encoded quantity
-    is a count — ordered, single-ended, with a meaningful zero. Diverging would
-    invent a midpoint that does not exist.
-    """
-    xs = np.asarray(data.x_values, dtype=float)
-    ys = np.asarray(data.y_values, dtype=float)
-    if xs.size == 0:
-        raise RenderError("A binned figure needs observations to bin.")
-
-    bins = spec.bin_count or 30
+    counts = np.asarray([float(cell["count"]) for cell in cells], dtype=float)
+    maximum = max(1.0, float(counts.max()))
     scale = str(spec.count_scale)
-
-    if spec.bin_shape is BinShape.SQUARE:
-        norm = (LogNorm() if scale == "log"
-                else PowerNorm(0.5) if scale == "sqrt" else None)
-        counts, _, _, mesh = axes.hist2d(xs, ys, bins=bins, cmap=tokens.SEQUENTIAL,
-                                         norm=norm, cmin=1)
+    if scale == "log":
+        norm = LogNorm(vmin=max(1.0, float(counts.min())), vmax=maximum)
+    elif scale == "sqrt":
+        norm = PowerNorm(0.5, vmin=0.0, vmax=maximum)
     else:
-        # matplotlib's own log binning for hexagons; sqrt via PowerNorm.
-        mesh = axes.hexbin(
-            xs, ys, gridsize=bins, cmap=tokens.SEQUENTIAL, mincnt=1,
-            linewidths=0.2, edgecolors=look.ink["edge"],
-            bins="log" if scale == "log" else None,
-            norm=PowerNorm(0.5) if scale == "sqrt" else None,
-        )
+        norm = Normalize(vmin=0.0, vmax=maximum)
+    cmap = plt.get_cmap(tokens.SEQUENTIAL)
 
-    bar = axes.get_figure().colorbar(mesh, ax=axes, pad=0.02)
-    # The scale is named, not implied. A reader assuming linear when the ramp is
-    # logarithmic misjudges the ratio between two cells by an order of
-    # magnitude — the same class of error as an unstated bin width.
+    for cell in cells:
+        x, y = float(cell["x"]), float(cell["y"])
+        x_step, y_step = float(cell.get("x_step", 1.0)), float(cell.get("y_step", 1.0))
+        face = cmap(norm(float(cell["count"])))
+        if spec.bin_shape is BinShape.SQUARE:
+            patch = Rectangle(
+                (x - x_step / 2, y - y_step / 2), x_step, y_step,
+                facecolor=face, edgecolor=look.ink["edge"], linewidth=0.25,
+            )
+        else:
+            patch = RegularPolygon(
+                (x, y), numVertices=6, radius=min(x_step, y_step) * 0.58,
+                orientation=np.radians(30), facecolor=face,
+                edgecolor=look.ink["edge"], linewidth=0.25,
+            )
+        axes.add_patch(patch)
+
+    x_step = float(cells[0].get("x_step", 1.0))
+    y_step = float(cells[0].get("y_step", 1.0))
+    axes.set_xlim(min(float(c["x"]) for c in cells) - x_step,
+                  max(float(c["x"]) for c in cells) + x_step)
+    axes.set_ylim(min(float(c["y"]) for c in cells) - y_step,
+                  max(float(c["y"]) for c in cells) + y_step)
+
+    mapper = ScalarMappable(norm=norm, cmap=cmap)
+    mapper.set_array(counts)
+    bar = axes.get_figure().colorbar(mapper, ax=axes, pad=0.02)
     suffix = "" if scale == "linear" else f" ({scale} scale)"
-    bar.set_label(f"observations per cell{suffix}", fontsize=tokens.TYPE["tick"])
+    population = "sampled observations" if data.note else "observations"
+    bar.set_label(f"{population} per cell{suffix}", fontsize=tokens.TYPE["tick"])
     bar.ax.tick_params(labelsize=tokens.TYPE["note"])
     bar.outline.set_visible(False)
-
-    # Empty cells are left unpainted (mincnt=1) rather than drawn as the lowest
-    # colour, so "no data here" and "a little data here" stay distinguishable.
-    if any(a.kind == "regression_line" for a in spec.annotations) and xs.size > 1:
-        slope, intercept = np.polyfit(xs, ys, 1)
-        line_x = np.linspace(xs.min(), xs.max(), 100)
-        axes.plot(line_x, slope * line_x + intercept, color=look.ink["emphasis"],
-                  linewidth=1.4, linestyle="--", label="_nolegend_")
 
 
 def _scatter(spec, data: VisualData, axes, look: Look) -> None:
@@ -421,7 +424,14 @@ def _scatter(spec, data: VisualData, axes, look: Look) -> None:
                      edgecolors=look.edge(look.hue(0)), linewidths=0.4)
 
     if any(a.kind == "regression_line" for a in spec.annotations) and len(xs) > 1:
-        slope, intercept = np.polyfit(xs, ys, 1)
+        slope = data.statistics.get("fit_slope")
+        intercept = data.statistics.get("fit_intercept")
+        if slope is None or intercept is None:
+            raise RenderError(
+                "This figure asks for a fitted regression line, but the recorded "
+                "analysis did not supply the coefficients needed to draw it."
+            )
+        slope, intercept = float(slope), float(intercept)
         line_x = np.linspace(xs.min(), xs.max(), 100)
         axes.plot(line_x, slope * line_x + intercept, color=look.ink["ink"],
                   linewidth=1.2, linestyle="--",
@@ -465,29 +475,36 @@ def _forest(spec, data: VisualData, axes, look: Look) -> None:
 
 
 def _box(spec, data: VisualData, axes, look: Look) -> None:
-    categories = data.categories or sorted(set(data.group_values))
-    grouped = [
-        [v for v, g in zip(data.y_values, data.group_values) if g == name]
-        for name in categories
-    ]
-    parts = axes.boxplot(grouped, tick_labels=[str(c) for c in categories],
-                         patch_artist=True, widths=0.55,
-                         medianprops={"color": look.ink["ink"], "linewidth": 1.4},
-                         whiskerprops={"color": look.ink["muted"]},
-                         capprops={"color": look.ink["muted"]},
-                         flierprops={"markeredgecolor": look.ink["muted"]})
-    for index, box in enumerate(parts["boxes"]):
-        box.set_facecolor(look.hue(index))
-        box.set_alpha(0.35)
-        box.set_edgecolor(look.ink["muted"])
-    # Individual points, jittered, so the reader sees the sample not just the box.
-    rng = np.random.default_rng(0)
-    for index, values in enumerate(grouped, start=1):
-        if not values or len(values) > 400:
-            continue
-        jitter = rng.normal(0, 0.045, len(values))
-        axes.scatter(np.full(len(values), index) + jitter, values, s=8, alpha=0.35,
-                     color=look.ink["ink"], linewidths=0)
+    summaries = list(data.series)
+    if not summaries:
+        raise RenderError("A box figure needs prepared group summaries.")
+
+    positions = np.arange(1, len(summaries) + 1)
+    for index, (position, summary) in enumerate(zip(positions, summaries)):
+        q1, median, q3 = (float(summary["q1"]), float(summary["median"]),
+                          float(summary["q3"]))
+        low, high = float(summary["whisker_low"]), float(summary["whisker_high"])
+        width = 0.55
+        axes.add_patch(__import__("matplotlib").patches.Rectangle(
+            (position - width / 2, q1), width, q3 - q1,
+            facecolor=look.hue(index), alpha=0.35,
+            edgecolor=look.ink["muted"], linewidth=1,
+        ))
+        axes.plot([position - width / 2, position + width / 2], [median, median],
+                  color=look.ink["ink"], linewidth=1.4)
+        axes.plot([position, position], [low, q1], color=look.ink["muted"], linewidth=1)
+        axes.plot([position, position], [q3, high], color=look.ink["muted"], linewidth=1)
+        axes.plot([position - 0.12, position + 0.12], [low, low],
+                  color=look.ink["muted"], linewidth=1)
+        axes.plot([position - 0.12, position + 0.12], [high, high],
+                  color=look.ink["muted"], linewidth=1)
+        outliers = [float(v) for v in summary.get("outliers", [])]
+        if outliers:
+            axes.scatter(np.full(len(outliers), position), outliers, s=10,
+                         facecolors="none", edgecolors=look.ink["muted"], linewidths=0.8)
+
+    axes.set_xticks(positions)
+    axes.set_xticklabels([str(summary["group"]) for summary in summaries])
 
 
 def _bar(spec, data: VisualData, axes, look: Look) -> None:
@@ -510,10 +527,16 @@ def _bar(spec, data: VisualData, axes, look: Look) -> None:
 
 
 def _histogram(spec, data: VisualData, axes, look: Look) -> None:
-    axes.hist(data.y_values, bins="auto", color=look.hue(0), alpha=0.8,
-              edgecolor=look.ink["edge"], linewidth=0.5)
-    if spec.y is not None and spec.y.include_zero:
-        axes.set_ylim(bottom=0)
+    bins = list(data.series)
+    if not bins:
+        raise RenderError("A histogram needs prepared bins.")
+    left = np.asarray([float(item["left"]) for item in bins], dtype=float)
+    right = np.asarray([float(item["right"]) for item in bins], dtype=float)
+    count = np.asarray([float(item["count"]) for item in bins], dtype=float)
+    axes.bar(left, count, width=right - left, align="edge",
+             color=look.hue(0), alpha=0.8,
+             edgecolor=look.ink["edge"], linewidth=0.5)
+    axes.set_ylim(bottom=0)
 
 
 def _heatmap(spec, data: VisualData, axes, look: Look) -> None:
@@ -555,11 +578,15 @@ def _decorate(spec: ResearchVisualSpec, data: VisualData, axes, look: Look) -> N
         axes.set_title(title, loc="left")
 
 
-def _caption(spec: ResearchVisualSpec, figure, look: Look) -> None:
-    """The caption and sources, under the whole figure."""
-    if spec.caption:
-        #  — the caption travels with the figure, not in a separate document.
-        figure.text(0.0, -0.06, _wrap(spec.caption), fontsize=tokens.TYPE["caption"],
+def _caption(spec: ResearchVisualSpec, data: VisualData, figure, look: Look) -> None:
+    """The caption, preparation caveat, and sources under the whole figure."""
+    parts = [text for text in (spec.caption, data.note) if text]
+    if parts:
+        # The preparation note is part of the exported research claim. In
+        # particular, a bounded sample disclosure must not disappear when a
+        # figure leaves the browser.
+        figure.text(0.0, -0.06, _wrap(" ".join(parts)),
+                    fontsize=tokens.TYPE["caption"],
                     color=look.ink["muted"], ha="left", va="top", wrap=True)
     if spec.citations:
         figure.text(1.0, -0.06, "Sources: " + "; ".join(spec.citations[:3]),

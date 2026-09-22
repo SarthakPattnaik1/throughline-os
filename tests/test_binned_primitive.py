@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from throughline_visual.critic import DEFAULT_BIN_COUNT, critique
+from throughline_visual.prepare import prepare
 from throughline_visual.recommend import OVERPLOTTING_THRESHOLD
 from throughline_visual.renderers.publication import render
 from throughline_visual.spec import (
@@ -35,6 +36,18 @@ def _spec(**overrides) -> ResearchVisualSpec:
     )
     base.update(overrides)
     return ResearchVisualSpec(**base)
+
+
+def _prepared(spec: ResearchVisualSpec, n: int) -> VisualData:
+    raw = _cloud(n)
+    return prepare(
+        spec,
+        analysis_result={"sample_size": n},
+        sample={
+            spec.x.field: raw.x_values,
+            spec.y.field: raw.y_values,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -137,8 +150,9 @@ def test_the_binned_caption_states_the_binning():
 
 
 def test_a_binned_figure_renders_to_vector(tmp_path):
-    written = render(_spec(title="Resistance against consumption"),
-                     _cloud(20_000), path=tmp_path / "figure.svg", fmt="svg")
+    spec = _spec(title="Resistance against consumption")
+    written = render(spec, _prepared(spec, 20_000),
+                     path=tmp_path / "figure.svg", fmt="svg")
     body = written.read_text(encoding="utf-8", errors="replace")
     assert "<svg" in body[:400]
     # The colour bar has to be there: without it the shading encodes nothing a
@@ -154,7 +168,8 @@ def test_the_colour_bar_names_a_non_linear_scale(tmp_path):
     by orders of magnitude on a logarithmic one. The picture is identical; only
     the label distinguishes them.
     """
-    written = render(_spec(count_scale=CountScale.LOG), _cloud(20_000),
+    spec = _spec(count_scale=CountScale.LOG)
+    written = render(spec, _prepared(spec, 20_000),
                      path=tmp_path / "log.svg", fmt="svg")
     assert "log scale" in written.read_text(encoding="utf-8", errors="replace")
 
@@ -168,7 +183,8 @@ def test_a_linear_scale_is_not_labelled_as_a_transform(tmp_path):
     value was "linear" — which is true, tells you nothing about the figure, and
     was named as though it verified the label.
     """
-    written = render(_spec(count_scale=CountScale.LINEAR), _cloud(8_000),
+    spec = _spec(count_scale=CountScale.LINEAR)
+    written = render(spec, _prepared(spec, 8_000),
                      path=tmp_path / "linear.svg", fmt="svg")
     body = written.read_text(encoding="utf-8", errors="replace")
     assert "observations per cell" in body
@@ -192,7 +208,7 @@ def test_the_cells_are_counted_server_side():
     from throughline_api.app import _binned_cells
 
     spec = _spec(bin_count=10)
-    data = _cloud(5_000)
+    data = _prepared(spec, 5_000)
     cells = _binned_cells(spec, data)
 
     assert cells, "a binned recommendation must produce cells"
@@ -212,9 +228,10 @@ def test_the_two_cell_shapes_bin_differently():
     """A hexagonal lattice offsets alternate rows; a square one does not."""
     from throughline_api.app import _binned_cells
 
-    data = _cloud(5_000)
-    hexes = _binned_cells(_spec(bin_shape=BinShape.HEX, bin_count=12), data)
-    squares = _binned_cells(_spec(bin_shape=BinShape.SQUARE, bin_count=12), data)
+    hex_spec = _spec(bin_shape=BinShape.HEX, bin_count=12)
+    square_spec = _spec(bin_shape=BinShape.SQUARE, bin_count=12)
+    hexes = _binned_cells(hex_spec, _prepared(hex_spec, 5_000))
+    squares = _binned_cells(square_spec, _prepared(square_spec, 5_000))
 
     assert sum(c["count"] for c in hexes) == sum(c["count"] for c in squares)
     # The offset means the two lattices cannot land on identical centres.
@@ -224,7 +241,8 @@ def test_the_two_cell_shapes_bin_differently():
 def test_both_cell_shapes_render(tmp_path):
     """One primitive, two arguments — the catalogue says so, so both must work."""
     for shape in (BinShape.HEX, BinShape.SQUARE):
-        written = render(_spec(bin_shape=shape), _cloud(8_000),
+        spec = _spec(bin_shape=shape)
+        written = render(spec, _prepared(spec, 8_000),
                          path=tmp_path / f"{shape}.svg", fmt="svg")
         body = written.read_text(encoding="utf-8", errors="replace")
         assert "<svg" in body[:400], shape

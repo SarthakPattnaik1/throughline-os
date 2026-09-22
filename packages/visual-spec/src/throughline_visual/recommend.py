@@ -60,6 +60,8 @@ def recommend(
         "spearman_correlation": _correlation,
         "bootstrap_correlation": _correlation,
         "linear_regression": _regression,
+        "logistic_regression": _logistic_regression,
+        "mixed_model": _mixed_model,
         "t_test": _group_comparison,
         "mann_whitney": _group_comparison,
         "anova": _group_comparison,
@@ -80,19 +82,43 @@ def recommend(
     return recommendation
 
 
+def _statistic_label(name: str | None) -> str:
+    """Reader-facing notation for stored statistic identifiers."""
+    key = (name or "").strip().lower()
+    if key == "pearson_r":
+        return "r"
+    if key in {"spearman_rho", "spearman_r"}:
+        return "ρ"
+    if key.startswith("kendall"):
+        return "τ"
+    return key.replace("_", " ") or "effect"
+
+
 def _significance_note(result: dict[str, Any]) -> str:
-    """A caption fragment that keeps 's separations intact."""
+    """A caption fragment that keeps stored numbers but not internal identifiers."""
     parts: list[str] = []
     if result.get("p_value") is not None:
         parts.append(f"p = {result['p_value']:.3g}")
     effect = result.get("effect_size") or {}
     if effect.get("value") is not None:
-        parts.append(f"{effect.get('name', 'effect')} = {effect['value']:.3g}")
+        parts.append(
+            f"{_statistic_label(effect.get('name'))} = {effect['value']:.3g}"
+        )
     if result.get("sample_size"):
         parts.append(f"n = {result['sample_size']}")
     if result.get("evidence_quality"):
         parts.append(f"evidence: {result['evidence_quality']}")
     return "; ".join(parts)
+
+
+def _correlation_interval_note(result: dict[str, Any]) -> str:
+    """The run-level interval for r/ρ, stated in text rather than drawn as a y-band."""
+    low, high = result.get("ci_low"), result.get("ci_high")
+    if low is None or high is None:
+        return ""
+    level = float(result.get("confidence_level") or 0.95)
+    percentage = round(level * 100)
+    return f"{percentage}% CI [{float(low):.3g}, {float(high):.3g}]"
 
 
 #: Sample size beyond which one mark per observation stops being readable.
@@ -103,6 +129,20 @@ def _significance_note(result: dict[str, Any]) -> str:
 #: tell fifty points from five thousand. Below it a scatter is strictly better,
 #: because it shows every observation; above it the scatter is showing ink.
 OVERPLOTTING_THRESHOLD = 5_000
+
+def _estimate_interval_note(result: dict[str, Any]) -> str:
+    """The recorded headline estimate and its interval, in reader-facing notation."""
+    estimate = result.get("estimate")
+    if estimate is None:
+        return "estimate not recorded"
+    name = _statistic_label(result.get("estimate_name"))
+    text = f"{name} = {float(estimate):.3g}"
+    low, high = result.get("ci_low"), result.get("ci_high")
+    if low is not None and high is not None:
+        level = round(float(result.get("confidence_level") or 0.95) * 100)
+        text += f"; {level}% CI [{float(low):.3g}, {float(high):.3g}]"
+    return text
+
 
 
 def _correlation(run_id, version_id, variables, result, audience,
@@ -120,13 +160,17 @@ def _correlation(run_id, version_id, variables, result, audience,
         analysis_run_id=run_id, dataset_version_id=version_id,
         x=book.encoding(x_name),
         y=book.encoding(y_name),
-        uncertainty=UncertaintyDisplay.BAND if has_ci else UncertaintyDisplay.NONE,
-        annotations=[Annotation(kind="regression_line",
-                                text="least-squares fit, shown for orientation only")],
+        # A confidence interval for r/ρ is an interval on the statistic, not a
+        # y-axis band around a fitted line. Correlation does not fit a regression
+        # model, so drawing a line or residual band would add an analysis that
+        # was never recorded. The interval is stated in the caption instead.
+        uncertainty=UncertaintyDisplay.NONE,
+        annotations=[],
         title=f"{book.label(y_name)} against {book.label(x_name)}",
         #  — the caption must not imply causation from a correlation.
         caption=(f"Association between {book.described(x_name)} and "
-                 f"{book.described(y_name)}. {_significance_note(result)}. "
+                 f"{book.described(y_name)}. {_significance_note(result)}"
+                 f"{'; ' + _correlation_interval_note(result) if has_ci else ''}. "
                  "Association does not establish causation."),
         interaction=["hover", "brush", "underlying_table"],
     )
@@ -161,17 +205,17 @@ def _binned_correlation(run_id, version_id, x_name, y_name, result,
         x=book.encoding(x_name),
         y=book.encoding(y_name),
         bin_count=bins,
-        annotations=[Annotation(kind="regression_line",
-                                text="least-squares fit, shown for orientation only")],
+        annotations=[],
         title=f"{book.label(y_name)} against {book.label(x_name)}",
         caption=(f"Association between {book.described(x_name)} and "
-                 f"{book.described(y_name)} across "
-                 f"{sample_size:,} observations, binned into {bins} hexagonal "
-                 f"cells per axis; shade shows how many observations fall in "
-                 f"each cell, on a logarithmic scale — binned counts are "
-                 f"heavy-tailed, and a linear ramp would collapse everything "
-                 f"outside the densest cells into one shade. "
-                 f"{_significance_note(result)}. "
+                 f"{book.described(y_name)} across an analysis of "
+                 f"{sample_size:,} observations. A bounded uniform sample is "
+                 f"binned into {bins} hexagonal cells per axis; shade shows how "
+                 f"many sampled observations fall in each cell, on a logarithmic "
+                 f"scale — binned counts are heavy-tailed, and a linear ramp "
+                 f"would collapse everything outside the densest cells into one shade. "
+                 f"{_significance_note(result)}"
+                 f"{'; ' + _correlation_interval_note(result) if result.get('ci_low') is not None else ''}. "
                  f"Association does not establish causation."),
         interaction=["hover", "brush", "underlying_table"],
     )
@@ -243,11 +287,16 @@ def _regression(run_id, version_id, variables, result, audience,
             analysis_run_id=run_id, dataset_version_id=version_id,
             x=book.encoding(predictors[0]),
             y=book.encoding(outcome),
-            uncertainty=UncertaintyDisplay.BAND,
-            annotations=[Annotation(kind="regression_line", text="fitted line with interval")],
+            # The coefficient interval is an interval on the slope, not a
+            # vertical band around the fitted line. Draw the recorded fit and
+            # state its interval in text rather than inventing a prediction band.
+            uncertainty=UncertaintyDisplay.NONE,
+            annotations=[Annotation(kind="regression_line",
+                                    text="fitted line from recorded coefficients")],
             title=f"{book.label(outcome)} against {book.label(predictors[0])}",
             caption=(f"Simple linear regression of {book.described(outcome)} on "
-                     f"{book.described(predictors[0])}. {_significance_note(result)}. "
+                     f"{book.described(predictors[0])}. "
+                     f"{_estimate_interval_note(result)}; {_significance_note(result)}. "
                      "Association does not establish causation."),
         )
         reason = ("A single predictor is best shown as a scatter plot with the fitted "
@@ -257,6 +306,85 @@ def _regression(run_id, version_id, variables, result, audience,
 
     return {"visual_type": spec.visual_type, "reason": reason, "spec": spec,
             "interpretation": result.get("interpretation", ""), "alternatives": alternatives}
+
+
+def _logistic_regression(run_id, version_id, variables, result, audience,
+                         book=_NO_LABELS) -> dict[str, Any]:
+    predictors = list(variables.get("predictors") or [])
+    outcome = variables["outcome"]
+    if not predictors:
+        raise RecommendationError("logistic regression named no predictors to plot")
+
+    spec = ResearchVisualSpec(
+        visual_type=VisualType.FOREST,
+        analysis_run_id=run_id,
+        dataset_version_id=version_id,
+        x=Encoding(field="odds_ratio", label="odds ratio (95% CI)"),
+        y=Encoding(field="predictor", label="predictor"),
+        category_labels=book.category_labels(predictors),
+        uncertainty=UncertaintyDisplay.CONFIDENCE_INTERVAL,
+        annotations=[Annotation(
+            kind="reference_line", value=1.0,
+            orientation="vertical", text="no association"
+        )],
+        title=f"Adjusted odds ratios for {book.label(outcome)}",
+        caption=(
+            f"Odds ratios from a logistic regression of {book.described(outcome)} "
+            f"on {book.joined(predictors)}. {_significance_note(result)}. "
+            "An odds ratio of 1 is compatible with no association. "
+            "Association does not establish causation."
+        ),
+    )
+    return {
+        "visual_type": VisualType.FOREST,
+        "reason": (
+            "A coefficient plot shows every adjusted odds ratio with its interval "
+            "against the no-association value of 1."
+        ),
+        "spec": spec,
+        "interpretation": result.get("interpretation", ""),
+        "alternatives": [],
+    }
+
+
+def _mixed_model(run_id, version_id, variables, result, audience,
+                 book=_NO_LABELS) -> dict[str, Any]:
+    predictors = list(variables.get("predictors") or [])
+    outcome = variables["outcome"]
+    if not predictors:
+        raise RecommendationError("mixed model named no predictors to plot")
+
+    spec = ResearchVisualSpec(
+        visual_type=VisualType.FOREST,
+        analysis_run_id=run_id,
+        dataset_version_id=version_id,
+        x=Encoding(field="estimate", label="coefficient (95% CI)", include_zero=True),
+        y=Encoding(field="predictor", label="predictor"),
+        category_labels=book.category_labels(predictors),
+        uncertainty=UncertaintyDisplay.CONFIDENCE_INTERVAL,
+        annotations=[Annotation(
+            kind="reference_line", value=0.0,
+            orientation="vertical", text="no association"
+        )],
+        title=f"Mixed-model associations with {book.label(outcome)}",
+        caption=(
+            f"Mixed-model coefficients for {book.described(outcome)} across "
+            f"{book.joined(predictors)}. {_significance_note(result)}. "
+            "Intervals crossing zero are compatible with no association. "
+            "Association does not establish causation."
+        ),
+    )
+    return {
+        "visual_type": VisualType.FOREST,
+        "reason": (
+            "A coefficient plot keeps the adjusted mixed-model estimates and "
+            "their uncertainty visible without flattening the grouping structure "
+            "into a raw scatter."
+        ),
+        "spec": spec,
+        "interpretation": result.get("interpretation", ""),
+        "alternatives": [],
+    }
 
 
 def _group_comparison(run_id, version_id, variables, result, audience,

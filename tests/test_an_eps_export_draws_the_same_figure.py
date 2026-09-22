@@ -25,21 +25,36 @@ from matplotlib.collections import PathCollection, PolyCollection
 from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 from throughline_visual.prepare import prepare
-from throughline_visual.recommend import recommend
 from throughline_visual.renderers import publication
+from throughline_visual.spec import (
+    Annotation, Encoding, ResearchVisualSpec, UncertaintyDisplay, VisualType,
+)
 
 
-def _default_correlation_figure():
+def _regression_figure():
     rng = np.random.default_rng(7)
     x = rng.normal(25, 6, 160)
     y = 0.85 * x + rng.normal(0, 2.5, 160)
-    result = {"method": "pearson_correlation", "sample_size": 160,
-              "estimate": 0.9, "estimate_name": "pearson_r", "p_value": 1e-9,
-              "ci_low": 0.86, "ci_high": 0.93, "extra": {}}
-    spec = recommend(analysis_run_id="arun_1", dataset_version_id="dsv_1",
-                     method="pearson_correlation",
-                     variables={"x": "consumption", "y": "resistance"},
-                     result=result)["spec"]
+    result = {
+        "method": "linear_regression",
+        "sample_size": 160,
+        "extra": {
+            "predictors": ["consumption"],
+            "coefficients": {
+                "const": {"estimate": 0.0},
+                "consumption": {"estimate": 0.85},
+            },
+        },
+    }
+    spec = ResearchVisualSpec(
+        visual_type=VisualType.SCATTER,
+        analysis_run_id="arun_1",
+        dataset_version_id="dsv_1",
+        x=Encoding(field="consumption", label="Consumption"),
+        y=Encoding(field="resistance", label="Resistance"),
+        annotations=[Annotation(kind="regression_line")],
+        uncertainty=UncertaintyDisplay.BAND,
+    )
     data = prepare(spec, analysis_result=result,
                    sample={"consumption": x.tolist(), "resistance": y.tolist()})
     return spec, data
@@ -56,7 +71,7 @@ def drawn(monkeypatch, tmp_path):
         return original(self, *args, **kwargs)
 
     monkeypatch.setattr(Figure, "savefig", keep)
-    spec, data = _default_correlation_figure()
+    spec, data = _regression_figure()
     publication.render(spec, data, path=tmp_path / "figure.eps", fmt="eps")
     axes = captured["figure"].axes[0]
     bands = [c for c in axes.collections if isinstance(c, PolyCollection)]
@@ -64,8 +79,8 @@ def drawn(monkeypatch, tmp_path):
     return spec, bands, points
 
 
-def test_the_default_correlation_figure_carries_a_band(drawn):
-    """The case is the ordinary one, not a corner: every correlation gets it."""
+def test_a_regression_figure_carries_a_band(drawn):
+    """The renderer keeps an explicitly requested regression band in EPS."""
     spec, bands, _ = drawn
     assert any(a.kind == "regression_line" for a in spec.annotations)
     assert len(bands) == 1

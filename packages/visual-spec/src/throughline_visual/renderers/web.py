@@ -31,6 +31,7 @@ def render(spec: ResearchVisualSpec, data: VisualData) -> dict[str, Any]:
         VisualType.BAR: _bar,
         VisualType.HISTOGRAM: _histogram,
         VisualType.HEATMAP: _heatmap,
+        VisualType.HEXBIN: _hexbin,
     }
     builder = builders.get(spec.visual_type)
     if builder is None:
@@ -50,6 +51,7 @@ def render(spec: ResearchVisualSpec, data: VisualData) -> dict[str, Any]:
         "citations": spec.citations,
         "statistics": data.statistics,
         "sample_size": data.sample_size,
+        "note": data.note,
         "interaction": spec.interaction,
     }
     return chart
@@ -161,8 +163,10 @@ def _make_interactive(chart: dict[str, Any], spec: ResearchVisualSpec,
         target["params"] = existing + params
 
     #  — an interactive chart still needs a described, tabular fallback.
-    chart["description"] = (
-        f"{spec.title}. {spec.caption}" if spec.caption else spec.title)
+    description = f"{spec.title}. {spec.caption}" if spec.caption else spec.title
+    if data.note:
+        description = (description + " " + data.note).strip()
+    chart["description"] = description
 
     return chart
 
@@ -183,6 +187,38 @@ def _category_label(spec, category) -> str:
     """
     text = str(category)
     return spec.category_labels.get(text) or text.replace("_", " ")
+
+
+def _hexbin(spec, data: VisualData) -> dict[str, Any]:
+    cells = list(data.series)
+    if not cells:
+        raise WebRenderError("A binned figure needs prepared cells.")
+    shape = "square" if str(spec.bin_shape) == "square" else "hexagon"
+    scale = str(spec.count_scale)
+    color_scale: dict[str, Any] = {"scheme": tokens.SEQUENTIAL}
+    if scale == "log":
+        color_scale["type"] = "log"
+    elif scale == "sqrt":
+        color_scale["type"] = "sqrt"
+    return {
+        "data": {"values": cells},
+        "mark": {"type": "point", "filled": True, "shape": shape, "size": 90},
+        "encoding": {
+            "x": {"field": "x", "type": "quantitative", "title": _label(spec.x)},
+            "y": {"field": "y", "type": "quantitative", "title": _label(spec.y)},
+            "color": {
+                "field": "count", "type": "quantitative",
+                "title": (
+                    "sampled observations per cell"
+                    if data.note else "observations per cell"
+                ),
+                "scale": color_scale,
+            },
+            "tooltip": [
+                {"field": "count", "type": "quantitative", "title": "observations"},
+            ],
+        },
+    }
 
 
 def _scatter(spec, data: VisualData) -> dict[str, Any]:
@@ -207,9 +243,22 @@ def _scatter(spec, data: VisualData) -> dict[str, Any]:
          "encoding": encoding}
     ]
     if any(a.kind == "regression_line" for a in spec.annotations):
+        slope = data.statistics.get("fit_slope")
+        intercept = data.statistics.get("fit_intercept")
+        if slope is None or intercept is None:
+            raise WebRenderError(
+                "This figure asks for a fitted regression line, but the recorded "
+                "analysis did not supply the coefficients needed to draw it."
+            )
+        xs = [float(v) for v in data.x_values]
+        low, high = min(xs), max(xs)
+        line = [
+            {"x": low, "y": float(intercept) + float(slope) * low},
+            {"x": high, "y": float(intercept) + float(slope) * high},
+        ]
         layers.append({
+            "data": {"values": line},
             "mark": {"type": "line", "color": tokens.INK["light"]["ink"], "strokeDash": [4, 3]},
-            "transform": [{"regression": "y", "on": "x"}],
             "encoding": {"x": {"field": "x", "type": "quantitative"},
                          "y": {"field": "y", "type": "quantitative"}},
         })
@@ -225,11 +274,16 @@ def _forest(spec, data: VisualData) -> dict[str, Any]:
         for name, estimate, low, high in zip(
             data.categories, data.y_values, data.ci_low, data.ci_high)
     ]
+    reference = next(
+        (float(a.value) for a in spec.annotations
+         if a.kind == "reference_line" and a.value is not None),
+        0.0,
+    )
     return {
         "data": {"values": rows},
         "layer": [
             {"mark": {"type": "rule", "color": tokens.INK["light"]["faint"], "strokeDash": [2, 2]},
-             "encoding": {"x": {"datum": 0}}},
+             "encoding": {"x": {"datum": reference}}},
             {"mark": {"type": "rule", "size": 1.5},
              "encoding": {"y": {"field": "predictor", "type": "nominal", "title": None},
                           "x": {"field": "low", "type": "quantitative",
@@ -243,17 +297,41 @@ def _forest(spec, data: VisualData) -> dict[str, Any]:
 
 
 def _box(spec, data: VisualData) -> dict[str, Any]:
-    rows = [{"group": g, "value": v}
-            for g, v in zip(data.group_values, data.y_values)]
+    summaries = list(data.series)
+    if not summaries:
+        raise WebRenderError("A box figure needs prepared group summaries.")
+    rows = [
+        {
+            "group": item["group"],
+            "q1": item["q1"], "median": item["median"], "q3": item["q3"],
+            "whisker_low": item["whisker_low"],
+            "whisker_high": item["whisker_high"],
+            "n": item["n"],
+        }
+        for item in summaries
+    ]
     return {
         "data": {"values": rows},
-        "mark": {"type": "boxplot", "extent": 1.5},
-        "encoding": {
-            "x": {"field": "group", "type": "nominal", "title": _label(spec.x)},
-            "y": {"field": "value", "type": "quantitative", "title": _label(spec.y),
-                  "scale": {"zero": bool(spec.y and spec.y.include_zero)}},
-            "color": {"field": "group", "type": "nominal", "legend": None},
-        },
+        "layer": [
+            {"mark": {"type": "rule"},
+             "encoding": {
+                 "x": {"field": "group", "type": "nominal", "title": _label(spec.x)},
+                 "y": {"field": "whisker_low", "type": "quantitative",
+                       "title": _label(spec.y)},
+                 "y2": {"field": "whisker_high"},
+             }},
+            {"mark": {"type": "bar", "size": 24},
+             "encoding": {
+                 "x": {"field": "group", "type": "nominal"},
+                 "y": {"field": "q1", "type": "quantitative"},
+                 "y2": {"field": "q3"},
+             }},
+            {"mark": {"type": "tick", "size": 24, "color": tokens.INK["light"]["ink"]},
+             "encoding": {
+                 "x": {"field": "group", "type": "nominal"},
+                 "y": {"field": "median", "type": "quantitative"},
+             }},
+        ],
     }
 
 
@@ -285,13 +363,17 @@ def _bar(spec, data: VisualData) -> dict[str, Any]:
 
 
 def _histogram(spec, data: VisualData) -> dict[str, Any]:
+    bins = list(data.series)
+    if not bins:
+        raise WebRenderError("A histogram needs prepared bins.")
     return {
-        "data": {"values": [{"value": v} for v in data.y_values]},
+        "data": {"values": bins},
         "mark": "bar",
         "encoding": {
-            "x": {"field": "value", "type": "quantitative", "bin": True,
+            "x": {"field": "left", "type": "quantitative",
                   "title": _label(spec.x)},
-            "y": {"aggregate": "count", "type": "quantitative", "title": "count",
+            "x2": {"field": "right"},
+            "y": {"field": "count", "type": "quantitative", "title": "count",
                   "scale": {"zero": True}},
         },
     }

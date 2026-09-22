@@ -58,10 +58,50 @@ def strip_trailing_unit(header: str, unit: str | None) -> str:
     if not unit:
         return text
     suffix = str(unit).strip().lower()
+    lowered = text.lower()
     for opener, closer in (("(", ")"), ("[", "]")):
         candidate = f"{opener}{suffix}{closer}"
-        if text.lower().endswith(candidate):
+        if lowered.endswith(candidate):
             return text[: -len(candidate)].strip() or text
+
+    # A profiler-inferred unit can come from a machine-style suffix such as
+    # `flipper_length_mm`, `height-cm`, or `duration mins`. Once the unit
+    # is stored separately on the encoding, leaving that suffix in the label
+    # makes the renderer print it twice: "flipper length mm (mm)".
+    #
+    # Only strip an exact, already-known unit after a separator. We do not infer
+    # a unit here, and we deliberately do not strip arbitrary trailing letters.
+    # That keeps ambiguous names such as `count_c` untouched unless the
+    # profiler has independently established that "c" is a unit.
+    for separator in ("_", "-", " "):
+        candidate = f"{separator}{suffix}"
+        if lowered.endswith(candidate):
+            cleaned = text[: -len(candidate)].rstrip("_- ").strip()
+            return cleaned or text
+    return text
+
+
+def strip_profiled_unit_suffix(name: str) -> str:
+    """Remove the final name token after the profiler already found a unit.
+
+    This function does *not* decide whether a suffix is a unit. Its caller must
+    already have a non-empty profiled column unit. That distinction matters
+    because the profiler normalises aliases: `response_pct` stores `%`,
+    `duration_mins` stores `min`, and `dose_ug` stores `µg`. Comparing
+    the stored unit text to the raw suffix would therefore leave the duplicate
+    token behind.
+
+    Removing the final token is safe only under that precondition: the
+    profiler's closed vocabulary has already established that the final token
+    is the unit declaration.
+    """
+    text = str(name).strip()
+    for separator in ("_", "-", " "):
+        if separator not in text:
+            continue
+        head, tail = text.rsplit(separator, 1)
+        if head.strip("_- ") and tail.strip():
+            return head.rstrip("_- ").strip()
     return text
 
 

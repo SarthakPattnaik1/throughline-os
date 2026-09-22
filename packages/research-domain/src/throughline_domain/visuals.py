@@ -24,7 +24,7 @@ from throughline_visual import prepare as visual_prepare
 from throughline_visual import recommend as visual_recommend
 from throughline_visual.labels import LabelBook
 from throughline_visual.renderers import publication, web
-from throughline_visual.spec import ResearchVisualSpec, VisualData
+from throughline_visual.spec import ResearchVisualSpec, VisualData, VisualType
 
 from throughline_schemas.words import plural
 from .analysis import get_run
@@ -50,12 +50,12 @@ class EditRequiresRecomputation(VisualError):
 #: Spec fields whose change alters *what is being shown*, not how it looks.
 #: Editing one of these means a different analysis, not a different drawing.
 _DATA_BEARING_FIELDS = {"x", "y", "group", "facet", "filters", "aggregation",
-                        "analysis_run_id", "dataset_version_id"}
+                        "analysis_run_id", "dataset_version_id", "visual_type"}
 
 #: Fields that only affect presentation and may be edited freely.
 _PRESENTATION_FIELDS = {"title", "subtitle", "caption", "citations", "theme",
                         "uncertainty", "annotations", "interaction",
-                        "animation_semantics", "visual_type", "category_labels"}
+                        "animation_semantics", "category_labels"}
 
 
 def spec_hash(spec: ResearchVisualSpec) -> str:
@@ -114,15 +114,32 @@ def variable_labels(cur, *, project_id: str, dataset_version_id: str) -> LabelBo
         unit = column_unit or (canonical_unit if not transformed else "")
 
         if canonical_label:
-            label, source = canonical_label, labels_module.CANONICAL
+            # A project label may itself include the unit. The encoding carries
+            # that unit separately, so keep it once rather than trusting every
+            # renderer to notice and de-duplicate it.
+            label = labels_module.strip_trailing_unit(canonical_label, unit)
+            source = labels_module.CANONICAL
         elif header and header != row["name"]:
-            # The header the researcher typed. Not curated, but written by a
-            # person for people, which the normalised key never was.
+            # The header the researcher typed. Strip only a unit the *column*
+            # profiler read from that header. A canonical unit supplied later
+            # was not declared by the header and must not rewrite its wording.
             label = labels_module.humanise(
-                labels_module.strip_trailing_unit(header, unit))
+                labels_module.strip_trailing_unit(header, column_unit))
             source = labels_module.DATASET_HEADER
         else:
-            label, source = labels_module.humanise(row["name"]), labels_module.COLUMN_NAME
+            # Here the header and storage key are the same machine-style name.
+            # If the profiler found a unit, its own closed vocabulary has
+            # already proved the last token is a unit declaration. Remove that
+            # token rather than comparing spellings: aliases such as _pct -> %
+            # and _mins -> min deliberately store a different display unit.
+            bare_name = row["name"]
+            if column_unit:
+                exact = labels_module.strip_trailing_unit(bare_name, column_unit)
+                bare_name = (
+                    exact if exact != bare_name
+                    else labels_module.strip_profiled_unit_suffix(bare_name)
+                )
+            label, source = labels_module.humanise(bare_name), labels_module.COLUMN_NAME
 
         entry = {"label": label, "unit": unit or None, "source": source}
         entries[row["name"]] = entry
@@ -152,12 +169,98 @@ def recommend_for_run(
         variable_labels(cur, project_id=run["project_id"], dataset_version_id=version_id)
         if version_id else LabelBook()
     )
-    return visual_recommend.recommend(
+    recommendation = visual_recommend.recommend(
         analysis_run_id=analysis_run_id, method=run["method"],
         variables=run["variables"], result=run["result"] or {},
         dataset_version_id=version_id,
         goal=goal, audience=audience, labels=book,
     )
+    # The figure is of the recorded run, not merely the same method/variables.
+    # Filters are data-bearing provenance: omitting them lets a filtered
+    # statistic sit over unfiltered points and makes the visual spec unable to
+    # state which population it represents.
+    recommendation["spec"] = recommendation["spec"].model_copy(
+        update={"filters": list(run.get("filters") or [])}
+    )
+    return recommendation
+
+
+def _validate_visual_binding(run: dict[str, Any], spec: ResearchVisualSpec) -> None:
+    """A visual may restyle a run, never change which analysis it represents."""
+    method = str(run.get("method") or "")
+    variables = run.get("variables") or {}
+    kind = spec.visual_type
+
+    allowed_types = {
+        "pearson_correlation": {VisualType.SCATTER, VisualType.HEXBIN},
+        "spearman_correlation": {VisualType.SCATTER, VisualType.HEXBIN},
+        "bootstrap_correlation": {VisualType.SCATTER, VisualType.HEXBIN},
+        "linear_regression": {VisualType.SCATTER, VisualType.FOREST, VisualType.SURFACE},
+        "logistic_regression": {VisualType.FOREST},
+        "mixed_model": {VisualType.FOREST},
+        "t_test": {VisualType.BOX},
+        "mann_whitney": {VisualType.BOX},
+        "anova": {VisualType.BOX},
+        "kruskal_wallis": {VisualType.BOX},
+        "chi_square": {VisualType.HEATMAP},
+        "descriptive": {VisualType.HISTOGRAM},
+    }
+    if kind not in allowed_types.get(method, set()):
+        raise VisualError(
+            f"{kind.value} is not a faithful figure type for the recorded "
+            f"{method} run. Rerun or use one of: "
+            + ", ".join(sorted(v.value for v in allowed_types.get(method, set())))
+        )
+
+    def field(encoding):
+        return encoding.field if encoding is not None else None
+
+    if method in {"pearson_correlation", "spearman_correlation",
+                  "bootstrap_correlation"}:
+        if field(spec.x) != variables.get("x") or field(spec.y) != variables.get("y"):
+            raise VisualError(
+                "The figure axes do not match the variables recorded by the "
+                "correlation run."
+            )
+    elif method == "linear_regression":
+        predictors = list(variables.get("predictors") or [])
+        outcome = variables.get("outcome")
+        if kind is VisualType.SCATTER:
+            if len(predictors) != 1 or field(spec.x) != predictors[0] or field(spec.y) != outcome:
+                raise VisualError(
+                    "A simple-regression scatter must use the recorded predictor "
+                    "on x and recorded outcome on y."
+                )
+        elif kind is VisualType.SURFACE:
+            if len(predictors) != 2 or [field(spec.x), field(spec.y)] != predictors:
+                raise VisualError(
+                    "A regression surface must use the two recorded predictors "
+                    "in their recorded order."
+                )
+    elif method in {"t_test", "mann_whitney", "anova", "kruskal_wallis"}:
+        group, value = variables.get("group"), variables.get("value")
+        if field(spec.x) != group or field(spec.y) != value:
+            raise VisualError(
+                "The group-comparison figure does not use the recorded group "
+                "and value variables."
+            )
+        if kind is VisualType.BOX and field(spec.group) != group:
+            raise VisualError(
+                "The box plot grouping does not match the recorded group variable."
+            )
+    elif method == "chi_square":
+        if kind is VisualType.HEATMAP:
+            if field(spec.x) != variables.get("x") or field(spec.y) != variables.get("y"):
+                raise VisualError(
+                    "The contingency heatmap axes do not match the recorded "
+                    "categorical variables."
+                )
+    elif method == "descriptive":
+        columns = list(variables.get("columns") or [])
+        if field(spec.x) not in columns:
+            raise VisualError(
+                "The histogram column was not part of the recorded descriptive run."
+            )
 
 
 def create_visual(
@@ -172,6 +275,28 @@ def create_visual(
         raise VisualError(f"Unknown analysis run: {spec.analysis_run_id}")
     if run["project_id"] != project_id:
         raise VisualError("The analysis run belongs to a different project.")
+
+    _validate_visual_binding(run, spec)
+
+    run_versions = list(run.get("dataset_version_ids") or [])
+    if run_versions:
+        if not spec.dataset_version_id:
+            raise VisualError(
+                "The figure omits the dataset version used by its analysis run."
+            )
+        if spec.dataset_version_id not in run_versions:
+            raise VisualError(
+                "The figure names a dataset version that was not used by its "
+                "analysis run."
+            )
+
+    recorded_filters = list(run.get("filters") or [])
+    if list(spec.filters or []) != recorded_filters:
+        raise VisualError(
+            "The figure filters do not match the filters recorded on its "
+            "analysis run. Change the analysis and rerun it instead."
+        )
+
     if finding_id:
         # The run was checked and the finding was not, so a figure in your
         # project could be filed against another account's finding (T185).
