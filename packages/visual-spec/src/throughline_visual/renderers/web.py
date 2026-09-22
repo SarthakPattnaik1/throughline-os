@@ -31,6 +31,7 @@ def render(spec: ResearchVisualSpec, data: VisualData) -> dict[str, Any]:
         VisualType.BAR: _bar,
         VisualType.HISTOGRAM: _histogram,
         VisualType.HEATMAP: _heatmap,
+        VisualType.HEXBIN: _hexbin,
     }
     builder = builders.get(spec.visual_type)
     if builder is None:
@@ -183,6 +184,34 @@ def _category_label(spec, category) -> str:
     """
     text = str(category)
     return spec.category_labels.get(text) or text.replace("_", " ")
+
+
+def _hexbin(spec, data: VisualData) -> dict[str, Any]:
+    cells = list(data.series)
+    if not cells:
+        raise WebRenderError("A binned figure needs prepared cells.")
+    shape = "square" if str(spec.bin_shape) == "square" else "hexagon"
+    scale = str(spec.count_scale)
+    color_scale: dict[str, Any] = {"scheme": tokens.SEQUENTIAL}
+    if scale == "log":
+        color_scale["type"] = "log"
+    elif scale == "sqrt":
+        color_scale["type"] = "sqrt"
+    return {
+        "data": {"values": cells},
+        "mark": {"type": "point", "filled": True, "shape": shape, "size": 90},
+        "encoding": {
+            "x": {"field": "x", "type": "quantitative", "title": _label(spec.x)},
+            "y": {"field": "y", "type": "quantitative", "title": _label(spec.y)},
+            "color": {
+                "field": "count", "type": "quantitative",
+                "title": "observations per cell", "scale": color_scale,
+            },
+            "tooltip": [
+                {"field": "count", "type": "quantitative", "title": "observations"},
+            ],
+        },
+    }
 
 
 def _scatter(spec, data: VisualData) -> dict[str, Any]:
