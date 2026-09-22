@@ -213,39 +213,80 @@ def _bin_transparency(spec: ResearchVisualSpec, report: CritiqueReport,
 
 
 def _uncertainty(spec, data, analysis, report: CritiqueReport, autofix: bool) -> None:
-    """ — if the analysis produced an interval, the figure must show it."""
-    has_interval = (
-        analysis.get("ci_low") is not None
-        or bool(data.ci_low)
-        or (analysis.get("effect_size") or {}).get("ci_low") is not None
-    )
-    if not has_interval:
-        report.critiques.append(Critique(
-            check="uncertainty_representation", outcome="passed", severity="serious",
-            detail="The analysis produced no interval to display.",
-        ))
-        return
-    if spec.uncertainty is not UncertaintyDisplay.NONE:
-        report.critiques.append(Critique(
-            check="uncertainty_representation", outcome="passed", severity="serious",
-            detail=f"Uncertainty is shown as {spec.uncertainty}.",
-        ))
-        return
-    if autofix:
-        spec.uncertainty = (UncertaintyDisplay.CONFIDENCE_INTERVAL
-                            if spec.visual_type is VisualType.FOREST
-                            else UncertaintyDisplay.ERROR_BAR)
-        report.critiques.append(Critique(
-            check="uncertainty_representation", outcome="fixed", severity="serious",
-            detail="The analysis reported a confidence interval that the figure omitted.",
-            fix_applied=f"Enabled {spec.uncertainty}.",
-        ))
-    else:
-        report.critiques.append(Critique(
-            check="uncertainty_representation", outcome="violated", severity="serious",
-            detail="A confidence interval exists but the figure does not show it.",
-        ))
+    """Require uncertainty in the form the recorded analysis actually supports.
 
+    A scalar interval on r, a regression slope, or an odds ratio is not a
+    vertical interval around every observation. Those intervals belong in text
+    unless the prepared data carries per-mark intervals (for example a forest
+    plot). Turning a scalar CI into a band/error bar invents uncertainty the
+    analysis never computed.
+    """
+    mark_interval = bool(data.ci_low) and bool(data.ci_high)
+    scalar_interval = (
+        analysis.get("ci_low") is not None and analysis.get("ci_high") is not None
+    ) or (
+        (analysis.get("effect_size") or {}).get("ci_low") is not None
+        and (analysis.get("effect_size") or {}).get("ci_high") is not None
+    )
+
+    if mark_interval:
+        if spec.uncertainty is not UncertaintyDisplay.NONE:
+            report.critiques.append(Critique(
+                check="uncertainty_representation", outcome="passed", severity="serious",
+                detail=f"Per-mark uncertainty is shown as {spec.uncertainty}.",
+            ))
+            return
+        if autofix:
+            spec.uncertainty = UncertaintyDisplay.CONFIDENCE_INTERVAL
+            report.critiques.append(Critique(
+                check="uncertainty_representation", outcome="fixed", severity="serious",
+                detail="Prepared mark-level confidence intervals were not displayed.",
+                fix_applied="Enabled confidence-interval marks.",
+            ))
+        else:
+            report.critiques.append(Critique(
+                check="uncertainty_representation", outcome="violated",
+                severity="serious",
+                detail="Prepared mark-level confidence intervals are hidden.",
+            ))
+        return
+
+    if scalar_interval:
+        # Reader-facing recommenders state this as e.g. "95% CI [0.2, 0.6]".
+        # That is the honest representation when the interval is on one scalar
+        # statistic rather than on the observations.
+        if re.search(r"\b(?:\d+(?:\.\d+)?%\s*)?CI\s*\[", spec.caption or "", re.I):
+            report.critiques.append(Critique(
+                check="uncertainty_representation", outcome="passed",
+                severity="serious",
+                detail="The run-level parameter interval is stated in the caption.",
+            ))
+            return
+        if autofix and analysis.get("ci_low") is not None and analysis.get("ci_high") is not None:
+            level = float(analysis.get("confidence_level") or 0.95) * 100
+            interval = (
+                f"{level:g}% CI [{float(analysis['ci_low']):.3g}, "
+                f"{float(analysis['ci_high']):.3g}]"
+            )
+            spec.caption = (spec.caption.rstrip(". ") + f". {interval}.").strip()
+            report.critiques.append(Critique(
+                check="uncertainty_representation", outcome="fixed",
+                severity="serious",
+                detail="The run-level parameter interval was omitted from the figure.",
+                fix_applied=f"Added {interval} to the caption.",
+            ))
+            return
+        report.critiques.append(Critique(
+            check="uncertainty_representation", outcome="violated",
+            severity="serious",
+            detail="A run-level parameter interval exists but is not stated.",
+        ))
+        return
+
+    report.critiques.append(Critique(
+        check="uncertainty_representation", outcome="passed", severity="serious",
+        detail="The analysis produced no interval to display.",
+    ))
 
 def _sample_visibility(spec, data, report: CritiqueReport, autofix: bool) -> None:
     """A figure without n invites the reader to assume it is large."""
