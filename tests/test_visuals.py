@@ -106,8 +106,16 @@ def test_correlation_is_recommended_as_a_scatter(analysed):
         recommendation = visuals.recommend_for_run(cur, analysis_run_id=runs["correlation"])
     assert recommendation["visual_type"] is VisualType.SCATTER
     assert "every observation" in recommendation["reason"]
+    spec = recommendation["spec"]
+    # A correlation coefficient CI is not a y-axis confidence band, and a
+    # correlation run did not fit a regression model.
+    assert spec.uncertainty is UncertaintyDisplay.NONE
+    assert not any(a.kind == "regression_line" for a in spec.annotations)
     # §52 — the caption must not upgrade the association.
-    assert "does not establish causation" in recommendation["spec"].caption
+    assert "does not establish causation" in spec.caption
+    assert "95% CI" in spec.caption
+    assert "r =" in spec.caption
+    assert "pearson_r" not in spec.caption
     assert recommendation["alternatives"]
 
 

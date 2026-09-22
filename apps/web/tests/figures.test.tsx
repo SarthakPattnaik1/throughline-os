@@ -208,6 +208,27 @@ describe("the picker", () => {
   });
 });
 
+describe("sampling disclosure", () => {
+  it("tells the reader when the plotted marks are only a sample", async () => {
+    serve({
+      "/points": {
+        ...POINTS,
+        sampling: {
+          sampled: true,
+          rows_total: 2_000_000,
+          rows_drawn: 500,
+          method: "uniform random without replacement, fixed seed",
+        },
+      },
+    });
+    await openOneRelationship([run()]);
+
+    expect(await screen.findByText(/Showing 500 of 2,000,000 rows/)).toBeTruthy();
+    expect(screen.getByText(/Statistics shown with the figure come from the full analysis run/))
+      .toBeTruthy();
+  });
+});
+
 describe("a project with nothing to plot", () => {
   it("offers both ways of producing something drawable", async () => {
     // The old hint said "Run discovery", which was the only way there was.

@@ -80,19 +80,43 @@ def recommend(
     return recommendation
 
 
+def _statistic_label(name: str | None) -> str:
+    """Reader-facing notation for stored statistic identifiers."""
+    key = (name or "").strip().lower()
+    if key == "pearson_r":
+        return "r"
+    if key in {"spearman_rho", "spearman_r"}:
+        return "ρ"
+    if key.startswith("kendall"):
+        return "τ"
+    return key.replace("_", " ") or "effect"
+
+
 def _significance_note(result: dict[str, Any]) -> str:
-    """A caption fragment that keeps 's separations intact."""
+    """A caption fragment that keeps stored numbers but not internal identifiers."""
     parts: list[str] = []
     if result.get("p_value") is not None:
         parts.append(f"p = {result['p_value']:.3g}")
     effect = result.get("effect_size") or {}
     if effect.get("value") is not None:
-        parts.append(f"{effect.get('name', 'effect')} = {effect['value']:.3g}")
+        parts.append(
+            f"{_statistic_label(effect.get('name'))} = {effect['value']:.3g}"
+        )
     if result.get("sample_size"):
         parts.append(f"n = {result['sample_size']}")
     if result.get("evidence_quality"):
         parts.append(f"evidence: {result['evidence_quality']}")
     return "; ".join(parts)
+
+
+def _correlation_interval_note(result: dict[str, Any]) -> str:
+    """The run-level interval for r/ρ, stated in text rather than drawn as a y-band."""
+    low, high = result.get("ci_low"), result.get("ci_high")
+    if low is None or high is None:
+        return ""
+    level = float(result.get("confidence_level") or 0.95)
+    percentage = round(level * 100)
+    return f"{percentage}% CI [{float(low):.3g}, {float(high):.3g}]"
 
 
 #: Sample size beyond which one mark per observation stops being readable.
@@ -120,13 +144,17 @@ def _correlation(run_id, version_id, variables, result, audience,
         analysis_run_id=run_id, dataset_version_id=version_id,
         x=book.encoding(x_name),
         y=book.encoding(y_name),
-        uncertainty=UncertaintyDisplay.BAND if has_ci else UncertaintyDisplay.NONE,
-        annotations=[Annotation(kind="regression_line",
-                                text="least-squares fit, shown for orientation only")],
+        # A confidence interval for r/ρ is an interval on the statistic, not a
+        # y-axis band around a fitted line. Correlation does not fit a regression
+        # model, so drawing a line or residual band would add an analysis that
+        # was never recorded. The interval is stated in the caption instead.
+        uncertainty=UncertaintyDisplay.NONE,
+        annotations=[],
         title=f"{book.label(y_name)} against {book.label(x_name)}",
         #  — the caption must not imply causation from a correlation.
         caption=(f"Association between {book.described(x_name)} and "
-                 f"{book.described(y_name)}. {_significance_note(result)}. "
+                 f"{book.described(y_name)}. {_significance_note(result)}"
+                 f"{'; ' + _correlation_interval_note(result) if has_ci else ''}. "
                  "Association does not establish causation."),
         interaction=["hover", "brush", "underlying_table"],
     )
@@ -161,8 +189,7 @@ def _binned_correlation(run_id, version_id, x_name, y_name, result,
         x=book.encoding(x_name),
         y=book.encoding(y_name),
         bin_count=bins,
-        annotations=[Annotation(kind="regression_line",
-                                text="least-squares fit, shown for orientation only")],
+        annotations=[],
         title=f"{book.label(y_name)} against {book.label(x_name)}",
         caption=(f"Association between {book.described(x_name)} and "
                  f"{book.described(y_name)} across "
@@ -171,7 +198,8 @@ def _binned_correlation(run_id, version_id, x_name, y_name, result,
                  f"each cell, on a logarithmic scale — binned counts are "
                  f"heavy-tailed, and a linear ramp would collapse everything "
                  f"outside the densest cells into one shade. "
-                 f"{_significance_note(result)}. "
+                 f"{_significance_note(result)}"
+                 f"{'; ' + _correlation_interval_note(result) if result.get('ci_low') is not None else ''}. "
                  f"Association does not establish causation."),
         interaction=["hover", "brush", "underlying_table"],
     )

@@ -49,6 +49,12 @@ type Points = {
   y: number[];
   statistics?: Record<string, number>;
   sample_size?: number;
+  sampling?: {
+    sampled: boolean;
+    rows_total: number;
+    rows_drawn: number;
+    method: string;
+  };
   /** Counted server-side, and present only for a binned recommendation. */
   cells?: BinnedCell[] | null;
   bin_count?: number | null;
@@ -776,6 +782,7 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
               crowded it is at once.
             */
             densityColour={mark === "point"}
+            totalPoints={points.data?.sampling?.rows_total}
             /*
               Only where there is a dataset to define a subset against.
               Offering it without one would be a control that cannot work,
@@ -788,6 +795,15 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
           />
         )}
       </div>
+
+      {points.data?.sampling?.sampled && (
+        <p className="note" role="note">
+          Showing {points.data.sampling.rows_drawn.toLocaleString()} of{" "}
+          {points.data.sampling.rows_total.toLocaleString()} rows using{" "}
+          {points.data.sampling.method}. Statistics shown with the figure come
+          from the full analysis run.
+        </p>
+      )}
 
       {recording && (
         <div className="card card-tight record-subset">
