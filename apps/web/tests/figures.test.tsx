@@ -17,7 +17,7 @@
  * that disagrees with the analysis it came from.
  */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { Figures, axisFields, axisLabel, figureName } from "@/components/figures";
@@ -364,9 +364,9 @@ describe("run provenance", () => {
       value: () => ({ left: 0, width: 500, top: 0, height: 300,
                       right: 500, bottom: 300, x: 0, y: 0, toJSON() {} }),
     });
-    brush.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 100 }));
-    brush.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 200 }));
-    brush.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: 200 }));
+    fireEvent.mouseDown(brush, { clientX: 100 });
+    fireEvent.mouseMove(brush, { clientX: 200 });
+    fireEvent.mouseUp(brush, { clientX: 200 });
 
     await userEvent.click(await screen.findByRole("button",
       { name: /record as a subset/i }));
