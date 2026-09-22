@@ -211,8 +211,46 @@ def _scatter(spec, result, sample, statistics) -> VisualData:
     )
 
 
+def binned_cell_index(
+    x: float, y: float, *, x_low: float, x_high: float,
+    y_low: float, y_high: float, bins: int, hex_shape: bool,
+) -> tuple[int, int]:
+    """One deterministic cell index, shared by streaming and in-memory paths."""
+    x_step = (x_high - x_low) / bins or 1.0
+    y_step = (y_high - y_low) / bins or 1.0
+    row = min(max(int((y - y_low) / y_step), 0), bins - 1)
+    raw = (x - x_low) / x_step
+    if hex_shape and row % 2:
+        raw -= 0.5
+    column = min(max(int(raw), 0), bins - 1)
+    return column, row
+
+
+def binned_cell_center(
+    column: int, row: int, *, x_low: float, x_high: float,
+    y_low: float, y_high: float, bins: int, hex_shape: bool,
+) -> tuple[float, float]:
+    x_step = (x_high - x_low) / bins or 1.0
+    y_step = (y_high - y_low) / bins or 1.0
+    offset = 0.5 if hex_shape and row % 2 else 0.0
+    return (
+        x_low + (column + 0.5 + offset) * x_step,
+        y_low + (row + 0.5) * y_step,
+    )
+
+
 def _hexbin(spec, result, sample, statistics) -> VisualData:
     """Prepare one deterministic set of occupied cells for every renderer."""
+    precomputed = sample.get("__binned_cells__")
+    if precomputed is not None:
+        total = int(sample.get("__binned_rows__") or 0)
+        return VisualData(
+            series=list(precomputed),
+            sample_size=int(result.get("sample_size") or total),
+            statistics=statistics,
+            note=("Binned density aggregates every complete plotted row in the "
+                  "filtered analysis population; no point sampling is used."),
+        )
 
     x_field = spec.x.field if spec.x else None
     y_field = spec.y.field if spec.y else None
@@ -226,26 +264,22 @@ def _hexbin(spec, result, sample, statistics) -> VisualData:
     bins = spec.bin_count or 30
     x_low, x_high = min(xs), max(xs)
     y_low, y_high = min(ys), max(ys)
-    x_step = (x_high - x_low) / bins or 1.0
-    y_step = (y_high - y_low) / bins or 1.0
+    hex_shape = str(spec.bin_shape) == "hex"
     counts: dict[tuple[int, int], int] = {}
     for x, y in zip(xs, ys):
-        row = min(max(int((y - y_low) / y_step), 0), bins - 1)
-        raw = (x - x_low) / x_step
-        if str(spec.bin_shape) == "hex" and row % 2:
-            raw -= 0.5
-        column = min(max(int(raw), 0), bins - 1)
-        counts[(column, row)] = counts.get((column, row), 0) + 1
+        key = binned_cell_index(
+            x, y, x_low=x_low, x_high=x_high, y_low=y_low, y_high=y_high,
+            bins=bins, hex_shape=hex_shape,
+        )
+        counts[key] = counts.get(key, 0) + 1
 
-    offset = 0.5 if str(spec.bin_shape) == "hex" else 0.0
-    cells = [
-        {
-            "x": x_low + (column + 0.5 + (offset if row % 2 else 0)) * x_step,
-            "y": y_low + (row + 0.5) * y_step,
-            "count": count,
-        }
-        for (column, row), count in sorted(counts.items())
-    ]
+    cells = []
+    for (column, row), count in sorted(counts.items()):
+        x, y = binned_cell_center(
+            column, row, x_low=x_low, x_high=x_high,
+            y_low=y_low, y_high=y_high, bins=bins, hex_shape=hex_shape,
+        )
+        cells.append({"x": x, "y": y, "count": count})
     return VisualData(
         x_values=xs, y_values=ys, series=cells,
         sample_size=int(result.get("sample_size") or len(xs)),
@@ -254,7 +288,6 @@ def _hexbin(spec, result, sample, statistics) -> VisualData:
               "filtered dataset; analysis statistics come from the complete filtered run."
               if len(xs) < int(result.get("sample_size") or len(xs)) else ""),
     )
-
 
 def _forest(spec, result, statistics) -> VisualData:
     coefficients = (result.get("extra") or {}).get("coefficients") or {}
