@@ -256,17 +256,41 @@ def _forest(spec, data: VisualData) -> dict[str, Any]:
 
 
 def _box(spec, data: VisualData) -> dict[str, Any]:
-    rows = [{"group": g, "value": v}
-            for g, v in zip(data.group_values, data.y_values)]
+    summaries = list(data.series)
+    if not summaries:
+        raise WebRenderError("A box figure needs prepared group summaries.")
+    rows = [
+        {
+            "group": item["group"],
+            "q1": item["q1"], "median": item["median"], "q3": item["q3"],
+            "whisker_low": item["whisker_low"],
+            "whisker_high": item["whisker_high"],
+            "n": item["n"],
+        }
+        for item in summaries
+    ]
     return {
         "data": {"values": rows},
-        "mark": {"type": "boxplot", "extent": 1.5},
-        "encoding": {
-            "x": {"field": "group", "type": "nominal", "title": _label(spec.x)},
-            "y": {"field": "value", "type": "quantitative", "title": _label(spec.y),
-                  "scale": {"zero": bool(spec.y and spec.y.include_zero)}},
-            "color": {"field": "group", "type": "nominal", "legend": None},
-        },
+        "layer": [
+            {"mark": {"type": "rule"},
+             "encoding": {
+                 "x": {"field": "group", "type": "nominal", "title": _label(spec.x)},
+                 "y": {"field": "whisker_low", "type": "quantitative",
+                       "title": _label(spec.y)},
+                 "y2": {"field": "whisker_high"},
+             }},
+            {"mark": {"type": "bar", "size": 24},
+             "encoding": {
+                 "x": {"field": "group", "type": "nominal"},
+                 "y": {"field": "q1", "type": "quantitative"},
+                 "y2": {"field": "q3"},
+             }},
+            {"mark": {"type": "tick", "size": 24, "color": tokens.INK["light"]["ink"]},
+             "encoding": {
+                 "x": {"field": "group", "type": "nominal"},
+                 "y": {"field": "median", "type": "quantitative"},
+             }},
+        ],
     }
 
 
@@ -298,13 +322,17 @@ def _bar(spec, data: VisualData) -> dict[str, Any]:
 
 
 def _histogram(spec, data: VisualData) -> dict[str, Any]:
+    bins = list(data.series)
+    if not bins:
+        raise WebRenderError("A histogram needs prepared bins.")
     return {
-        "data": {"values": [{"value": v} for v in data.y_values]},
+        "data": {"values": bins},
         "mark": "bar",
         "encoding": {
-            "x": {"field": "value", "type": "quantitative", "bin": True,
+            "x": {"field": "left", "type": "quantitative",
                   "title": _label(spec.x)},
-            "y": {"aggregate": "count", "type": "quantitative", "title": "count",
+            "x2": {"field": "right"},
+            "y": {"field": "count", "type": "quantitative", "title": "count",
                   "scale": {"zero": True}},
         },
     }
