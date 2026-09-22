@@ -81,6 +81,30 @@ def strip_trailing_unit(header: str, unit: str | None) -> str:
     return text
 
 
+def strip_profiled_unit_suffix(name: str) -> str:
+    """Remove the final name token after the profiler already found a unit.
+
+    This function does *not* decide whether a suffix is a unit. Its caller must
+    already have a non-empty profiled column unit. That distinction matters
+    because the profiler normalises aliases: `response_pct` stores `%`,
+    `duration_mins` stores `min`, and `dose_ug` stores `µg`. Comparing
+    the stored unit text to the raw suffix would therefore leave the duplicate
+    token behind.
+
+    Removing the final token is safe only under that precondition: the
+    profiler's closed vocabulary has already established that the final token
+    is the unit declaration.
+    """
+    text = str(name).strip()
+    for separator in ("_", "-", " "):
+        if separator not in text:
+            continue
+        head, tail = text.rsplit(separator, 1)
+        if head.strip("_- ") and tail.strip():
+            return head.rstrip("_- ").strip()
+    return text
+
+
 @dataclass(frozen=True)
 class VariableLabel:
     """One column's reader-facing identity."""
