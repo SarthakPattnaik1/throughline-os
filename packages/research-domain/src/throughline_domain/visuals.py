@@ -197,6 +197,26 @@ def create_visual(
         raise VisualError(f"Unknown analysis run: {spec.analysis_run_id}")
     if run["project_id"] != project_id:
         raise VisualError("The analysis run belongs to a different project.")
+
+    run_versions = list(run.get("dataset_version_ids") or [])
+    if run_versions:
+        if not spec.dataset_version_id:
+            raise VisualError(
+                "The figure omits the dataset version used by its analysis run."
+            )
+        if spec.dataset_version_id not in run_versions:
+            raise VisualError(
+                "The figure names a dataset version that was not used by its "
+                "analysis run."
+            )
+
+    recorded_filters = list(run.get("filters") or [])
+    if list(spec.filters or []) != recorded_filters:
+        raise VisualError(
+            "The figure filters do not match the filters recorded on its "
+            "analysis run. Change the analysis and rerun it instead."
+        )
+
     if finding_id:
         # The run was checked and the finding was not, so a figure in your
         # project could be filed against another account's finding (T185).
