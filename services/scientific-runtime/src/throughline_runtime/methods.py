@@ -398,7 +398,8 @@ def t_test(frame: pd.DataFrame, spec: dict[str, Any]) -> StatisticalResult:
         raise AnalysisError(f"Column {group_name!r} is not present in the dataset.")
 
     values = _numeric(frame, value_name)
-    working = pd.DataFrame({"value": values, "group": frame[group_name].astype(str)}).dropna()
+    working = pd.DataFrame({"value": values, "group": frame[group_name]}).dropna()
+    working["group"] = working["group"].astype(str)
     groups = sorted(working["group"].unique())
     if len(groups) != 2:
         raise AnalysisError(
@@ -464,7 +465,8 @@ def t_test(frame: pd.DataFrame, spec: dict[str, Any]) -> StatisticalResult:
 def mann_whitney(frame: pd.DataFrame, spec: dict[str, Any]) -> StatisticalResult:
     value_name, group_name = spec["variables"]["value"], spec["variables"]["group"]
     values = _numeric(frame, value_name)
-    working = pd.DataFrame({"value": values, "group": frame[group_name].astype(str)}).dropna()
+    working = pd.DataFrame({"value": values, "group": frame[group_name]}).dropna()
+    working["group"] = working["group"].astype(str)
     groups = sorted(working["group"].unique())
     if len(groups) != 2:
         raise AnalysisError(f"mann_whitney needs exactly 2 groups; found {len(groups)}.")
@@ -503,7 +505,11 @@ def chi_square(frame: pd.DataFrame, spec: dict[str, Any]) -> StatisticalResult:
         if name not in frame.columns:
             raise AnalysisError(f"Column {name!r} is not present in the dataset.")
 
-    table = pd.crosstab(frame[x_name].astype(str), frame[y_name].astype(str))
+    working = frame[[x_name, y_name]].dropna()
+    table = pd.crosstab(
+        working[x_name].astype(str),
+        working[y_name].astype(str),
+    )
     if table.size == 0 or table.shape[0] < 2 or table.shape[1] < 2:
         raise AnalysisError("chi_square needs at least a 2×2 contingency table.")
 
@@ -539,7 +545,8 @@ def chi_square(frame: pd.DataFrame, spec: dict[str, Any]) -> StatisticalResult:
 def anova(frame: pd.DataFrame, spec: dict[str, Any]) -> StatisticalResult:
     value_name, group_name = spec["variables"]["value"], spec["variables"]["group"]
     values = _numeric(frame, value_name)
-    working = pd.DataFrame({"value": values, "group": frame[group_name].astype(str)}).dropna()
+    working = pd.DataFrame({"value": values, "group": frame[group_name]}).dropna()
+    working["group"] = working["group"].astype(str)
     groups = [g["value"] for _, g in working.groupby("group")]
     if len(groups) < 3:
         raise AnalysisError(
@@ -582,7 +589,8 @@ def anova(frame: pd.DataFrame, spec: dict[str, Any]) -> StatisticalResult:
 def kruskal_wallis(frame: pd.DataFrame, spec: dict[str, Any]) -> StatisticalResult:
     value_name, group_name = spec["variables"]["value"], spec["variables"]["group"]
     values = _numeric(frame, value_name)
-    working = pd.DataFrame({"value": values, "group": frame[group_name].astype(str)}).dropna()
+    working = pd.DataFrame({"value": values, "group": frame[group_name]}).dropna()
+    working["group"] = working["group"].astype(str)
     groups = [g["value"] for _, g in working.groupby("group")]
     if len(groups) < 3:
         raise AnalysisError(f"kruskal_wallis needs at least 3 groups; found {len(groups)}.")
