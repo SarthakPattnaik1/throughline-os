@@ -208,12 +208,12 @@ def _binned_correlation(run_id, version_id, x_name, y_name, result,
         annotations=[],
         title=f"{book.label(y_name)} against {book.label(x_name)}",
         caption=(f"Association between {book.described(x_name)} and "
-                 f"{book.described(y_name)} across "
-                 f"{sample_size:,} observations, binned into {bins} hexagonal "
-                 f"cells per axis; shade shows how many observations fall in "
-                 f"each cell, on a logarithmic scale — binned counts are "
-                 f"heavy-tailed, and a linear ramp would collapse everything "
-                 f"outside the densest cells into one shade. "
+                 f"{book.described(y_name)} across an analysis of "
+                 f"{sample_size:,} observations. A bounded uniform sample is "
+                 f"binned into {bins} hexagonal cells per axis; shade shows how "
+                 f"many sampled observations fall in each cell, on a logarithmic "
+                 f"scale — binned counts are heavy-tailed, and a linear ramp "
+                 f"would collapse everything outside the densest cells into one shade. "
                  f"{_significance_note(result)}"
                  f"{'; ' + _correlation_interval_note(result) if result.get('ci_low') is not None else ''}. "
                  f"Association does not establish causation."),
