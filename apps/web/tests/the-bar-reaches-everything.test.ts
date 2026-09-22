@@ -13,7 +13,8 @@
 
 import { describe, expect, it } from "vitest";
 import { PAGES, SECTIONS } from "@/components/Shell";
-import { VERBS, matchVerbs, verbsByGroup } from "@/components/verbs";
+import { CARRIES_ARGUMENT, VERBS, matchVerbs, verbsByGroup } from "@/components/verbs";
+import { VIEWS_OF } from "@/lib/section-url";
 
 /** Every section a verb sends you to. */
 const REACHED = new Set(VERBS.map((v) => v.to.section));
@@ -46,6 +47,44 @@ describe("the verbs are well formed", () => {
       "literature", "datasearch", "readfigure"]);
     for (const verb of VERBS) {
       expect(known.has(verb.to.section), `${verb.id} → ${verb.to.section}`).toBe(true);
+    }
+  });
+
+  it("names a view the destination section actually has", () => {
+    /**
+     * The hole this closes, found by walking all 22 destinations in the real
+     * app rather than by reading the table (T198). Two verbs named views that
+     * do not exist: "register a hypothesis" asked for `discover?view=register`
+     * when Discovery has no views at all, and "what has happened here" asked
+     * for `journal?view=activity` when journal's are `written` and `done`.
+     * Both were silently dropped by the router, so each verb promised a place
+     * and delivered its parent — the exact failure §123 is about, and one this
+     * file could not see while it only checked `to.section`.
+     */
+    for (const verb of VERBS) {
+      if (!verb.to.view) continue;
+      const allowed: readonly string[] = VIEWS_OF[verb.to.section] ?? [];
+      expect(allowed, `${verb.id} → ${verb.to.section} has no views`).not.toEqual([]);
+      expect(allowed, `${verb.id} → ${verb.to.section}?view=${verb.to.view}`)
+        .toContain(verb.to.view);
+    }
+  });
+
+  it("only asks for a subject where the destination reads one", () => {
+    /**
+     * Found by reading the wiring rather than the table (T198): five verbs
+     * declared `takes` and two destinations read it. "search my library <a
+     * phrase>", "validate <which one>" and "write a note <the note>" all
+     * advertised a subject that was dropped on arrival — the bar showing it
+     * back to you in the offer, which made the drop look deliberate.
+     */
+    for (const verb of VERBS) {
+      if (!verb.takes) continue;
+      const carried = CARRIES_ARGUMENT.some((d) =>
+        d.section === verb.to.section && d.view === verb.to.view);
+      expect(carried,
+        `${verb.id} asks for "${verb.takes}" but ${verb.to.section}`
+        + `${verb.to.view ? "?view=" + verb.to.view : ""} never reads one`).toBe(true);
     }
   });
 

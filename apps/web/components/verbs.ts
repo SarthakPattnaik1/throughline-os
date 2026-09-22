@@ -183,10 +183,10 @@ export const VERBS: readonly Verb[] = [
   {
     id: "register",
     label: "Register a hypothesis",
-    says: "Write down the prediction before the test, so it cannot move",
+    says: "Opens Discovery, where a prediction is written down before the test",
     triggers: ["register a hypothesis", "preregister", "pre-register",
                "register", "hypothesis"],
-    to: { section: "discover", view: "register" },
+    to: { section: "discover" },
     group: "Find and test",
   },
   {
@@ -214,7 +214,9 @@ export const VERBS: readonly Verb[] = [
     says: "Bootstrap, outliers, missingness and confounders — promotion is earned",
     triggers: ["validate", "try to destroy", "robustness", "stress test",
                "check it holds", "test it harder"],
-    takes: "which one",
+    /* No subject. It said "which one" and the connections list ignored it
+       (T198) — naming a connection in the line looked like it would pick that
+       one out, and never did. Type the pair instead: the name search finds it. */
     to: { section: "connections" },
     group: "Stand it up",
   },
@@ -268,7 +270,8 @@ export const VERBS: readonly Verb[] = [
     label: "Write a note",
     says: "A permanent entry — notes are never edited, only added to",
     triggers: ["write a note", "note", "journal", "record a note"],
-    takes: "the note",
+    /* No subject: the journal's own box is where a note is written, and a
+       half-carried one would be a note you thought you had saved (T198). */
     to: { section: "journal" },
     group: "Write it up",
   },
@@ -286,7 +289,7 @@ export const VERBS: readonly Verb[] = [
     label: "What has happened here",
     says: "Everything written and done in this project, in order",
     triggers: ["activity", "history", "what happened", "log", "record"],
-    to: { section: "journal", view: "activity" },
+    to: { section: "journal", view: "done" },
     group: "Write it up",
   },
 
@@ -326,6 +329,26 @@ export const VERBS: readonly Verb[] = [
     to: { section: "settings" },
     group: "This machine",
   },
+];
+
+/**
+ * The destinations that actually receive a typed subject (T198).
+ *
+ * The workspace carries a verb's argument in one place — the state `Find data`
+ * has read since D413 — and exactly three screens read it back. Every other
+ * screen silently drops it, so a verb that declares `takes` and lands anywhere
+ * else advertises a subject that goes nowhere.
+ *
+ * That had happened three times: "search my library" for a phrase the search
+ * box never received, "validate <which one>" that the connections list
+ * ignored, and "write a note <the note>" that the journal discarded. The first
+ * was wired up; the other two stopped asking. This list is what a test checks
+ * `takes` against, so the next one cannot be added quietly.
+ */
+export const CARRIES_ARGUMENT: ReadonlyArray<{ section: Section; view?: string }> = [
+  { section: "sources", view: "papers" },
+  { section: "sources", view: "data" },
+  { section: "sources", view: "search" },
 ];
 
 /** Every destination a verb can send you to, for the coverage test. */

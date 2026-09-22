@@ -1236,8 +1236,10 @@ type RetrievalAudit = {
   }>;
 };
 
-export function Search({ projectId, onOpenSource }: {
+export function Search({ projectId, onOpenSource, initialQuery }: {
   projectId: string;
+  /** A phrase the bar carried in — "search my library for maize" (T198). */
+  initialQuery?: string;
   /**
    * Open the source a passage came from. Without this a hit was a dead end:
    * rank, locator and scores, and no way to the document (D203). A search
@@ -1246,7 +1248,7 @@ export function Search({ projectId, onOpenSource }: {
    */
   onOpenSource?: (sourceId: string) => void;
 }) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [submitted, setSubmitted] = useState<string | null>(null);
   const path = submitted ? `/api/projects/${projectId}/search?q=${encodeURIComponent(submitted)}&limit=12` : null;
   const { data, error, loading, reload } = useApi<SearchResult>(path);

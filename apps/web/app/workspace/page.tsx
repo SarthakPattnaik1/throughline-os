@@ -741,7 +741,10 @@ function Workspace({ user }: { user: SignedInUser }) {
                   />
                 )}
                 {view === "search" && (
-                  <Search projectId={project.id} onOpenSource={select("source")} />
+                  /* `key` so a second ask re-seeds the box, as Find papers and
+                     Find data do — the bar carries a phrase in (T198). */
+                  <Search projectId={project.id} onOpenSource={select("source")}
+                          initialQuery={dataQuery} key={dataQuery ?? ""} />
                 )}
                 {view === "papers" && (
                   <>
