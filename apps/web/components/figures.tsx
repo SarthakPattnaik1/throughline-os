@@ -22,6 +22,9 @@ import { Cartesian, CartesianMark, Datum } from "./charts/Cartesian";
 import { Estimate, Interval } from "./charts/Interval";
 import { Cell, Matrix } from "./charts/Matrix";
 import { Density, DensityCurve } from "./charts/Density";
+import {
+  BoxSummary, HistogramBin, PreparedBoxPlot, PreparedHistogram,
+} from "./charts/PreparedStatCharts";
 import { Empty, Failure, Fold, Loading } from "./primitives";
 import { SavedFigures } from "./savedfigures";
 import { PublishFigure } from "./publish";
@@ -41,6 +44,7 @@ type Recommendation = {
     x?: { field: string; label?: string; unit?: string; scale?: string };
     y?: { field: string; label?: string; unit?: string; scale?: string };
     dataset_version_id?: string | null;
+    category_labels?: Record<string, string>;
     title?: string;
   };
 };
@@ -48,6 +52,12 @@ type Recommendation = {
 type Points = {
   x: number[];
   y: number[];
+  group?: string[];
+  ci_low?: number[];
+  ci_high?: number[];
+  categories?: string[];
+  matrix?: number[][];
+  series?: Array<Record<string, unknown>>;
   statistics?: Record<string, number | string | null>;
   sample_size?: number;
   sampling?: {
@@ -642,10 +652,10 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${fields.x}-${fields.y}.svg`;
+    link.download = `${run.id}-${recommendation.visual_type}.svg`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [fields]);
+  }, [run.id, recommendation.visual_type]);
 
   const mark = MARK_FOR[recommendation.visual_type] ?? "point";
   const xLabel = axisLabel(fields.x, labels, recommendation.spec.x);
@@ -696,9 +706,47 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
 
   if (points.error) return <Failure error={points.error} retry={points.reload} />;
   if (points.loading) return <Loading rows={4} label="Reading the plotted values" />;
-  if (!data.length) {
+
+  const forestEstimates: Estimate[] = recommendation.visual_type === "forest"
+    ? (points.data?.categories ?? []).map((category, index) => ({
+        id: category,
+        label: recommendation.spec.category_labels?.[category] ?? category.replace(/_/g, " "),
+        estimate: points.data?.y?.[index] ?? 0,
+        lo: points.data?.ci_low?.[index] ?? 0,
+        hi: points.data?.ci_high?.[index] ?? 0,
+      }))
+    : [];
+
+  const heatmapRows = points.data?.group ?? [];
+  const heatmapColumns = points.data?.categories ?? [];
+  const heatmapCells: Cell[] = recommendation.visual_type === "heatmap"
+    ? heatmapRows.flatMap((row, rowIndex) =>
+        heatmapColumns.map((column, columnIndex) => ({
+          row,
+          column,
+          value: points.data?.matrix?.[rowIndex]?.[columnIndex] ?? null,
+        })))
+    : [];
+
+  const boxSummaries = recommendation.visual_type === "box"
+    ? (points.data?.series ?? []) as unknown as BoxSummary[]
+    : [];
+  const histogramBins = recommendation.visual_type === "histogram"
+    ? (points.data?.series ?? []) as unknown as HistogramBin[]
+    : [];
+
+  const hasRenderableData =
+    (recommendation.visual_type === "forest" && forestEstimates.length > 0)
+    || (recommendation.visual_type === "heatmap" && heatmapCells.length > 0)
+    || (recommendation.visual_type === "box" && boxSummaries.length > 0)
+    || (recommendation.visual_type === "histogram" && histogramBins.length > 0)
+    || Boolean(surface)
+    || Boolean(recommendation.visual_type === "hexbin" && points.data?.cells?.length)
+    || data.length > 0;
+
+  if (!hasRenderableData) {
     return <Empty title="No plottable values recorded"
-                  hint="This analysis did not store the points behind its estimate." />;
+                  hint="The analysis completed, but its prepared figure data is empty." />;
   }
 
   /**
@@ -739,7 +787,39 @@ function Figure({ run, recommendation, labels, projectId, versionId }: {
   return (
     <>
       <div className="card" ref={svgHost}>
-        {surface ? (
+        {recommendation.visual_type === "forest" ? (
+          <Interval
+            estimates={forestEstimates}
+            xLabel={axisLabel("estimate", labels, recommendation.spec.x)}
+            title={recommendation.spec?.title}
+            caption={recommendation.caption}
+          />
+        ) : recommendation.visual_type === "heatmap" ? (
+          <Matrix
+            cells={heatmapCells}
+            rows={heatmapRows}
+            columns={heatmapColumns}
+            title={recommendation.spec?.title}
+            caption={recommendation.caption}
+            valueLabel="count"
+            symmetricAt={Math.max(1, ...heatmapCells.map((cell) => cell.value ?? 0))}
+          />
+        ) : recommendation.visual_type === "box" ? (
+          <PreparedBoxPlot
+            summaries={boxSummaries}
+            xLabel={xLabel}
+            yLabel={yLabel}
+            title={recommendation.spec?.title}
+            caption={recommendation.caption}
+          />
+        ) : recommendation.visual_type === "histogram" ? (
+          <PreparedHistogram
+            bins={histogramBins}
+            xLabel={xLabel}
+            title={recommendation.spec?.title}
+            caption={recommendation.caption}
+          />
+        ) : surface ? (
           <Surface
             grid={surfaceGrid!}
             observations={surfaceObservations}
