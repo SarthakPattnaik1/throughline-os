@@ -267,11 +267,16 @@ def _forest(spec, data: VisualData) -> dict[str, Any]:
         for name, estimate, low, high in zip(
             data.categories, data.y_values, data.ci_low, data.ci_high)
     ]
+    reference = next(
+        (float(a.value) for a in spec.annotations
+         if a.kind == "reference_line" and a.value is not None),
+        0.0,
+    )
     return {
         "data": {"values": rows},
         "layer": [
             {"mark": {"type": "rule", "color": tokens.INK["light"]["faint"], "strokeDash": [2, 2]},
-             "encoding": {"x": {"datum": 0}}},
+             "encoding": {"x": {"datum": reference}}},
             {"mark": {"type": "rule", "size": 1.5},
              "encoding": {"y": {"field": "predictor", "type": "nominal", "title": None},
                           "x": {"field": "low", "type": "quantitative",
