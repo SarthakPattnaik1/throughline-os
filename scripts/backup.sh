@@ -76,31 +76,60 @@ PGBIN="$("$PY_BIN" -c 'import pathlib,pgserver;print(pathlib.Path(pgserver.__fil
 # guarantee conditional on the very thing an update is about to change.
 #
 # Found by running an update against a stopped installation.
-echo "  database…"
-THROUGHLINE_TARGET="$HOME_DIR" DUMP="$WORK/database.dump" "$PY_BIN" -c "
-import os, pathlib, subprocess, sys
+echo "  database + objects (one consistent snapshot)…"
+THROUGHLINE_TARGET="$HOME_DIR" DUMP="$WORK/database.dump" OBJECTS="$WORK/objects.tar.gz" "$PY_BIN" -c "
+import os, pathlib, subprocess, sys, tarfile
 import pgserver
+import psycopg
+from psycopg import sql
 
 home = pathlib.Path(os.environ['THROUGHLINE_TARGET'])
+dump = pathlib.Path(os.environ['DUMP'])
+objects_archive = pathlib.Path(os.environ['OBJECTS'])
 server = pgserver.get_server(str(home / 'pgdata'))
 binaries = pathlib.Path(pgserver.__file__).parent / 'pginstall' / 'bin'
 
-result = subprocess.run(
-    [str(binaries / 'pg_dump'), '-Fc', '-f', os.environ['DUMP'],
-     '--exclude-table-data=installation_secrets', server.get_uri()],
-    capture_output=True, text=True,
-)
-if result.returncode != 0:
-    print(result.stderr.strip()[:500], file=sys.stderr)
-    sys.exit(1)
-" || { echo "  the database could not be dumped" >&2; exit 1; }
+# Freeze every application table against INSERT/UPDATE/DELETE while both halves
+# are captured. ACCESS SHARE (used by pg_dump) remains compatible. A writer that
+# has already begun finishes first; later writers wait until this transaction
+# releases the locks.
+with psycopg.connect(server.get_uri()) as conn:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+            "ORDER BY tablename")
+        tables = [row[0] for row in cur.fetchall()]
+        if tables:
+            statement = sql.SQL('LOCK TABLE {} IN SHARE MODE').format(
+                sql.SQL(', ').join(sql.Identifier('public', name) for name in tables))
+            cur.execute(statement)
 
-echo "  objects…"
-if [ -d "$HOME_DIR/objects" ]; then
-  tar -czf "$WORK/objects.tar.gz" -C "$HOME_DIR" objects
-else
-  tar -czf "$WORK/objects.tar.gz" -C "$WORK" --files-from /dev/null
-fi
+        result = subprocess.run(
+            [str(binaries / 'pg_dump'), '-Fc', '-f', str(dump),
+             '--exclude-table-data=installation_secrets', server.get_uri()],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(result.stderr.strip()[:500], file=sys.stderr)
+            sys.exit(1)
+
+        objects = home / 'objects'
+        if objects.exists():
+            # A backup that contains a symlink/device would later be refused by
+            # restore's safe extractor. Refuse it here instead of publishing a
+            # backup that cannot be restored.
+            for entry in objects.rglob('*'):
+                if entry.is_symlink() or (not entry.is_file() and not entry.is_dir()):
+                    print(f'unsupported object-store entry: {entry}', file=sys.stderr)
+                    sys.exit(1)
+
+        with tarfile.open(objects_archive, 'w:gz') as archive:
+            if objects.is_dir():
+                archive.add(objects, arcname='objects', recursive=True)
+
+# Leaving the transaction releases all SHARE locks only after database.dump and
+# objects.tar.gz have both been completed.
+" || { echo "  the database/object snapshot could not be captured" >&2; exit 1; }
 
 # A manifest, so a restore can tell whether the archive is intact before it
 # starts overwriting anything.
