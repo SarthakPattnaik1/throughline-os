@@ -20,7 +20,7 @@
  * saying so is rendered beside it and is not decoration.
  */
 
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 
 /** The handoff's own eight values, so the shape matches the approved frame. */
 const VALUES = [0.82, 0.61, 0.44, 0.73, 0.35, 0.56, 0.68, 0.29] as const;
@@ -48,7 +48,7 @@ export const Marks = forwardRef<MarksHandle, { onFormChange?: (form: Form) => vo
     const [settled, setSettled] = useState<Form>("Bar");
     const settledRef = useRef<Form>("Bar");
 
-    function paint(stage: number) {
+    const paint = useCallback((stage: number) => {
       const s = clamp(stage, 0, 3);
       const bar = weight(s, 0);
       const dot = weight(s, 1);
@@ -118,9 +118,9 @@ export const Marks = forwardRef<MarksHandle, { onFormChange?: (form: Form) => vo
         setSettled(nearest);
         onFormChange?.(nearest);
       }
-    }
+    }, [onFormChange]);
 
-    useImperativeHandle(ref, () => ({ setStage: paint }), []);
+    useImperativeHandle(ref, () => ({ setStage: paint }), [paint]);
 
     return (
       <div className="marks">
