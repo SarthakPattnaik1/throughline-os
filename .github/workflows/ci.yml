@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.12.14"]
+        python: ["3.12"]
         os: [ubuntu-latest, macos-latest]
 
     steps:
@@ -39,6 +39,9 @@ jobs:
 
       - name: Install the documented way
         run: ./scripts/bootstrap.sh
+
+      - name: Verify pinned Python runtime
+        run: ./.venv/bin/python -c "import sys; assert sys.version_info[:3] == (3, 12, 14), sys.version"
 
       - name: Run backend suite
         run: |
@@ -57,7 +60,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12.14"
+          python-version: "3.12"
 
       - name: Prepare isolated test home
         shell: pwsh
@@ -74,6 +77,9 @@ jobs:
 
       - name: Install
         run: python scripts/manage.py bootstrap
+
+      - name: Verify pinned Python runtime
+        run: .venv\Scripts\python -c "import sys; assert sys.version_info[:3] == (3, 12, 14), sys.version"
 
       - name: Run Pilot 01 Gate A on Windows
         run: |
