@@ -186,12 +186,25 @@ The refusal case is fixed as:
 [{"column": "species", "operator": "eq", "value": "Adelie"}]
 ```
 
-The scientific analysis itself must complete. Both replay artifacts must refuse
-with this exact reason:
+The scientific analysis itself must complete. The capability refusal is:
 
 ```text
 Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows.
 ```
 
-Changing the species, operator, value, or exact refusal reason creates a
-different audit contract.
+The two public artifacts intentionally expose these exact messages:
+
+Replay receipt:
+
+```text
+Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows.
+```
+
+Code export:
+
+```text
+Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows. Replay-supported methods: pearson_correlation, spearman_correlation.
+```
+
+Changing the species, operator, value, capability reason, or either public
+artifact message creates a different audit contract.
