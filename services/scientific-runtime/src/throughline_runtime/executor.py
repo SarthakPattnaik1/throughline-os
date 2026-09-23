@@ -109,6 +109,30 @@ class IsolationUnavailable(SandboxError):
     """Required isolation controls are not available on this platform."""
 
 
+_MEMORY_LIMIT_WARNING = "The analysis is running WITHOUT a memory ceiling"
+
+
+def _report_actual_limits(report: dict[str, Any], stderr: str) -> dict[str, Any]:
+    """Downgrade claims when the child reports an unapplied POSIX memory limit.
+
+    policy_report() describes the mechanism expected on this platform before the
+    child starts. POSIX may still refuse both RLIMIT_AS and RLIMIT_DATA at exec
+    time. In that case the child's stderr is the authoritative observation and
+    the stored run must not continue to claim memory_limit=True.
+    """
+    if _MEMORY_LIMIT_WARNING not in stderr:
+        return report
+
+    actual = {
+        **report,
+        "enforced": dict(report["enforced"]),
+        "best_effort": dict(report["best_effort"]),
+    }
+    actual["enforced"]["memory_limit"] = False
+    actual["best_effort"]["memory_limit"] = "requested_but_not_applied"
+    return actual
+
+
 @dataclass(slots=True)
 class SandboxPolicy:
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
@@ -463,6 +487,7 @@ def _run_sandbox(
                 job.close()
 
         duration = int((time.time() - started) * 1000)
+        report = _report_actual_limits(report, stderr)
         if not stdout.strip():
             return SandboxResult(
                 ok=False,
