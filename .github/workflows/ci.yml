@@ -40,6 +40,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      - name: Verify exact clean checkout
+        run: python scripts/verify_pilot_01.py --expected-commit "${{ github.sha }}" --clean-tree
+
       - name: Install the documented way
         run: ./scripts/bootstrap.sh
 
@@ -76,8 +79,8 @@ jobs:
           "THROUGHLINE_TEST_HOME=$testHome" >> $env:GITHUB_ENV
           "THROUGHLINE_HOME=$testHome" >> $env:GITHUB_ENV
 
-      - name: Verify Pilot 01 frozen input before bootstrap
-        run: python scripts/verify_pilot_01.py
+      - name: Verify exact clean checkout and frozen input
+        run: python scripts/verify_pilot_01.py --expected-commit "${{ github.sha }}" --clean-tree
 
       - name: Install
         run: python scripts/manage.py bootstrap
