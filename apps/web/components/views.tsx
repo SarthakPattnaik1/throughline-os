@@ -1270,15 +1270,6 @@ export function Search({ projectId, onOpenSource, initialQuery }: {
   const audit = useApi<RetrievalAudit>(
     auditing && eventId ? `/api/retrievals/${eventId}` : null);
 
-  /*
-   * A new search is a new event, so the panel goes back to unasked.
-   *
-   * Without this the previous search's passages would sit under this search's
-   * summary — a provenance panel showing the provenance of something else,
-   * which is worse than showing none.
-   */
-  useEffect(() => { setAuditing(false); }, [eventId]);
-
   return (
     <>
       <h1>Search sources</h1>
@@ -1290,7 +1281,15 @@ export function Search({ projectId, onOpenSource, initialQuery }: {
       </p>
 
       <form
-        onSubmit={(e) => { e.preventDefault(); setSubmitted(query.trim() || null); }}
+        onSubmit={(e) => {
+          e.preventDefault();
+          // Reset the previous retrieval audit before starting the next
+          // search. Doing this in an event-id effect races with opening the
+          // disclosure: a fast click can set auditing=true and then be
+          // overwritten by the delayed effect from the new result.
+          setAuditing(false);
+          setSubmitted(query.trim() || null);
+        }}
         style={{ display: "flex", gap: 8, marginBottom: 16 }}
       >
         <input
