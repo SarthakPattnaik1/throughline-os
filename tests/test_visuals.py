@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import io
 from pathlib import Path
 
@@ -212,7 +213,7 @@ def test_api_dataset_views_stay_on_the_immutable_version_when_source_moves(analy
     """A version-labelled view must never follow the source's newer file pointer."""
     _, version_id, runs = analysed
 
-    from throughline_api import app as api_app
+    api_app = importlib.import_module("throughline_api.app")
 
     before = api_app._column_values(version_id, "consumption_ddd")
     assert before and before[0] != 999.0
@@ -261,7 +262,7 @@ def test_density_reads_only_the_requested_column_in_chunks(analysed, monkeypatch
     _, version_id, _ = analysed
 
     import pandas as pd
-    from throughline_api import app as api_app
+    api_app = importlib.import_module("throughline_api.app")
 
     real_read_csv = pd.read_csv
     calls = []
@@ -284,7 +285,7 @@ def test_density_refuses_when_exact_kde_would_exceed_its_ceiling(
     _, version_id, _ = analysed
 
     from fastapi import HTTPException
-    from throughline_api import app as api_app
+    api_app = importlib.import_module("throughline_api.app")
 
     monkeypatch.setattr(api_app, "MAX_DENSITY_OBSERVATIONS", 10)
     with pytest.raises(HTTPException) as exc:
@@ -299,7 +300,7 @@ def test_api_dataset_views_refuse_tampered_version_bytes(analysed):
     _, version_id, _ = analysed
 
     from fastapi import HTTPException
-    from throughline_api import app as api_app
+    api_app = importlib.import_module("throughline_api.app")
 
     with connection() as conn, conn.cursor() as cur:
         cur.execute(
