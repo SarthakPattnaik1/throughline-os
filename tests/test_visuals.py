@@ -216,7 +216,7 @@ def test_api_dataset_views_stay_on_the_immutable_version_when_source_moves(analy
     api_app = importlib.import_module("throughline_api.app")
 
     before = api_app._column_values(version_id, "consumption_ddd")
-    assert before and before[0] != 999.0
+    assert before.size > 0 and before[0] != 999.0
 
     replacement = (
         b"country,consumption_ddd,resistance_pct,gdp_per_capita\n"
@@ -245,7 +245,7 @@ def test_api_dataset_views_stay_on_the_immutable_version_when_source_moves(analy
         conn.commit()
 
     after = api_app._column_values(version_id, "consumption_ddd")
-    assert after == before
+    assert np.array_equal(after, before)
     assert 999.0 not in after
 
     with connection() as conn, conn.cursor() as cur:
