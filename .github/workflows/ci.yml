@@ -16,8 +16,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Superseded PR runs may be cancelled, but every main commit must finish.
+  # Gate A and Gate B are required to refer to the same exact commit, so
+  # cancelling a main run because a later PR merged would erase that evidence.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   suite:
@@ -36,6 +39,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
+
+      - name: Verify exact clean checkout
+        run: python scripts/verify_pilot_01.py --expected-commit "${{ github.sha }}" --clean-tree
 
       - name: Install the documented way
         run: ./scripts/bootstrap.sh
@@ -73,8 +79,8 @@ jobs:
           "THROUGHLINE_TEST_HOME=$testHome" >> $env:GITHUB_ENV
           "THROUGHLINE_HOME=$testHome" >> $env:GITHUB_ENV
 
-      - name: Verify Pilot 01 frozen input before bootstrap
-        run: python scripts/verify_pilot_01.py
+      - name: Verify exact clean checkout and frozen input
+        run: python scripts/verify_pilot_01.py --expected-commit "${{ github.sha }}" --clean-tree
 
       - name: Install
         run: python scripts/manage.py bootstrap
@@ -84,7 +90,7 @@ jobs:
 
       - name: Run Pilot 01 Gate A on Windows
         run: |
-          .venv\Scripts\python scripts/verify_pilot_01.py --environment
+          .venv\Scripts\python scripts/verify_pilot_01.py --expected-commit "${{ github.sha }}" --clean-tree --environment
           .venv\Scripts\python -m pytest tests/test_pilot_01_palmer_penguins.py -q
 
       - name: Verify Windows sandbox confinement

@@ -74,7 +74,8 @@ Who runs it:
 Required conditions:
 
 1. Start from a fresh clone or clean checkout of the exact commit supplied for
-   audit. Record it with `git rev-parse HEAD`.
+   audit. The verifier must be given that exact SHA and must fail if HEAD differs
+   or if the working tree contains tracked or untracked changes.
 2. Do not reuse the author's virtual environment, database, generated replay
    artifacts, cached outputs, or copied test results.
 3. Run `python scripts/verify_pilot_01.py` before bootstrap. If it fails, stop
@@ -89,37 +90,37 @@ Required conditions:
 8. If anything fails, record the failure as observed. Do not patch during the
    audit and continue calling it the same audit run.
 
-### Windows PowerShell Gate B commands
+### Gate B command
 
-From a fresh checkout of the exact audited commit:
+Use the one-command runner from a fresh clone or clean checkout of the exact
+audited commit.
+
+Windows PowerShell:
 
 ```powershell
-git rev-parse HEAD
-python scripts/verify_pilot_01.py
-
-$env:THROUGHLINE_TEST_HOME = Join-Path $env:USERPROFILE (".throughline-pilot01-gateb-" + [guid]::NewGuid().ToString())
-$env:THROUGHLINE_HOME = $env:THROUGHLINE_TEST_HOME
-
-python scripts/manage.py bootstrap
-.venv\Scripts\python scripts/verify_pilot_01.py --environment
-.venv\Scripts\python -m pytest tests/test_pilot_01_palmer_penguins.py -q
+python scripts/run_pilot_01_gate_b.py <exact-commit-supplied-for-Gate-B> --operator "<auditor-name-or-handle>" --record "$env:USERPROFILE\pilot-01-gate-b.json"
 ```
 
-### macOS/Linux Gate B commands
-
-From a fresh checkout of the exact audited commit:
+macOS/Linux:
 
 ```bash
-git rev-parse HEAD
-python scripts/verify_pilot_01.py
-
-export THROUGHLINE_TEST_HOME="$(mktemp -d)/throughline-pilot01-gateb"
-export THROUGHLINE_HOME="$THROUGHLINE_TEST_HOME"
-
-./scripts/bootstrap.sh
-./.venv/bin/python scripts/verify_pilot_01.py --environment
-./.venv/bin/python -m pytest tests/test_pilot_01_palmer_penguins.py -q
+python scripts/run_pilot_01_gate_b.py <exact-commit-supplied-for-Gate-B> --operator "<auditor-name-or-handle>" --record "$HOME/pilot-01-gate-b.json"
 ```
+
+The runner enforces this order:
+
+1. require HEAD to equal the supplied commit and require a clean working tree;
+2. verify the frozen CSV bytes, SHA-256, and canonical Git blob;
+3. create a unique fresh test/database home;
+4. bootstrap Throughline through the documented installer;
+5. verify the exact frozen Python/scientific environment;
+6. run `tests/test_pilot_01_palmer_penguins.py` unmodified;
+7. write a structured JSON record containing the auditor identity, exact argv,
+   command outputs, platform, exact commit, and pass/fail result.
+
+The audit record must be written outside the repository. The runner refuses a
+`--record` path inside the checkout so recording the audit cannot itself make
+the audited working tree dirty.
 
 Gate B passes only when the second person reproduces the frozen contract from a
 clean checkout.
