@@ -98,13 +98,13 @@ audited commit.
 Windows PowerShell:
 
 ```powershell
-python scripts/run_pilot_01_gate_b.py <exact-commit-supplied-for-Gate-B> --record "$env:USERPROFILE\pilot-01-gate-b.json"
+python scripts/run_pilot_01_gate_b.py <exact-commit-supplied-for-Gate-B> --operator "<auditor-name-or-handle>" --record "$env:USERPROFILE\pilot-01-gate-b.json"
 ```
 
 macOS/Linux:
 
 ```bash
-python scripts/run_pilot_01_gate_b.py <exact-commit-supplied-for-Gate-B> --record "$HOME/pilot-01-gate-b.json"
+python scripts/run_pilot_01_gate_b.py <exact-commit-supplied-for-Gate-B> --operator "<auditor-name-or-handle>" --record "$HOME/pilot-01-gate-b.json"
 ```
 
 The runner enforces this order:
@@ -115,8 +115,8 @@ The runner enforces this order:
 4. bootstrap Throughline through the documented installer;
 5. verify the exact frozen Python/scientific environment;
 6. run `tests/test_pilot_01_palmer_penguins.py` unmodified;
-7. write a structured JSON record containing the commands, outputs, platform,
-   exact commit, and pass/fail result.
+7. write a structured JSON record containing the auditor identity, exact argv,
+   command outputs, platform, exact commit, and pass/fail result.
 
 The audit record must be written outside the repository. The runner refuses a
 `--record` path inside the checkout so recording the audit cannot itself make
