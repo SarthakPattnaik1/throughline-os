@@ -2370,19 +2370,19 @@ def project_snapshot(project_id: str,
         archive.writestr("project.json", records)
         missing: list[str] = []
         for entry in files:
-            # `path_for` raises for an object that is not there rather than
-            # returning a path to test, so the absence arrives as an exception
-            # and is caught here — checked, not assumed.
             try:
-                path = storage.path_for(entry["storage_key"])
-                present = path.exists()
-            except storage.StorageError:
-                present = False
-            if not present:
-                # Recorded and gone. Named in the archive rather than silently
-                # absent, because a reader counting files against the records
-                # deserves to know which one this installation had lost.
-                missing.append(f"{entry['storage_key']}  {entry['filename']}")
+                path = _verified_research_path(
+                    entry["storage_key"],
+                    entry["content_hash"],
+                    label=f"Snapshot file {entry['filename']}",
+                )
+            except HTTPException as exc:
+                # Preserve the snapshot route's existing honesty about missing
+                # evidence, but never package bytes that contradict project.json.
+                missing.append(
+                    f"{entry['storage_key']}  {entry['filename']}  "
+                    f"[unavailable or hash mismatch: {exc.detail}]"
+                )
                 continue
             archive.write(path, f"files/{entry['storage_key']}")
         if missing:
