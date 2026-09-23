@@ -131,6 +131,22 @@ def _independent_pearson_from_frozen_csv() -> tuple[int, float]:
     return n, numerator / denominator
 
 
+def test_frozen_contract_metadata_stays_synchronized():
+    """One manifest governs the test, docs, and cross-platform checkout rule."""
+    protocol = (PILOT_DIR / "AUDIT_PROTOCOL.md").read_text(encoding="utf-8")
+    attributes = (Path(__file__).parent.parent / ".gitattributes").read_text(
+        encoding="utf-8"
+    )
+
+    assert f"`{DATA_BYTES:,}`" in protocol
+    assert DATA_SHA256 in protocol
+    assert CONTRACT["upstream"]["repository"] in protocol
+    assert CONTRACT["upstream"]["commit"] in protocol
+    assert CONTRACT["upstream"]["path"] in protocol
+    assert CONTRACT["upstream"]["git_blob_sha"] in protocol
+    assert f'{CONTRACT["fixture_path"]} text eol=lf' in attributes
+
+
 def _drain() -> None:
     while Worker(worker_id="pilot-01").run_once():
         pass
