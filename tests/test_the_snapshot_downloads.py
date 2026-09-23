@@ -15,6 +15,7 @@ import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
+from throughline_domain import storage
 from throughline_domain.db import connection, transaction
 from throughline_domain.ids import new_id
 from conftest import sign_in
@@ -92,6 +93,39 @@ def test_a_file_recorded_but_missing_is_named_rather_than_dropped(client):
     archive = _open(client.get(f"/api/projects/{project_id}/snapshot.zip"))
     assert "files/MISSING.txt" in archive.namelist()
     assert "lost.csv" in archive.read("files/MISSING.txt").decode()
+
+
+def test_a_corrupted_recorded_file_is_not_packaged_under_its_old_hash(client):
+    """A portable snapshot must not carry bytes that contradict project.json."""
+    _account(client)
+    project_id = client.post("/api/projects", json={"name": "Snap"}).json()["id"]
+
+    payload = b"country,value\nIN,1\n"
+    with transaction() as cur:
+        record = storage.register_file(
+            cur,
+            project_id=project_id,
+            filename="evidence.csv",
+            stream=io.BytesIO(payload),
+            media_type="text/csv",
+        )
+
+    path = storage.path_for(str(record["storage_key"]))
+    original = path.read_bytes()
+    try:
+        path.write_bytes(b"corrupted")
+        response = client.get(f"/api/projects/{project_id}/snapshot.zip")
+        assert response.status_code == 200, response.text
+        archive = _open(response)
+
+        trusted_name = f"files/{record['storage_key']}"
+        assert trusted_name not in archive.namelist()
+        assert "files/MISSING.txt" in archive.namelist()
+        note = archive.read("files/MISSING.txt").decode()
+        assert "evidence.csv" in note
+        assert "SHA-256" in note
+    finally:
+        path.write_bytes(original)
 
 
 def test_another_project_is_not_in_it(client):
