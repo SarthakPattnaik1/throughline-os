@@ -78,9 +78,15 @@ def ingest_source(run: dict[str, Any], cur: Any) -> dict[str, Any]:
             )
 
         path = storage.path_for(source["storage_key"])
+        recorded_hash = str(source["content_hash"] or "")
+        if not recorded_hash or not storage.verify(source["storage_key"], recorded_hash):
+            raise PermanentIngestionError(
+                "Stored file no longer matches its recorded SHA-256; refusing "
+                "to ingest altered or corrupted bytes."
+            )
         objects.advance_ingestion(cur, source_id=source_id,
                                   to_status=IngestionStatus.VALIDATED,
-                                  detail=f"Stored file located ({suffix})")
+                                  detail=f"Stored file hash verified ({suffix})")
         #  lists malware scanning as architecture. It is not implemented here,
         # so this stage records that no scan ran rather than implying one did.
         objects.advance_ingestion(cur, source_id=source_id,
@@ -319,18 +325,24 @@ def _prepare_analysis(cur, spec_id: str):
     version_ids = spec_row["dataset_version_ids"]
     cur.execute(
         """
-        SELECT f.storage_key, f.filename, dv.content_hash, dv.row_count
+        SELECT dv.storage_key, f.filename, dv.content_hash, dv.row_count
         FROM dataset_versions dv
         JOIN datasets d ON d.id = dv.dataset_id
         JOIN sources s ON s.id = d.source_id
-        JOIN files f ON f.id = s.file_id
+        LEFT JOIN files f ON f.id = s.file_id
         WHERE dv.id = %s
         """,
         (version_ids[0],),
     )
     location = cur.fetchone()
-    if not location:
+    if not location or not location["storage_key"]:
         raise ValueError("The dataset version has no stored file to analyse.")
+
+    if not storage.verify(location["storage_key"], location["content_hash"]):
+        raise ValueError(
+            "The dataset bytes no longer match this version's recorded SHA-256; "
+            "refusing to compute a result from altered or corrupted input."
+        )
 
     spec_row["_dataset"] = {"content_hash": location["content_hash"],
                             "row_count": location["row_count"]}
