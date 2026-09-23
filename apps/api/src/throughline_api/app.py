@@ -216,6 +216,39 @@ def scoped_project(project_id: str, user: dict[str, Any]) -> str:
     return project_id
 
 
+def _verified_research_path(
+    storage_key: str | None,
+    content_hash: str | None,
+    *,
+    label: str = "Stored research file",
+) -> Path:
+    """Open recorded research bytes only when their identity still matches.
+
+    A content-addressed filename is not itself proof that the bytes under it
+    have not been truncated, replaced or corrupted. Any API computation that
+    derives new numbers or pictures from recorded research must verify the bytes
+    immediately before reading them.
+    """
+    if not storage_key or not content_hash:
+        raise HTTPException(
+            409, f"{label} has no complete storage/hash record, so it cannot be used."
+        )
+    try:
+        path = storage.path_for(storage_key)
+        intact = storage.verify(storage_key, content_hash)
+    except storage.StorageError as exc:
+        raise HTTPException(
+            409, f"{label} is recorded but its stored bytes are unavailable."
+        ) from exc
+    if not intact:
+        raise HTTPException(
+            409,
+            f"{label} no longer matches its recorded SHA-256; refusing to "
+            "compute from altered or corrupted bytes.",
+        )
+    return path
+
+
 # ---------------------------------------------------------------------------
 # System
 # ---------------------------------------------------------------------------
@@ -1500,7 +1533,7 @@ def specification_curve(project_id: str, payload: SpecificationCurveRequest,
 
     with transaction() as cur:
         cur.execute(
-            "SELECT dv.storage_key, d.project_id, d.format, s.title "
+            "SELECT dv.storage_key, dv.content_hash, d.project_id, d.format, s.title "
             "FROM dataset_versions dv JOIN datasets d ON d.id = dv.dataset_id "
             "JOIN sources s ON s.id = d.source_id WHERE dv.id = %s",
             (payload.dataset_version_id,))
@@ -1509,7 +1542,9 @@ def specification_curve(project_id: str, payload: SpecificationCurveRequest,
             raise HTTPException(404, "That dataset version does not exist.")
         if version["project_id"] != project_id:
             raise HTTPException(403, "That dataset belongs to a different project.")
-        path = storage.path_for(version["storage_key"])
+        path = _verified_research_path(
+            version["storage_key"], version["content_hash"], label="Dataset version"
+        )
         # Stored objects are content-addressed and therefore have no extension.
         # The sandbox reads the format from the suffix, so it comes from the
         # recorded format — not from the path, which has none.
@@ -2902,7 +2937,9 @@ def compare_images(project_id: str, payload: ImageSetRequest,
             loaded.append({
                 "id": row["id"], "title": row["title"],
                 "content_hash": row["content_hash"],
-                "path": str(storage.path_for(row["storage_key"])),
+                "path": str(_verified_research_path(
+                    row["storage_key"], row["content_hash"], label="Source image"
+                )),
             })
 
     try:
@@ -4155,7 +4192,9 @@ def define_cohort(project_id: str, payload: CohortRequest,
         if version["project_id"] != project_id:
             raise HTTPException(404, "That dataset version does not exist.")
 
-    path = storage.path_for(version["storage_key"])
+    path = _verified_research_path(
+        version["storage_key"], version["content_hash"], label="Dataset version"
+    )
     # Content-addressed storage has no extension, so the format comes from the
     # recorded one rather than from the path.
     suffix = (Path(version["title"] or "").suffix.lower()
@@ -4593,10 +4632,10 @@ def values_by_place(version_id: str, place: str = Query(...),
 
         cur.execute(
             """
-            SELECT f.storage_key, f.filename FROM dataset_versions dv
+            SELECT dv.storage_key, dv.content_hash, d.format, s.title
+            FROM dataset_versions dv
             JOIN datasets d ON d.id = dv.dataset_id
             JOIN sources s ON s.id = d.source_id
-            JOIN files f ON f.id = s.file_id
             WHERE dv.id = %s
             """,
             (version_id,),
@@ -4607,8 +4646,12 @@ def values_by_place(version_id: str, place: str = Query(...),
     if not located:
         raise HTTPException(409, "The file behind this dataset version is gone.")
 
-    frame, _ = read_dataset(storage.path_for(located["storage_key"]),
-                            suffix=Path(located["filename"] or "").suffix.lower())
+    path = _verified_research_path(
+        located["storage_key"], located["content_hash"], label="Dataset version"
+    )
+    suffix = (Path(located["title"] or "").suffix.lower()
+              or f".{(located['format'] or 'csv').lower()}")
+    frame, _ = read_dataset(path, suffix=suffix)
     for name in (place, value):
         if name not in frame.columns:
             raise HTTPException(409, f"{name!r} is not in the file any more.")
@@ -5394,10 +5437,10 @@ def _column_values(version_id: str, column: str) -> list[float | None]:
     with transaction() as cur:
         cur.execute(
             """
-            SELECT f.storage_key, f.filename FROM dataset_versions dv
+            SELECT dv.storage_key, dv.content_hash, d.format, s.title
+            FROM dataset_versions dv
             JOIN datasets d ON d.id = dv.dataset_id
             JOIN sources s ON s.id = d.source_id
-            JOIN files f ON f.id = s.file_id
             WHERE dv.id = %s
             """,
             (version_id,),
@@ -5406,8 +5449,12 @@ def _column_values(version_id: str, column: str) -> list[float | None]:
     if not row:
         return []
 
-    frame, _ = read_dataset(storage.path_for(row["storage_key"]),
-                            suffix=Path(row["filename"] or "").suffix.lower())
+    path = _verified_research_path(
+        row["storage_key"], row["content_hash"], label="Dataset version"
+    )
+    suffix = (Path(row["title"] or "").suffix.lower()
+              or f".{(row['format'] or 'csv').lower()}")
+    frame, _ = read_dataset(path, suffix=suffix)
     if column not in frame.columns:
         return []
     numeric = pd.to_numeric(frame[column], errors="coerce")
@@ -5648,10 +5695,10 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
         return {}, {"sampled": False}
     cur.execute(
         """
-        SELECT f.storage_key, f.filename FROM dataset_versions dv
+        SELECT dv.storage_key, dv.content_hash, d.format, s.title
+        FROM dataset_versions dv
         JOIN datasets d ON d.id = dv.dataset_id
         JOIN sources s ON s.id = d.source_id
-        JOIN files f ON f.id = s.file_id
         WHERE dv.id = %s
         """,
         (spec.dataset_version_id,),
@@ -5660,10 +5707,13 @@ def _visual_sample(cur, spec: ResearchVisualSpec,
     if not row:
         return {}, {"sampled": False}
 
+    path = _verified_research_path(
+        row["storage_key"], row["content_hash"], label="Dataset version"
+    )
+    suffix = (Path(row["title"] or "").suffix.lower()
+              or f".{(row['format'] or 'csv').lower()}")
     return _sample_columns(
-        storage.path_for(row["storage_key"]),
-        Path(row["filename"] or "").suffix.lower(),
-        list(fields), limit, filters=list(spec.filters or []))
+        path, suffix, list(fields), limit, filters=list(spec.filters or []))
 
 
 # ---------------------------------------------------------------------------
@@ -5983,7 +6033,7 @@ async def unhandled(request: Request, exc: Exception) -> JSONResponse:
 def _database_file(cur, *, project_id: str, source_id: str) -> dict[str, Any]:
     """The stored file behind a source, once it is known to be a database."""
     cur.execute(
-        "SELECT f.storage_key, f.filename FROM sources s "
+        "SELECT f.storage_key, f.filename, s.content_hash FROM sources s "
         "JOIN files f ON f.id = s.file_id "
         "WHERE s.id = %s AND s.project_id = %s",
         (source_id, project_id))
@@ -6010,7 +6060,9 @@ def database_tables(project_id: str, source_id: str,
     with transaction() as cur:
         located = _database_file(cur, project_id=project_id, source_id=source_id)
 
-    path = storage.path_for(located["storage_key"])
+    path = _verified_research_path(
+        located["storage_key"], located["content_hash"], label="Uploaded database"
+    )
     try:
         tables = dataset_reader.sqlite_tables(path)
     except dataset_reader.UnsupportedDataset as exc:
@@ -6045,7 +6097,9 @@ def import_database_table(project_id: str, source_id: str, table: str,
     with transaction() as cur:
         located = _database_file(cur, project_id=project_id, source_id=source_id)
 
-    path = storage.path_for(located["storage_key"])
+    path = _verified_research_path(
+        located["storage_key"], located["content_hash"], label="Uploaded database"
+    )
     try:
         frame, _ = dataset_reader.read_dataset(path, suffix=".sqlite", table=table)
     except dataset_reader.UnsupportedDataset as exc:
