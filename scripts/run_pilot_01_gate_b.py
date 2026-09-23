@@ -64,7 +64,9 @@ def _write_record(path: Path | None, record: dict) -> None:
         return
     path = path.expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(payload, encoding="utf-8")
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(payload, encoding="utf-8")
+    temporary.replace(path)
     print(f"\nGate B audit record: {path}")
 
 
@@ -115,33 +117,35 @@ def main() -> int:
     }
 
     env = os.environ.copy()
-
-    # Gate B must not inherit machine-local execution overrides. An exported
-    # database URL outranks the fresh test home, and PYTHONPATH can shadow the
-    # audited checkout/venv with arbitrary packages from elsewhere.
-    for key in (
-        "THROUGHLINE_DATABASE_URL",
-        "THROUGHLINE_ALLOW_INSTALLED_HOME",
-        "PYTHONPATH",
-        "PYTHONHOME",
-    ):
-        env.pop(key, None)
-
-    # .venv is intentionally gitignored, so a clean Git tree does not prove the
-    # audit is using a fresh environment. Remove any pre-existing virtualenv
-    # before bootstrap; Gate B must create its own from the pinned runtime.
-    existing_venv = ROOT / ".venv"
-    if existing_venv.exists():
-        shutil.rmtree(existing_venv)
-    if existing_venv.exists():
-        raise RuntimeError(f"could not remove pre-existing audit virtualenv: {existing_venv}")
-
-    audit_home = _fresh_home()
-    env["THROUGHLINE_TEST_HOME"] = str(audit_home)
-    env["THROUGHLINE_HOME"] = str(audit_home)
-    record["test_home"] = str(audit_home)
+    return_code = 1
 
     try:
+        # Gate B must not inherit machine-local execution overrides. An exported
+        # database URL outranks the fresh test home, and PYTHONPATH can shadow the
+        # audited checkout/venv with arbitrary packages from elsewhere.
+        for key in (
+            "THROUGHLINE_DATABASE_URL",
+            "THROUGHLINE_ALLOW_INSTALLED_HOME",
+            "PYTHONPATH",
+            "PYTHONHOME",
+        ):
+            env.pop(key, None)
+
+        # .venv is intentionally gitignored, so a clean Git tree does not prove
+        # the audit is using a fresh environment. Remove it before bootstrap.
+        existing_venv = ROOT / ".venv"
+        if existing_venv.exists():
+            shutil.rmtree(existing_venv)
+        if existing_venv.exists():
+            raise RuntimeError(
+                f"could not remove pre-existing audit virtualenv: {existing_venv}"
+            )
+
+        audit_home = _fresh_home()
+        env["THROUGHLINE_TEST_HOME"] = str(audit_home)
+        env["THROUGHLINE_HOME"] = str(audit_home)
+        record["test_home"] = str(audit_home)
+
         _run(
             [
                 sys.executable,
@@ -184,8 +188,12 @@ def main() -> int:
         )
         record["status"] = "passed"
         return_code = 0
-    except (subprocess.CalledProcessError, RuntimeError) as exc:
-        record["error"] = str(exc)
+    except KeyboardInterrupt:
+        record["status"] = "interrupted"
+        record["error"] = "KeyboardInterrupt"
+        return_code = 130
+    except Exception as exc:
+        record["error"] = f"{type(exc).__name__}: {exc}"
         record["status"] = "failed"
         return_code = 1
     finally:
