@@ -113,9 +113,10 @@ def test_text_cells_cannot_become_spreadsheet_formulas(client):
 
     exported = [row["Variable A"] for row in rows]
     assert len(exported) == len(dangerous)
-    for raw, cell in zip(dangerous, exported):
-        assert cell.startswith("'"), (raw, cell)
-        assert cell[1:] == raw
+    # Results are deliberately ordered by statistical evidence and id, not by
+    # insertion order. Verify every dangerous label is preserved literally
+    # without coupling this security regression test to row ordering.
+    assert set(exported) == {"'" + raw for raw in dangerous}
 
 
 def test_negative_numbers_remain_numeric_cells():
