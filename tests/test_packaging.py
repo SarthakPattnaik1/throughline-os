@@ -88,7 +88,12 @@ def test_all_documented_installs_use_the_scientific_lock():
 
     manage = (ROOT / "scripts" / "manage.py").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert "requirements/scientific-runtime.lock" in manage
+
+    # Check behavior, not one spelling of pathlib composition. manage.py builds
+    # the same path with ROOT / "requirements" / "scientific-runtime.lock".
+    assert '"requirements"' in manage
+    assert '"scientific-runtime.lock"' in manage
+    assert '"-c"' in manage
     assert "requirements/scientific-runtime.lock" in dockerfile
     assert "-c ./requirements/scientific-runtime.lock" in dockerfile
 
