@@ -12,12 +12,17 @@ import pytest
 # external database URL would outrank THROUGHLINE_HOME in database_url() and
 # could make the cleanup fixture TRUNCATE a real/shared database. Refuse before
 # any Throughline database module is imported.
-_INHERITED_DATABASE_URL = os.environ.get("THROUGHLINE_DATABASE_URL")
-if _INHERITED_DATABASE_URL:
+_DANGEROUS_INHERITED_OVERRIDES = {
+    name: os.environ[name]
+    for name in ("THROUGHLINE_DATABASE_URL", "THROUGHLINE_STORAGE")
+    if os.environ.get(name)
+}
+if _DANGEROUS_INHERITED_OVERRIDES:
+    names = ", ".join(sorted(_DANGEROUS_INHERITED_OVERRIDES))
     raise RuntimeError(
-        "Refusing to run the test suite with THROUGHLINE_DATABASE_URL set. "
-        "Tests truncate every public table in their database; unset the external "
-        "database override and let pytest use its isolated embedded PostgreSQL."
+        "Refusing to run the test suite with external data-path overrides set: "
+        f"{names}. Tests truncate their database and write/delete test artifacts; "
+        "unset these variables and let pytest use its isolated test home."
     )
 
 # Each test session gets its own embedded PostgreSQL data directory so a test
