@@ -38,7 +38,7 @@ describe("remote first-run setup", () => {
     await user.type(screen.getByLabelText(/^Password/), "correct horse battery");
     await user.click(screen.getByRole("button", { name: /create account and continue/i }));
 
-    const token = await screen.findByLabelText("Setup token");
+    const token = await screen.findByLabelText(/^Setup token/);
     expect(token).toBeTruthy();
 
     await user.type(token, "operator-token");
