@@ -55,8 +55,8 @@ def test_the_pinned_python_is_the_version_the_rest_of_the_repo_requires():
     installs an interpreter its own next step then refuses, and the error would
     name the interpreter rather than the mismatch.
     """
-    major, minor = runtimes.CPYTHON_VERSION.split(".")[:2]
-    assert (int(major), int(minor)) == manage.REQUIRED_PYTHON
+    expected = tuple(int(part) for part in runtimes.CPYTHON_VERSION.split("."))
+    assert expected == manage.REQUIRED_PYTHON
 
 
 def test_every_pin_carries_a_real_digest():
