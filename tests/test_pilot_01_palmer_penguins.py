@@ -60,6 +60,22 @@ from throughline_workers.runner import Worker
 PILOT_DIR = Path(__file__).parent / "fixtures" / "pilot_01"
 CONTRACT = json.loads((PILOT_DIR / "FROZEN_INPUT.json").read_text(encoding="utf-8"))
 DATA = Path(__file__).parent.parent / CONTRACT["fixture_path"]
+LOCK = Path(__file__).parent.parent / "requirements" / "scientific-runtime.lock"
+
+
+def _locked_scientific_versions() -> dict[str, str]:
+    versions: dict[str, str] = {}
+    for raw in LOCK.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, sep, version = line.partition("==")
+        assert sep == "==", f"Scientific runtime entry is not exactly pinned: {line}"
+        versions[name.strip()] = version.strip()
+    return versions
+
+
+LOCKED_SCIENTIFIC = _locked_scientific_versions()
 
 # Audit gate: one machine-readable manifest is the source of truth for the
 # exact input. CI, Gate B, and this test all read the same bytes/hash values so
@@ -287,8 +303,9 @@ def test_supported_run_replays_under_the_frozen_contract(
     assert run["status"] == "completed", run["error"]
     assert run["input_hashes"]["dataset_content_hash"] == DATA_SHA256
     assert run["input_hashes"]["spec_content_hash"]
-    assert run["dependency_versions"]["pandas"]
-    assert run["dependency_versions"]["scipy"]
+    assert run["dependency_versions"]["python"] == "3.12.14"
+    for package, expected_version in LOCKED_SCIENTIFIC.items():
+        assert run["dependency_versions"][package] == expected_version
     assert run["sandbox_policy"]["enforced"]["separate_process"] is True
 
     with connection() as conn, conn.cursor() as cur:
