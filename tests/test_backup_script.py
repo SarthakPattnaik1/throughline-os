@@ -134,3 +134,23 @@ def test_it_refuses_when_there_is_nothing_to_back_up(tmp_path):
 
     assert result.returncode != 0
     assert "THROUGHLINE_HOME" in result.stderr
+
+
+
+def test_database_and_objects_are_captured_under_one_write_freeze():
+    """The DB dump and object archive must describe one committed state.
+
+    A normal backup/restore test cannot reliably reproduce the tiny window where
+    a project delete commits after pg_dump but before object capture. Pin the
+    structural invariant as well: the SHARE locks are acquired before either
+    capture operation, and both happen inside the same Python/transaction block.
+    """
+    source = BACKUP.read_text()
+
+    lock = source.index("LOCK TABLE {} IN SHARE MODE")
+    dump = source.index("'pg_dump'", lock)
+    objects = source.index("tarfile.open(objects_archive", dump)
+    release = source.index("releases all SHARE locks", objects)
+
+    assert lock < dump < objects < release
+    assert "database + objects (one consistent snapshot)" in source
