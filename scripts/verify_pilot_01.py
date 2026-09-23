@@ -12,6 +12,7 @@ import hashlib
 import json
 import platform
 import runpy
+import subprocess
 import sys
 from pathlib import Path
 
@@ -121,6 +122,37 @@ def verify_environment() -> None:
     print("Pilot 01 frozen environment verified.")
 
 
+def verify_checkout(expected_commit: str | None, require_clean: bool) -> None:
+    """Fail if Gate B is not running the exact clean checkout supplied."""
+    if not expected_commit and not require_clean:
+        return
+
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(f"Could not verify Git checkout: {exc}") from exc
+
+    print(f"git_head={head}")
+    if expected_commit and head.lower() != expected_commit.lower():
+        raise SystemExit(
+            f"Pilot 01 audit commit mismatch: {head} != {expected_commit}"
+        )
+
+    if require_clean:
+        status = subprocess.run(
+            ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        ).stdout
+        if status.strip():
+            raise SystemExit(
+                "Pilot 01 audit checkout is not clean:\n" + status.rstrip()
+            )
+        print("git_worktree=clean")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -128,8 +160,18 @@ def main() -> int:
         action="store_true",
         help="verify the exact frozen Python and scientific runtime versions",
     )
+    parser.add_argument(
+        "--expected-commit",
+        help="require HEAD to equal this exact Git commit",
+    )
+    parser.add_argument(
+        "--clean-tree",
+        action="store_true",
+        help="require a clean working tree, including no untracked files",
+    )
     args = parser.parse_args()
 
+    verify_checkout(args.expected_commit, args.clean_tree)
     verify_input()
     if args.environment:
         verify_environment()
