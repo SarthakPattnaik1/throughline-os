@@ -58,7 +58,13 @@ def _write_hashed_blob(
     key = _key_for(content_hash)
     destination = storage_root() / key
     if destination.exists():
-        return content_hash, key, size
+        with destination.open("rb") as existing:
+            actual_hash, actual_size = hash_stream(existing)
+        if hmac_equal(actual_hash, content_hash) and actual_size == size:
+            return content_hash, key, size
+        # A path named after this hash contains different bytes. Treat the
+        # caller's freshly-hashed stream as the repair source rather than
+        # perpetuating corruption merely because the filename already exists.
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = destination.with_suffix(f".{new_id('tmp')}.part")
