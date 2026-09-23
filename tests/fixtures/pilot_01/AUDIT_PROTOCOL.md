@@ -125,14 +125,24 @@ python scripts/run_pilot_01_gate_b.py <exact-commit-supplied-for-Gate-B> --opera
 
 The runner enforces this order:
 
-1. require HEAD to equal the supplied commit and require a clean working tree;
-2. verify the frozen CSV bytes, SHA-256, and canonical Git blob;
-3. create a unique fresh test/database home;
-4. bootstrap Throughline through the documented installer;
-5. verify the exact frozen Python/scientific environment;
-6. run `tests/test_pilot_01_palmer_penguins.py` unmodified;
-7. write a structured JSON record containing the auditor identity, exact argv,
-   command outputs, platform, exact commit, and pass/fail result.
+1. remove any ignored pre-existing `.venv` so Git cleanliness cannot hide a
+   reused author environment;
+2. strip inherited `THROUGHLINE_*`, `PIP_*`, `PYTHONPATH`, and
+   `PYTHONHOME` overrides that could redirect data or package resolution;
+3. require HEAD to equal the supplied commit and require a clean working tree;
+4. verify the frozen CSV bytes, SHA-256, and canonical Git blob;
+5. create a unique fresh test/database/runtime home;
+6. download the repository-pinned CPython archive into that private runtime
+   home and verify its committed SHA-256 before use;
+7. bootstrap Throughline through the documented installer with that pinned
+   interpreter;
+8. reverify the exact clean checkout after bootstrap;
+9. verify the frozen Python/core scientific environment;
+10. record `pip freeze --all` so the complete resolved Python environment is
+    part of the evidence;
+11. run `tests/test_pilot_01_palmer_penguins.py` unmodified;
+12. write a structured JSON record containing the auditor identity, exact argv,
+    command outputs, platform, exact commit, environment, and pass/fail result.
 
 The audit record must be written outside the repository. The runner refuses a
 `--record` path inside the checkout so recording the audit cannot itself make
