@@ -280,6 +280,28 @@ class TestOneBadTitleCannotTakeTheFileWithIt:
         for escaped in (r"\%", r"\&", r"\_", r"\$", r"\#"):
             assert escaped in text, escaped
 
+    def test_tex_commands_from_metadata_are_rendered_as_literal_text(
+            self, cur, project):
+        source = _paper(
+            cur,
+            project,
+            title=r"Results \input{/etc/passwd} ^ ~",
+            authors=[r"Eve \write18{touch /tmp/owned}"],
+            journal="J",
+            date="2024-01-01",
+        )
+        _cite(cur, project, source)
+
+        text = bibliography.as_bibtex(cur, project)
+
+        assert r"\input" not in text
+        assert r"\write18" not in text
+        assert r"\textbackslash{}input" in text
+        assert r"\textbackslash{}write18" in text
+        assert r"\textasciicircum{}" in text
+        assert r"\textasciitilde{}" in text
+        assert _entries_close(text)
+
     def test_a_plain_title_is_untouched(self, cur, project):
         source = _paper(cur, project, title="Attention and the Analyst",
                         authors=["Ada Lovelace"], journal="J", date="2024-01-01")
