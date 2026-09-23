@@ -98,7 +98,7 @@ git rev-parse HEAD
 python scripts/verify_pilot_01.py
 python scripts/manage.py bootstrap
 
-$env:THROUGHLINE_TEST_HOME = Join-Path $env:TEMP ("throughline-pilot01-gateb-" + [guid]::NewGuid().ToString())
+$env:THROUGHLINE_TEST_HOME = Join-Path (Get-Location) (".pilot01-gateb-" + [guid]::NewGuid().ToString())
 $env:THROUGHLINE_HOME = $env:THROUGHLINE_TEST_HOME
 
 .venv\Scripts\python scripts/verify_pilot_01.py --environment
