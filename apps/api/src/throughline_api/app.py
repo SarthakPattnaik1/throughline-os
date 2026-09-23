@@ -66,7 +66,12 @@ from throughline_domain.db import connection, jsonb, transaction
 from throughline_domain.ids import new_id
 from throughline_domain.migrate import migrate
 from throughline_runtime.executor import policy_report as sandbox_policy_report
-from .security import SecurityMiddleware, deployment_is_local, session_cookie_kwargs
+from .security import (
+    RequestBodyLimitMiddleware,
+    SecurityMiddleware,
+    deployment_is_local,
+    session_cookie_kwargs,
+)
 from throughline_schemas.enums import (
     FindingLifecycle,
     FindingType,
@@ -109,6 +114,9 @@ app = FastAPI(title="Throughline OS", version=API_VERSION, lifespan=lifespan)
 # ten, and every limit was a third of what it said. Invisible while limits were
 # looked up by concrete path, since no bucket came near one (T167).
 app.add_middleware(SecurityMiddleware)
+# Added after SecurityMiddleware so this pure-ASGI boundary is outermost and
+# can reject oversized multipart/chunked bodies before FastAPI parses them.
+app.add_middleware(RequestBodyLimitMiddleware)
 
 
 # ---------------------------------------------------------------------------
