@@ -25,6 +25,7 @@ from fastapi import (
     Response, UploadFile,
 )
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 from throughline_visual import spec as visual_spec
 from pydantic import ValidationError as PayloadInvalid
@@ -2351,25 +2352,15 @@ def finding_provenance_log(finding_id: str,
 
 @app.get("/api/projects/{project_id}/snapshot.zip")
 def project_snapshot(project_id: str,
-                     user: dict = Depends(current_user)) -> Response:
+                     user: dict = Depends(current_user)) -> FileResponse:
     """
     One project as one file, to keep or to carry to another machine (§75).
 
-    `backup.sh` copies the whole installation — every project, including other
-    researchers'. This is the one somebody actually asks for: *give me
-    everything about this project*.
-
-    A zip rather than JSON, because the records are only half of it. The files
-    the project ingested travel beside them under `files/`, named by the
-    storage key the records refer to, so the archive is self-contained: a
-    snapshot describing analyses of a CSV nobody has is a description of work
-    rather than the work.
-
-    Built in memory. A project's records are small and its files are already
-    on this disk; streaming would add a temporary file to clean up for no gain
-    at the sizes involved, and the download is local.
+    The records and stored files can be much larger than the API process should
+    ever hold in memory. The archive is therefore assembled in a private
+    temporary file and sent by FileResponse. The file is removed after the
+    response finishes, and also on any construction failure.
     """
-    import io
     import zipfile
 
     scoped_project(project_id, user)
@@ -2380,38 +2371,41 @@ def project_snapshot(project_id: str,
             raise HTTPException(404, str(exc)) from exc
         files = snapshot.files_in(cur, project_id)
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("project.json", records)
-        missing: list[str] = []
-        for entry in files:
-            # `path_for` raises for an object that is not there rather than
-            # returning a path to test, so the absence arrives as an exception
-            # and is caught here — checked, not assumed.
-            try:
-                path = storage.path_for(entry["storage_key"])
-                present = path.exists()
-            except storage.StorageError:
-                present = False
-            if not present:
-                # Recorded and gone. Named in the archive rather than silently
-                # absent, because a reader counting files against the records
-                # deserves to know which one this installation had lost.
-                missing.append(f"{entry['storage_key']}  {entry['filename']}")
-                continue
-            archive.write(path, f"files/{entry['storage_key']}")
-        if missing:
-            archive.writestr(
-                "files/MISSING.txt",
-                "These files are recorded in project.json and were not on "
-                "this machine when the snapshot was taken:\n\n"
-                + "\n".join(missing) + "\n")
+    handle = tempfile.NamedTemporaryFile(
+        prefix=f"throughline-{project_id}-snapshot-",
+        suffix=".zip",
+        delete=False,
+    )
+    archive_path = Path(handle.name)
+    handle.close()
 
-    return Response(
-        content=buffer.getvalue(),
+    try:
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("project.json", records)
+            missing: list[str] = []
+            for entry in files:
+                try:
+                    path = storage.path_for(entry["storage_key"])
+                except storage.StorageError:
+                    missing.append(f"{entry['storage_key']}  {entry['filename']}")
+                    continue
+                archive.write(path, f"files/{entry['storage_key']}")
+            if missing:
+                archive.writestr(
+                    "files/MISSING.txt",
+                    "These files are recorded in project.json and were not on "
+                    "this machine when the snapshot was taken:\n\n"
+                    + "\n".join(missing) + "\n",
+                )
+    except BaseException:
+        archive_path.unlink(missing_ok=True)
+        raise
+
+    return FileResponse(
+        archive_path,
         media_type="application/zip",
-        headers={"Content-Disposition":
-                 f'attachment; filename="{project_id}-snapshot.zip"'},
+        filename=f"{project_id}-snapshot.zip",
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
     )
 
 
