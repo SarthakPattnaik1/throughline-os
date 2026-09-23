@@ -120,7 +120,7 @@ def _explain_no_venv() -> None:
           "\n\n  Then run this again.", file=sys.stderr)
 
 
-def _venv_version(root: Path = ROOT) -> tuple[int, int] | None:
+def _venv_version(root: Path = ROOT) -> tuple[int, int, int] | None:
     """The Python the existing virtualenv was built from, if it has one.
 
     This became a question worth asking the moment the bootstrap could supply
@@ -135,13 +135,13 @@ def _venv_version(root: Path = ROOT) -> tuple[int, int] | None:
         return None
     result = subprocess.run(
         [str(python), "-c",
-         "import sys; print(sys.version_info[0], sys.version_info[1])"],
+         "import sys; print(sys.version_info[0], sys.version_info[1], sys.version_info[2])"],
         capture_output=True, text=True)
     if result.returncode != 0:
         return None
     try:
-        major, minor = result.stdout.split()
-        return int(major), int(minor)
+        major, minor, patch = result.stdout.split()
+        return int(major), int(minor), int(patch)
     except ValueError:
         return None
 
@@ -177,7 +177,7 @@ def bootstrap() -> int:
     # A virtualenv built by a different interpreter is not reusable, and the
     # symptom if it is reused is an import error naming a C symbol.
     existing = _venv_version()
-    if existing is not None and existing != REQUIRED_PYTHON[:2]:
+    if existing is not None and existing != REQUIRED_PYTHON:
         stale = ".".join(str(part) for part in existing)
         print(f"Replacing the existing virtualenv: it was built from Python "
               f"{stale}, and this is {have}.")
