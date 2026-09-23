@@ -186,7 +186,7 @@ def _apply_headers(response: Response) -> None:
     headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     headers.setdefault(
         "Permissions-Policy",
-        "geolocation=(), microphone=(), camera=(), payment=(), usb=()")
+        "geolocation=(), microphone=(self), camera=(self), payment=(), usb=()")
     headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; img-src 'self' data: blob:; "
