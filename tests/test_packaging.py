@@ -74,6 +74,40 @@ def test_bootstrap_delegates_rather_than_keeping_a_second_list():
         "and the one nobody runs is the one that breaks.")
 
 
+def test_all_documented_installs_use_the_scientific_lock():
+    """Bootstrap and Docker must resolve the same exact scientific stack."""
+    lock = ROOT / "requirements" / "scientific-runtime.lock"
+    lines = [
+        line.strip()
+        for line in lock.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert lines, "scientific runtime lock is empty"
+    assert all(re.fullmatch(r"[A-Za-z0-9_.-]+==[^=\s]+", line) for line in lines), (
+        "every scientific runtime dependency must be exactly pinned with ==")
+
+    manage = (ROOT / "scripts" / "manage.py").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    # Check behavior, not one spelling of pathlib composition. manage.py builds
+    # the same path with ROOT / "requirements" / "scientific-runtime.lock".
+    assert '"requirements"' in manage
+    assert '"scientific-runtime.lock"' in manage
+    assert '"-c"' in manage
+    assert "requirements/scientific-runtime.lock" in dockerfile
+    assert "-c ./requirements/scientific-runtime.lock" in dockerfile
+
+
+def test_docker_uses_the_same_exact_python_patch_as_the_managed_runtime():
+    """A 3.12 family tag would silently float even while bootstrap is pinned."""
+    runtime_text = (ROOT / "scripts" / "runtimes.py").read_text(encoding="utf-8")
+    match = re.search(r'^CPYTHON_VERSION = "([^"]+)"', runtime_text, re.M)
+    assert match, "scripts/runtimes.py does not declare CPYTHON_VERSION"
+    version = match.group(1)
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert f"python:{version}-slim" in dockerfile
+
+
 def test_the_image_installs_every_package():
     dockerfile = (ROOT / "Dockerfile").read_text()
     listed = set(re.findall(r"\./(packages|services|apps)/([\w-]+)", dockerfile))

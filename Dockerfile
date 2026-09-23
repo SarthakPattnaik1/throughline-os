@@ -58,7 +58,7 @@ RUN mkdir -p public
 RUN NEXT_DIST_DIR=out npm run build
 
 
-FROM --platform=linux/amd64 python:3.12-slim AS runtime
+FROM --platform=linux/amd64 python:3.12.14-slim AS runtime
 
 # Build tools for the scientific stack, removed in the same layer so they do not
 # ship. Nothing here is needed at runtime.
@@ -72,6 +72,7 @@ WORKDIR /app
 COPY packages ./packages
 COPY services ./services
 COPY apps/api ./apps/api
+COPY requirements ./requirements
 
 # There was a `COPY pyproject.toml* ./` here. This workspace has no root
 # pyproject.toml — it is nine independent packages — so the glob matches nothing
@@ -85,6 +86,7 @@ COPY apps/api ./apps/api
 # `docker build` and `docker compose up`.
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir \
+      -c ./requirements/scientific-runtime.lock \
       ./packages/schemas ./packages/ingestion ./packages/model \
       ./packages/visual-spec ./packages/connector-sdk \
       ./packages/research-domain ./services/scientific-runtime \

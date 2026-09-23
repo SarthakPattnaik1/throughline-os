@@ -51,7 +51,7 @@ NODE_MINIMUM = 20
 # the embedded PostgreSQL as a binary wheel and publishes none past cp312. Windows
 # is included in that — the win_amd64 wheels exist through cp312 — so this is a
 # version constraint, not a platform one.
-REQUIRED_PYTHON = (3, 12)
+REQUIRED_PYTHON = tuple(int(part) for part in runtimes.CPYTHON_VERSION.split("."))
 
 # Order satisfies the dependency graph. None of these is published, so pip can
 # only resolve `throughline-visual` and friends if the directory providing them is
@@ -99,7 +99,7 @@ def _explain_the_version(want: str, have: str) -> None:
           file=sys.stderr)
     print(f"\n  Every package here declares requires-python >= {want}, and"
           f"\n  pgserver — which provides the embedded PostgreSQL — publishes"
-          f"\n  no wheel past cp{''.join(str(p) for p in REQUIRED_PYTHON)}."
+          f"\n  no wheel past cp{REQUIRED_PYTHON[0]}{REQUIRED_PYTHON[1]}."
           f" Anything newer cannot install\n  the database."
           f"\n\n  Run this with a {want} interpreter instead.", file=sys.stderr)
 
@@ -120,7 +120,7 @@ def _explain_no_venv() -> None:
           "\n\n  Then run this again.", file=sys.stderr)
 
 
-def _venv_version(root: Path = ROOT) -> tuple[int, int] | None:
+def _venv_version(root: Path = ROOT) -> tuple[int, int, int] | None:
     """The Python the existing virtualenv was built from, if it has one.
 
     This became a question worth asking the moment the bootstrap could supply
@@ -135,19 +135,19 @@ def _venv_version(root: Path = ROOT) -> tuple[int, int] | None:
         return None
     result = subprocess.run(
         [str(python), "-c",
-         "import sys; print(sys.version_info[0], sys.version_info[1])"],
+         "import sys; print(sys.version_info[0], sys.version_info[1], sys.version_info[2])"],
         capture_output=True, text=True)
     if result.returncode != 0:
         return None
     try:
-        major, minor = result.stdout.split()
-        return int(major), int(minor)
+        major, minor, patch = result.stdout.split()
+        return int(major), int(minor), int(patch)
     except ValueError:
         return None
 
 
 def bootstrap() -> int:
-    version = sys.version_info[:2]
+    version = sys.version_info[:3]
     want = ".".join(str(part) for part in REQUIRED_PYTHON)
     have = ".".join(str(part) for part in version)
 
@@ -231,7 +231,9 @@ def bootstrap() -> int:
     for package in PACKAGES:
         print(f"  installing {package}")
         result = subprocess.run(
-            [python, "-m", "pip", "install", "-q", "-e", str(ROOT / package)])
+            [python, "-m", "pip", "install", "-q",
+             "-c", str(ROOT / "requirements" / "scientific-runtime.lock"),
+             "-e", str(ROOT / package)])
         if result.returncode != 0:
             print(f"\nFailed installing {package}.", file=sys.stderr)
             return result.returncode
@@ -246,6 +248,7 @@ def bootstrap() -> int:
     # declared, which is precisely the class of defect this project's CI exists
     # to catch. It ran here only because Wave 0 installed it by hand.
     subprocess.run([python, "-m", "pip", "install", "-q",
+                    "-c", str(ROOT / "requirements" / "scientific-runtime.lock"),
                     "pytest", "httpx", "xlwt"], check=True)
 
     print("Applying migrations (this boots the bundled PostgreSQL on first run)…")

@@ -204,7 +204,13 @@ describe("drafting a report from the connection", () => {
     await open();
     fireEvent.click(screen.getByRole("button", { name: "Draft a report from this" }));
 
-    expect(await screen.findByText(/not stubbed/)).toBeTruthy();
+    // Other panels on this screen may independently surface their own
+    // "not stubbed" fixture failures. Assert on the draft action's alert and
+    // exact route instead of a page-global substring whose match count races
+    // with those background requests.
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent)
+      .toContain("not stubbed: /api/projects/prj_1/artifacts/draft");
   });
 
   it("keeps the control and states the reason where a report cannot start",
