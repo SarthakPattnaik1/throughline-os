@@ -96,11 +96,11 @@ From a fresh checkout of the exact audited commit:
 ```powershell
 git rev-parse HEAD
 python scripts/verify_pilot_01.py
-python scripts/manage.py bootstrap
 
 $env:THROUGHLINE_TEST_HOME = Join-Path (Get-Location) (".pilot01-gateb-" + [guid]::NewGuid().ToString())
 $env:THROUGHLINE_HOME = $env:THROUGHLINE_TEST_HOME
 
+python scripts/manage.py bootstrap
 .venv\Scripts\python scripts/verify_pilot_01.py --environment
 .venv\Scripts\python -m pytest tests/test_pilot_01_palmer_penguins.py -q
 ```
@@ -112,11 +112,11 @@ From a fresh checkout of the exact audited commit:
 ```bash
 git rev-parse HEAD
 python scripts/verify_pilot_01.py
-./scripts/bootstrap.sh
 
 export THROUGHLINE_TEST_HOME="$(mktemp -d)/throughline-pilot01-gateb"
 export THROUGHLINE_HOME="$THROUGHLINE_TEST_HOME"
 
+./scripts/bootstrap.sh
 ./.venv/bin/python scripts/verify_pilot_01.py --environment
 ./.venv/bin/python -m pytest tests/test_pilot_01_palmer_penguins.py -q
 ```
