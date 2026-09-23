@@ -25,10 +25,11 @@ def clean_accounts():
         cur.execute("DELETE FROM users WHERE email LIKE %s", (f"%@{DOMAIN}",))
 
 
-def test_hosted_first_admin_requires_operator_bootstrap_token(monkeypatch):
+def test_loopback_first_admin_is_not_blocked_by_deployment_label(monkeypatch):
     from throughline_api.app import app
 
-    # Make this an actually fresh installation for the route under test.
+    # First-run authority is based on the actual peer address, not a deployment
+    # label. TestClient is treated as loopback while pytest is running.
     with transaction() as cur:
         cur.execute("DELETE FROM users")
 
@@ -42,14 +43,7 @@ def test_hosted_first_admin_requires_operator_bootstrap_token(monkeypatch):
     }
 
     with TestClient(app) as client:
-        refused = client.post("/api/auth/setup", json=payload)
-        assert refused.status_code == 403
-
-        accepted = client.post(
-            "/api/auth/setup",
-            json=payload,
-            headers={"X-Throughline-Setup-Token": "operator-only-secret"},
-        )
+        accepted = client.post("/api/auth/setup", json=payload)
         assert accepted.status_code == 200, accepted.text
         assert accepted.json()["user"]["is_admin"] is True
 
