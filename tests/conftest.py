@@ -8,6 +8,23 @@ from pathlib import Path
 
 import pytest
 
+# The test suite owns an isolated embedded PostgreSQL cluster. An inherited
+# external database URL would outrank THROUGHLINE_HOME in database_url() and
+# could make the cleanup fixture TRUNCATE a real/shared database. Refuse before
+# any Throughline database module is imported.
+_DANGEROUS_INHERITED_OVERRIDES = {
+    name: os.environ[name]
+    for name in ("THROUGHLINE_DATABASE_URL", "THROUGHLINE_STORAGE")
+    if os.environ.get(name)
+}
+if _DANGEROUS_INHERITED_OVERRIDES:
+    names = ", ".join(sorted(_DANGEROUS_INHERITED_OVERRIDES))
+    raise RuntimeError(
+        "Refusing to run the test suite with external data-path overrides set: "
+        f"{names}. Tests truncate their database and write/delete test artifacts; "
+        "unset these variables and let pytest use its isolated test home."
+    )
+
 # Each test session gets its own embedded PostgreSQL data directory so a test
 # run can never touch a researcher's real project database.
 #

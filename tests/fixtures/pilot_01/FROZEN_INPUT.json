@@ -1,5 +1,5 @@
 {
-  "schema": "throughline.pilot-01-frozen-input.v1",
+  "schema": "throughline.pilot-01-contract.v2",
   "fixture_path": "tests/fixtures/pilot_01/penguins.csv",
   "bytes": 15241,
   "sha256": "f204db2c753b0937caac3cb35258562c14f073e4bbc76be24b4c51ce22767a93",
@@ -8,5 +8,31 @@
     "commit": "156daa4301838d9fdcc5b018b29b9149bf975552",
     "path": "inst/extdata/penguins.csv",
     "git_blob_sha": "25b46d384bf81f8399188500ea54917bb49d8890"
+  },
+  "analysis": {
+    "method": "pearson_correlation",
+    "x": "flipper_length_mm",
+    "y": "body_mass_g",
+    "expected": {
+      "sample_size": 342,
+      "estimate": 0.8712017673060112,
+      "p_value": 4.370680963000641e-107,
+      "ci_low": 0.8430410326303456,
+      "ci_high": 0.8945989968524182
+    }
+  },
+  "refusal": {
+    "filters": [
+      {
+        "column": "species",
+        "operator": "eq",
+        "value": "Adelie"
+      }
+    ],
+    "capability_reason": "Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows.",
+    "expected_errors": {
+      "replay_receipt": "Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows.",
+      "code_export": "Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows. Replay-supported methods: pearson_correlation, spearman_correlation."
+    }
   }
 }

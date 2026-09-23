@@ -86,11 +86,15 @@ DATA_BYTES = int(CONTRACT["bytes"])
 # Frozen independently from Throughline using the public CSV itself.
 # These are not generated from a Throughline run, so agreement cannot pass
 # merely because two Throughline surfaces share the same wrong value.
-EXPECTED_N = 342
-EXPECTED_R = 0.8712017673060112
-EXPECTED_P = 4.370680963000641e-107
-EXPECTED_CI_LOW = 0.8430410326303456
-EXPECTED_CI_HIGH = 0.8945989968524182
+EXPECTED = CONTRACT["analysis"]["expected"]
+EXPECTED_N = int(EXPECTED["sample_size"])
+EXPECTED_R = float(EXPECTED["estimate"])
+EXPECTED_P = float(EXPECTED["p_value"])
+EXPECTED_CI_LOW = float(EXPECTED["ci_low"])
+EXPECTED_CI_HIGH = float(EXPECTED["ci_high"])
+REFUSAL_FILTERS = CONTRACT["refusal"]["filters"]
+REFUSAL_REASON = str(CONTRACT["refusal"]["capability_reason"])
+REFUSAL_ERRORS = CONTRACT["refusal"]["expected_errors"]
 
 
 def _frozen_source_bytes() -> bytes:
@@ -160,6 +164,15 @@ def test_frozen_contract_metadata_stays_synchronized():
     assert CONTRACT["upstream"]["commit"] in protocol
     assert CONTRACT["upstream"]["path"] in protocol
     assert CONTRACT["upstream"]["git_blob_sha"] in protocol
+    assert str(EXPECTED_N) in protocol
+    assert str(EXPECTED_R) in protocol
+    assert str(EXPECTED_P) in protocol
+    assert str(EXPECTED_CI_LOW) in protocol
+    assert str(EXPECTED_CI_HIGH) in protocol
+    assert "Adelie" in protocol
+    assert REFUSAL_REASON in protocol
+    assert REFUSAL_ERRORS["code_export"] in protocol
+    assert REFUSAL_ERRORS["replay_receipt"] in protocol
     assert f'{CONTRACT["fixture_path"]} text eol=lf' in attributes
 
 
@@ -236,11 +249,11 @@ def _analyse(project_id: str, version_id: str, *, filters=None) -> str:
             cur,
             project_id=project_id,
             spec={
-                "method": "pearson_correlation",
+                "method": CONTRACT["analysis"]["method"],
                 "dataset_version_ids": [version_id],
                 "variables": {
-                    "x": "flipper_length_mm",
-                    "y": "body_mass_g",
+                    "x": CONTRACT["analysis"]["x"],
+                    "y": CONTRACT["analysis"]["y"],
                 },
                 "filters": filters or [],
                 "research_question": (
@@ -387,9 +400,9 @@ def test_supported_run_produces_a_faithful_publishable_figure(penguins_project):
         assert "flipper length (mm)" in spec.caption
         assert "body mass g" in spec.caption
         assert "Association does not establish causation." in spec.caption
-        assert "r = 0.871" in spec.caption
+        assert f"r = {EXPECTED_R:.3f}" in spec.caption
         assert "pearson_r" not in spec.caption
-        assert "n = 342" in spec.caption
+        assert f"n = {EXPECTED_N}" in spec.caption
 
         made = visuals.create_visual(
             cur,
@@ -428,9 +441,9 @@ def test_supported_run_produces_a_faithful_publishable_figure(penguins_project):
     assert "body mass g against flipper length" in visible
     assert "flipper length (mm)" in visible
     assert "body mass g" in visible
-    assert "r = 0.871" in visible
+    assert f"r = {EXPECTED_R:.3f}" in visible
     assert "pearson_r" not in visible
-    assert "n = 342" in visible
+    assert f"n = {EXPECTED_N}" in visible
     assert "Association does not establish causation." in visible
 
 def test_species_filtered_neighbor_is_refused_for_the_declared_reason(
@@ -440,16 +453,19 @@ def test_species_filtered_neighbor_is_refused_for_the_declared_reason(
     run_id = _analyse(
         project_id,
         version_id,
-        filters=[{"column": "species", "operator": "eq", "value": "Adelie"}],
+        filters=REFUSAL_FILTERS,
     )
     run = _run(run_id)
 
     # The analysis itself is valid and really ran. Only the replay claim is refused.
     assert run["status"] == "completed", run["error"]
-    assert 0 < run["result"]["sample_size"] < 342
+    assert 0 < run["result"]["sample_size"] < EXPECTED_N
 
     with connection() as conn, conn.cursor() as cur:
-        with pytest.raises(code_export.CannotEmit, match="filters"):
+        with pytest.raises(code_export.CannotEmit) as emitted:
             code_export.for_run(cur, run_id)
-        with pytest.raises(replay_receipt.CannotReceipt, match="filters"):
+        assert str(emitted.value) == REFUSAL_ERRORS["code_export"]
+
+        with pytest.raises(replay_receipt.CannotReceipt) as receipted:
             replay_receipt.for_run(cur, run_id)
+        assert str(receipted.value) == REFUSAL_ERRORS["replay_receipt"]

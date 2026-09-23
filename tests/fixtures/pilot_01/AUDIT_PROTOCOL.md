@@ -18,6 +18,22 @@ The frozen input is:
 - canonical upstream path: `inst/extdata/penguins.csv`
 - canonical upstream Git blob: `25b46d384bf81f8399188500ea54917bb49d8890`
 
+## Frozen analysis contract
+
+The same machine-readable contract also fixes the supported Pilot 01 analysis:
+
+- method: `pearson_correlation`
+- x: `flipper_length_mm`
+- y: `body_mass_g`
+- sample size: `342`
+- Pearson r: `0.8712017673060112`
+- p-value: `4.370680963000641e-107`
+- 95% CI low: `0.8430410326303456`
+- 95% CI high: `0.8945989968524182`
+
+Changing any of these values creates a different Pilot 01 acceptance contract
+and requires both audit gates to be rerun deliberately.
+
 Do not refresh, normalize, re-export, reorder, or otherwise replace this CSV
 without explicitly declaring a new Pilot 01 input and rerunning both gates.
 
@@ -109,14 +125,24 @@ python scripts/run_pilot_01_gate_b.py <exact-commit-supplied-for-Gate-B> --opera
 
 The runner enforces this order:
 
-1. require HEAD to equal the supplied commit and require a clean working tree;
-2. verify the frozen CSV bytes, SHA-256, and canonical Git blob;
-3. create a unique fresh test/database home;
-4. bootstrap Throughline through the documented installer;
-5. verify the exact frozen Python/scientific environment;
-6. run `tests/test_pilot_01_palmer_penguins.py` unmodified;
-7. write a structured JSON record containing the auditor identity, exact argv,
-   command outputs, platform, exact commit, and pass/fail result.
+1. remove any ignored pre-existing `.venv` so Git cleanliness cannot hide a
+   reused author environment;
+2. strip inherited `THROUGHLINE_*`, `PIP_*`, `PYTHONPATH`, and
+   `PYTHONHOME` overrides that could redirect data or package resolution;
+3. require HEAD to equal the supplied commit and require a clean working tree;
+4. verify the frozen CSV bytes, SHA-256, and canonical Git blob;
+5. create a unique fresh test/database/runtime home;
+6. download the repository-pinned CPython archive into that private runtime
+   home and verify its committed SHA-256 before use;
+7. bootstrap Throughline through the documented installer with that pinned
+   interpreter;
+8. reverify the exact clean checkout after bootstrap;
+9. verify the frozen Python/core scientific environment;
+10. record `pip freeze --all` so the complete resolved Python environment is
+    part of the evidence;
+11. run `tests/test_pilot_01_palmer_penguins.py` unmodified;
+12. write a structured JSON record containing the auditor identity, exact argv,
+    command outputs, platform, exact commit, environment, and pass/fail result.
 
 The audit record must be written outside the repository. The runner refuses a
 `--record` path inside the checkout so recording the audit cannot itself make
@@ -160,7 +186,25 @@ The refusal case is fixed as:
 [{"column": "species", "operator": "eq", "value": "Adelie"}]
 ```
 
-The scientific analysis itself must complete. The replay script and replay
-receipt must refuse because declarative filters are outside replay receipt v1.
-Changing the species, operator, value, or refusal reason creates a different
-audit contract.
+The scientific analysis itself must complete. The capability refusal is:
+
+```text
+Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows.
+```
+
+The two public artifacts intentionally expose these exact messages:
+
+Replay receipt:
+
+```text
+Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows.
+```
+
+Code export:
+
+```text
+Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows. Replay-supported methods: pearson_correlation, spearman_correlation.
+```
+
+Changing the species, operator, value, capability reason, or either public
+artifact message creates a different audit contract.
