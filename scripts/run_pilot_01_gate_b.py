@@ -80,6 +80,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.record is not None:
+        record_path = args.record.expanduser().resolve()
+        try:
+            record_path.relative_to(ROOT)
+        except ValueError:
+            pass
+        else:
+            parser.error("--record must be outside the repository so audit output cannot dirty the checkout")
+
     record = {
         "schema": "throughline.pilot-01-gate-b.v1",
         "operator": "independent-second-person",
