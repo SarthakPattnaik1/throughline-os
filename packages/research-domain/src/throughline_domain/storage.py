@@ -20,7 +20,7 @@ import shutil
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Iterator
 
-from .db import data_root
+from .db import data_root, transaction
 from .ids import new_id
 
 CHUNK = 1024 * 1024
@@ -51,14 +51,10 @@ def hash_stream(stream: BinaryIO) -> tuple[str, int]:
     return digest.hexdigest(), size
 
 
-def put(stream: BinaryIO) -> tuple[str, str, int]:
-    """Store bytes. Returns (content_hash, storage_key, size_bytes).
-
-    Writes to a temporary path and renames, so an interrupted write can never
-    leave a truncated file sitting at a hash that claims to be complete.
-    """
-    stream.seek(0)
-    content_hash, size = hash_stream(stream)
+def _write_hashed_blob(
+    stream: BinaryIO, *, content_hash: str, size: int,
+) -> tuple[str, str, int]:
+    """Write bytes already hashed by the caller, atomically."""
     key = _key_for(content_hash)
     destination = storage_root() / key
     if destination.exists():
@@ -69,8 +65,35 @@ def put(stream: BinaryIO) -> tuple[str, str, int]:
     stream.seek(0)
     with staging.open("wb") as handle:
         shutil.copyfileobj(stream, handle, CHUNK)
-    staging.replace(destination)
+    try:
+        staging.replace(destination)
+    except OSError:
+        # Another writer of the same content may have won the race. If the
+        # canonical destination now exists, the bytes are content-addressed and
+        # therefore equivalent; otherwise propagate the real filesystem error.
+        if not destination.exists():
+            raise
+        staging.unlink(missing_ok=True)
     return content_hash, key, size
+
+
+def put(stream: BinaryIO) -> tuple[str, str, int]:
+    """Store bytes. Returns (content_hash, storage_key, size_bytes).
+
+    Low-level storage only. Database-backed uploads should use register_file(),
+    which serializes same-content registration with garbage collection.
+    """
+    stream.seek(0)
+    content_hash, size = hash_stream(stream)
+    return _write_hashed_blob(stream, content_hash=content_hash, size=size)
+
+
+def _lock_content(cur, content_hash: str) -> None:
+    """Serialize registration and garbage collection for one content hash."""
+    cur.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (content_hash,),
+    )
 
 
 def _hex_token(value: str, width: int, *, label: str) -> str:
@@ -270,34 +293,57 @@ def storage_key_for(path: Path) -> str:
     return resolved.relative_to(root).as_posix()
 
 
-def collect(orphan_keys: list[str]) -> dict[str, int]:
-    """
-    Remove stored blobs that nothing references any more.
+def collect(candidates: list[tuple[str, str]]) -> dict[str, int]:
+    """Remove unreferenced content blobs without racing a concurrent upload.
 
-    Called after a project is deleted. The caller must have established that no
-    `files` row anywhere still points at these keys — **the store is
-    content-addressed, so two projects that uploaded the same PDF share one
-    blob**, and deleting by project without that check would silently destroy
-    another project's evidence while its rows still claimed to have it.
+    A project delete and an upload of the same bytes can overlap. Deletion used
+    to decide a blob was orphaned, commit, and unlink it later; an upload could
+    create a new database reference in that gap and end with a live row pointing
+    at a missing file.
 
-    Failures are counted rather than raised. A blob that cannot be removed is a
-    disk-space problem; aborting the delete over it would leave the researcher
-    with a project they asked to remove and which is still there.
+    Both registration and collection now take the same transaction-scoped
+    advisory lock derived from the content hash. Collection rechecks the live
+    files table while holding that lock and unlinks before releasing it.
     """
-    removed = 0
-    failed = 0
-    for key in orphan_keys:
+    removed = failed = kept = 0
+    root = storage_root().resolve()
+
+    for content_hash, key in candidates:
         try:
-            path = storage_root() / key
-            if not path.resolve().is_relative_to(storage_root().resolve()):
+            digest = _hex_token(content_hash, 64, label="Content hash")
+            canonical = _key_for(digest)
+            if key != canonical:
                 failed += 1
                 continue
-            if path.exists():
-                path.unlink()
-                removed += 1
-        except OSError:
+
+            parts = _validated_key_parts(key)
+            # Project-file garbage collection is allowed to touch only the
+            # aa/bb/<sha256> namespace, never rendered reports/figures.
+            if len(parts) != 3 or parts[2] != digest:
+                failed += 1
+                continue
+
+            with transaction() as cur:
+                _lock_content(cur, digest)
+                cur.execute(
+                    "SELECT 1 FROM files WHERE content_hash = %s LIMIT 1",
+                    (digest,),
+                )
+                if cur.fetchone():
+                    kept += 1
+                    continue
+
+                path = root.joinpath(*parts).resolve()
+                if not path.is_relative_to(root):
+                    failed += 1
+                    continue
+                if path.exists():
+                    path.unlink()
+                    removed += 1
+        except (OSError, StorageError):
             failed += 1
-    return {"removed": removed, "failed": failed}
+
+    return {"removed": removed, "failed": failed, "kept": kept}
 
 
 #: Where renderers write outside the content-addressed store: one directory per
@@ -354,7 +400,12 @@ def register_file(
     Deduplicated per project: the same content uploaded twice returns the
     original row rather than creating a divergent second artifact.
     """
-    content_hash, key, size = put(stream)
+    stream.seek(0)
+    content_hash, size = hash_stream(stream)
+    _lock_content(cur, content_hash)
+    content_hash, key, size = _write_hashed_blob(
+        stream, content_hash=content_hash, size=size,
+    )
     cur.execute(
         "SELECT id, content_hash, storage_key, size_bytes FROM files "
         "WHERE project_id = %s AND content_hash = %s",
