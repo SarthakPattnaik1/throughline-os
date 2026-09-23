@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import io
 from pathlib import Path
 
@@ -206,6 +207,118 @@ def test_simple_regression_figure_uses_recorded_fit_not_a_refit(analysed, tmp_pa
     x0, x1 = line_values[0]["x"], line_values[1]["x"]
     slope = (line_values[1]["y"] - line_values[0]["y"]) / (x1 - x0)
     assert slope == pytest.approx(coefficients["consumption_ddd"]["estimate"])
+
+
+def test_api_dataset_views_stay_on_the_immutable_version_when_source_moves(analysed):
+    """A version-labelled view must never follow the source's newer file pointer."""
+    _, version_id, runs = analysed
+
+    api_app = importlib.import_module("throughline_api.app")
+
+    before = api_app._column_values(version_id, "consumption_ddd")
+    assert before.size > 0 and before[0] != 999.0
+
+    replacement = (
+        b"country,consumption_ddd,resistance_pct,gdp_per_capita\n"
+        b"IND,999,999,999\nUSA,999,999,999\n"
+    )
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT d.source_id FROM dataset_versions dv "
+            "JOIN datasets d ON d.id = dv.dataset_id WHERE dv.id = %s",
+            (version_id,),
+        )
+        source_id = cur.fetchone()["source_id"]
+        cur.execute(
+            "SELECT project_id FROM sources WHERE id = %s",
+            (source_id,),
+        )
+        project_id = cur.fetchone()["project_id"]
+        newer = storage.register_file(
+            cur, project_id=project_id, filename="newer.csv",
+            stream=io.BytesIO(replacement), media_type="text/csv",
+        )
+        cur.execute(
+            "UPDATE sources SET file_id = %s, content_hash = %s WHERE id = %s",
+            (newer["id"], newer["content_hash"], source_id),
+        )
+        conn.commit()
+
+    after = api_app._column_values(version_id, "consumption_ddd")
+    assert np.array_equal(after, before)
+    assert 999.0 not in after
+
+    with connection() as conn, conn.cursor() as cur:
+        run = analysis.get_run(cur, runs["correlation"])
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=runs["correlation"]
+        )
+        sample, _ = api_app._visual_sample(cur, recommendation["spec"])
+    assert sample["consumption_ddd"][0] == pytest.approx(before[0])
+    assert 999.0 not in sample["consumption_ddd"]
+
+
+def test_density_reads_only_the_requested_column_in_chunks(analysed, monkeypatch):
+    _, version_id, _ = analysed
+
+    import pandas as pd
+    api_app = importlib.import_module("throughline_api.app")
+
+    real_read_csv = pd.read_csv
+    calls = []
+
+    def watched_read_csv(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return real_read_csv(*args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_csv", watched_read_csv)
+    values = api_app._column_values(version_id, "consumption_ddd")
+
+    assert values.size == 120
+    relevant = [call for call in calls if call.get("usecols") == ["consumption_ddd"]]
+    assert relevant, calls
+    assert relevant[-1]["chunksize"] == api_app.SAMPLE_CHUNK_ROWS
+
+
+def test_density_refuses_when_exact_kde_would_exceed_its_ceiling(
+        analysed, monkeypatch):
+    _, version_id, _ = analysed
+
+    from fastapi import HTTPException
+    api_app = importlib.import_module("throughline_api.app")
+
+    monkeypatch.setattr(api_app, "MAX_DENSITY_OBSERVATIONS", 10)
+    with pytest.raises(HTTPException) as exc:
+        api_app._column_values(version_id, "consumption_ddd")
+
+    assert exc.value.status_code == 409
+    assert "refuses to approximate" in str(exc.value.detail)
+
+
+def test_api_dataset_views_refuse_tampered_version_bytes(analysed):
+    """A hash-named path is not evidence; the bytes themselves must still hash."""
+    _, version_id, _ = analysed
+
+    from fastapi import HTTPException
+    api_app = importlib.import_module("throughline_api.app")
+
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT storage_key FROM dataset_versions WHERE id = %s",
+            (version_id,),
+        )
+        key = cur.fetchone()["storage_key"]
+
+    path = storage.path_for(key)
+    original = path.read_bytes()
+    try:
+        path.write_bytes(b"country,consumption_ddd\nIND,999\n")
+        with pytest.raises(HTTPException) as exc:
+            api_app._column_values(version_id, "consumption_ddd")
+        assert exc.value.status_code == 409
+        assert "SHA-256" in str(exc.value.detail)
+    finally:
+        path.write_bytes(original)
 
 
 # ---------------------------------------------------------------------------

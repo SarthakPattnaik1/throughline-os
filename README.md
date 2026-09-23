@@ -1418,7 +1418,7 @@ Or run suites directly:
 cd apps/web && npm test
 ```
 
-The repository currently records **2,857 backend tests and 3,712 web tests**. The backend count is guarded against overstatement and excessive drift; the web suite also has an offline floor check in the backend tests.
+The repository currently records **3,176 backend tests and 3,712 web tests**. The backend count is guarded against overstatement and excessive drift; the web suite also has an offline floor check in the backend tests.
 
 ## CI matrix
 

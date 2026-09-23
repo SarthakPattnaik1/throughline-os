@@ -243,6 +243,7 @@ def as_json(cur, project_id: str) -> str:
 def files_in(cur, project_id: str) -> list[dict[str, Any]]:
     """The stored files this project ingested, so the archive is self-contained."""
     cur.execute(
-        "SELECT DISTINCT f.id, f.storage_key, f.filename, f.size_bytes "
+        "SELECT DISTINCT f.id, f.storage_key, f.filename, f.size_bytes, "
+        "       f.content_hash "
         "FROM files f WHERE f.project_id = %s ORDER BY f.id", (project_id,))
     return [dict(row) for row in cur.fetchall()]
