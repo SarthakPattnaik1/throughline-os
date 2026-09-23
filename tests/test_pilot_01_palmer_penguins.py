@@ -313,9 +313,14 @@ def test_supported_run_produces_a_faithful_publishable_figure(penguins_project):
         # could be a semantic token rather than a measurement declaration.
         assert spec.y.label == "body mass g"
         assert spec.y.unit is None
-        assert spec.title == "body mass g against flipper length (mm)"
+        # Titles use clean variable labels; measurement units belong on the
+        # axes/descriptions rather than being repeated in the headline.
+        assert spec.title == "body mass g against flipper length"
+        assert "flipper length (mm)" in spec.caption
+        assert "body mass g" in spec.caption
         assert "Association does not establish causation." in spec.caption
-        assert "pearson_r = 0.871" in spec.caption
+        assert "r = 0.871" in spec.caption
+        assert "pearson_r" not in spec.caption
         assert "n = 342" in spec.caption
 
         made = visuals.create_visual(
@@ -348,14 +353,17 @@ def test_supported_run_produces_a_faithful_publishable_figure(penguins_project):
     svg_path = storage.path_for(rendered["storage_key"])
     assert svg_path.exists() and svg_path.stat().st_size > 1_000
     svg = svg_path.read_text(encoding="utf-8")
+    visible = " ".join(svg.split())
 
-    # Matplotlib keeps SVG text as text, so the exported figure can be audited.
-    assert "body mass g against flipper length (mm)" in svg
-    assert "flipper length (mm)" in svg
-    assert "body mass g" in svg
-    assert "pearson_r = 0.871" in svg
-    assert "n = 342" in svg
-    assert "Association does not establish causation." in svg
+    # The export must preserve the same human-facing title, axis units and
+    # statistical notation as the spec without exposing internal identifiers.
+    assert "body mass g against flipper length" in visible
+    assert "flipper length (mm)" in visible
+    assert "body mass g" in visible
+    assert "r = 0.871" in visible
+    assert "pearson_r" not in visible
+    assert "n = 342" in visible
+    assert "Association does not establish causation." in visible
 
 def test_species_filtered_neighbor_is_refused_for_the_declared_reason(
     penguins_project,
