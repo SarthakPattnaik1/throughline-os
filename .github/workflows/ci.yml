@@ -65,10 +65,11 @@ jobs:
       - name: Prepare isolated test home
         shell: pwsh
         run: |
-          # pgserver/initdb must be able to adjust permissions on its data
-          # directory. GitHub's D:\a\_temp root can refuse that on Windows,
-          # so use a fresh checkout-local directory instead.
-          $testHome = Join-Path $env:GITHUB_WORKSPACE ".pilot01-test-home"
+          # pgserver/initdb needs ownership/ACL control of pgdata. GitHub's D:
+          # workspace/temp roots refuse that on Windows, while the runner's
+          # user profile is owned by runneradmin and is the native supported
+          # location. Make it unique per Actions run to preserve clean state.
+          $testHome = Join-Path $env:USERPROFILE (".throughline-pilot01-ci-" + $env:GITHUB_RUN_ID)
           "THROUGHLINE_TEST_HOME=$testHome" >> $env:GITHUB_ENV
           "THROUGHLINE_HOME=$testHome" >> $env:GITHUB_ENV
 
