@@ -9,6 +9,7 @@ entry commit together.
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import io
 import logging
 import os
@@ -136,6 +137,9 @@ class SetupRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     display_name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=12, max_length=MAX_PASSWORD)
+    # Required only when first-run setup reaches the API from a non-loopback
+    # peer (for example through Docker's bridge). It is never stored.
+    setup_token: str = Field(default="", max_length=512)
 
 
 class LoginRequest(BaseModel):
@@ -313,31 +317,56 @@ def _lock_first_account(cur) -> None:
     )
 
 
-def _require_remote_setup_authority(request: Request) -> None:
-    """Require an operator secret before first-admin setup on hosted deployments.
+def _setup_peer_is_loopback(request: Request) -> bool:
+    """Whether first-run setup originated from this machine itself.
 
-    Local installs are protected by their loopback deployment topology. A hosted
-    API is intentionally reachable from a network, so "whoever reaches setup
-    first" must not be the administrator-selection mechanism.
+    Deployment labels are configuration; the peer address is the network fact.
+    A packaged container binds on all interfaces, so treating every
+    `THROUGHLINE_DEPLOYMENT=local` request as loopback would let the first LAN
+    caller become the administrator of a fresh installation.
+
+    Starlette's TestClient uses the literal host "testclient". It is accepted
+    only while pytest is actually running so the test harness does not become a
+    production bypass.
     """
-    if deployment_is_local():
+    host = ((request.client.host if request.client else "") or "").split("%", 1)[0]
+    if host == "testclient" and os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host.lower() == "localhost"
+
+
+def _require_remote_setup_authority(
+    request: Request, *, body_token: str = "",
+) -> None:
+    """Require an operator secret for every non-loopback first-admin setup.
+
+    This deliberately does *not* trust `deployment_is_local()`. The container
+    entrypoint binds FastAPI to 0.0.0.0, and an operator can publish that port to
+    a LAN or wider network while leaving the deployment label at its default.
+    The first account controls users, models and machine-level capabilities, so
+    network reachability must never be enough to win that race.
+    """
+    if _setup_peer_is_loopback(request):
         return
 
     expected = os.environ.get("THROUGHLINE_REMOTE_SETUP_TOKEN", "")
-    supplied = request.headers.get("x-throughline-setup-token", "")
+    supplied = body_token or request.headers.get("x-throughline-setup-token", "")
     if not expected or not supplied or not hmac.compare_digest(supplied, expected):
         raise HTTPException(
             403,
-            "Remote first-run setup is disabled without the operator bootstrap "
-            "token. Set THROUGHLINE_REMOTE_SETUP_TOKEN on the server and send "
-            "it as X-Throughline-Setup-Token."
+            "First-run setup reached Throughline over a network connection. "
+            "Enter the setup token printed by the Throughline server, or set "
+            "THROUGHLINE_REMOTE_SETUP_TOKEN on the server and use that value."
         )
 
 
 @app.post("/api/auth/setup")
 def auth_setup(payload: SetupRequest, response: Response,
                request: Request) -> dict[str, Any]:
-    _require_remote_setup_authority(request)
+    _require_remote_setup_authority(request, body_token=payload.setup_token)
     with transaction() as cur:
         _lock_first_account(cur)
         cur.execute("SELECT COUNT(*) AS n FROM users")
