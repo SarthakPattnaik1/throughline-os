@@ -8,6 +8,7 @@ entry commit together.
 
 from __future__ import annotations
 
+import hmac
 import io
 import logging
 import os
@@ -242,7 +243,18 @@ async def transcribe_speech(request: Request,
     this one loads a speech model and runs it over whatever body arrives. The
     cookie is `SameSite=strict`, so a cross-origin POST carries no session.
     """
-    raw = await request.body()
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > speech.MAX_RAW_BYTES:
+            raise HTTPException(
+                413,
+                f"That recording is larger than the maximum "
+                f"{speech.MAX_SECONDS:.0f}-second raw audio clip."
+            )
+        chunks.append(chunk)
+    raw = b"".join(chunks)
     try:
         return speech.transcribe(raw)
     except speech.SpeechError as exc:
@@ -282,9 +294,44 @@ def auth_status(throughline_session: str | None = Cookie(default=None)) -> dict[
     return {"needs_setup": needs_setup, "authenticated": bool(user), "user": user}
 
 
+_FIRST_ACCOUNT_LOCK = "throughline:first-account"
+
+
+def _lock_first_account(cur) -> None:
+    """Serialize the decision about which account is the administrator."""
+    cur.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (_FIRST_ACCOUNT_LOCK,),
+    )
+
+
+def _require_remote_setup_authority(request: Request) -> None:
+    """Require an operator secret before first-admin setup on hosted deployments.
+
+    Local installs are protected by their loopback deployment topology. A hosted
+    API is intentionally reachable from a network, so "whoever reaches setup
+    first" must not be the administrator-selection mechanism.
+    """
+    if deployment_is_local():
+        return
+
+    expected = os.environ.get("THROUGHLINE_REMOTE_SETUP_TOKEN", "")
+    supplied = request.headers.get("x-throughline-setup-token", "")
+    if not expected or not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(
+            403,
+            "Remote first-run setup is disabled without the operator bootstrap "
+            "token. Set THROUGHLINE_REMOTE_SETUP_TOKEN on the server and send "
+            "it as X-Throughline-Setup-Token."
+        )
+
+
 @app.post("/api/auth/setup")
-def auth_setup(payload: SetupRequest, response: Response) -> dict[str, Any]:
+def auth_setup(payload: SetupRequest, response: Response,
+               request: Request) -> dict[str, Any]:
+    _require_remote_setup_authority(request)
     with transaction() as cur:
+        _lock_first_account(cur)
         cur.execute("SELECT COUNT(*) AS n FROM users")
         if cur.fetchone()["n"]:
             raise HTTPException(409, "This installation is already set up.")
@@ -387,6 +434,9 @@ def auth_register(payload: RegisterRequest, request: Request,
             "unless the operator turns on open registration in Settings.")
 
     with transaction() as cur:
+        # Setup and registration can arrive together on a fresh installation.
+        # They must serialize before deciding which account is the one admin.
+        _lock_first_account(cur)
         cur.execute("SELECT COUNT(*) AS n FROM users")
         first = cur.fetchone()["n"] == 0
         try:
