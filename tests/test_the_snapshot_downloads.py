@@ -108,3 +108,18 @@ def test_a_project_that_does_not_exist_is_a_404(client):
     _account(client)
     assert client.get(
         "/api/projects/prj_nope/snapshot.zip").status_code in (403, 404)
+
+
+
+def test_snapshot_is_spooled_to_disk_instead_of_buffered_in_api_memory():
+    """Archive size must not become API-process resident memory."""
+    import inspect
+
+    from throughline_api import app as api_app
+
+    source = inspect.getsource(api_app.project_snapshot)
+    assert "NamedTemporaryFile" in source
+    assert "FileResponse" in source
+    assert "BackgroundTask" in source
+    assert "BytesIO" not in source
+    assert "buffer.getvalue" not in source
