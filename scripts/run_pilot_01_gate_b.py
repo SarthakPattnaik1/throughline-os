@@ -16,6 +16,7 @@ import platform
 import subprocess
 import sys
 import tempfile
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -102,11 +103,39 @@ def main() -> int:
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
         "platform": platform.platform(),
         "launcher_python": platform.python_version(),
+        "sanitized_environment": [
+            "THROUGHLINE_DATABASE_URL",
+            "THROUGHLINE_ALLOW_INSTALLED_HOME",
+            "PYTHONPATH",
+            "PYTHONHOME",
+        ],
+        "reused_virtualenv": False,
         "status": "running",
         "steps": [],
     }
 
     env = os.environ.copy()
+
+    # Gate B must not inherit machine-local execution overrides. An exported
+    # database URL outranks the fresh test home, and PYTHONPATH can shadow the
+    # audited checkout/venv with arbitrary packages from elsewhere.
+    for key in (
+        "THROUGHLINE_DATABASE_URL",
+        "THROUGHLINE_ALLOW_INSTALLED_HOME",
+        "PYTHONPATH",
+        "PYTHONHOME",
+    ):
+        env.pop(key, None)
+
+    # .venv is intentionally gitignored, so a clean Git tree does not prove the
+    # audit is using a fresh environment. Remove any pre-existing virtualenv
+    # before bootstrap; Gate B must create its own from the pinned runtime.
+    existing_venv = ROOT / ".venv"
+    if existing_venv.exists():
+        shutil.rmtree(existing_venv)
+    if existing_venv.exists():
+        raise RuntimeError(f"could not remove pre-existing audit virtualenv: {existing_venv}")
+
     audit_home = _fresh_home()
     env["THROUGHLINE_TEST_HOME"] = str(audit_home)
     env["THROUGHLINE_HOME"] = str(audit_home)
