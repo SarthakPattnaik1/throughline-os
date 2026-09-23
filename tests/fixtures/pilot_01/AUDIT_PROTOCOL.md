@@ -74,7 +74,8 @@ Who runs it:
 Required conditions:
 
 1. Start from a fresh clone or clean checkout of the exact commit supplied for
-   audit. Record it with `git rev-parse HEAD`.
+   audit. The verifier must be given that exact SHA and must fail if HEAD differs
+   or if the working tree contains tracked or untracked changes.
 2. Do not reuse the author's virtual environment, database, generated replay
    artifacts, cached outputs, or copied test results.
 3. Run `python scripts/verify_pilot_01.py` before bootstrap. If it fails, stop
@@ -94,8 +95,8 @@ Required conditions:
 From a fresh checkout of the exact audited commit:
 
 ```powershell
-git rev-parse HEAD
-python scripts/verify_pilot_01.py
+$env:PILOT01_AUDIT_COMMIT = "<exact-commit-supplied-for-Gate-B>"
+python scripts/verify_pilot_01.py --expected-commit $env:PILOT01_AUDIT_COMMIT --clean-tree
 
 $env:THROUGHLINE_TEST_HOME = Join-Path $env:USERPROFILE (".throughline-pilot01-gateb-" + [guid]::NewGuid().ToString())
 $env:THROUGHLINE_HOME = $env:THROUGHLINE_TEST_HOME
@@ -110,8 +111,8 @@ python scripts/manage.py bootstrap
 From a fresh checkout of the exact audited commit:
 
 ```bash
-git rev-parse HEAD
-python scripts/verify_pilot_01.py
+export PILOT01_AUDIT_COMMIT="<exact-commit-supplied-for-Gate-B>"
+python scripts/verify_pilot_01.py --expected-commit "$PILOT01_AUDIT_COMMIT" --clean-tree
 
 export THROUGHLINE_TEST_HOME="$(mktemp -d)/throughline-pilot01-gateb"
 export THROUGHLINE_HOME="$THROUGHLINE_TEST_HOME"
