@@ -124,14 +124,23 @@ export THROUGHLINE_HOME="$THROUGHLINE_TEST_HOME"
 Gate B passes only when the second person reproduces the frozen contract from a
 clean checkout.
 
-### Environment limitation
+### Frozen environment
 
-Replay receipt v1 records the Python and scientific-library versions that
-produced a run, but the normal bootstrap currently installs compatible current
-versions rather than reconstructing those recorded versions exactly. Therefore
-Gate B must record the installed versions printed by
-`scripts/verify_pilot_01.py --environment`. A future replay milestone may add
-environment restoration; Pilot 01 does not claim that capability.
+Pilot 01 now recreates and verifies an exact core scientific environment:
+
+- Python `3.12.14`
+- NumPy `2.3.2`
+- pandas `2.3.2`
+- SciPy `1.16.1`
+- statsmodels `0.14.5`
+
+The Python runtime is pinned in `scripts/runtimes.py`. The core scientific
+packages are pinned in `requirements/scientific-runtime.lock`. Bootstrap, CI,
+Docker, and Gate B use those same pins.
+
+`scripts/verify_pilot_01.py --environment` is a hard verification step, not
+just an informational printout. Gate B must stop and record a failure if any
+installed version differs from the frozen environment.
 
 ## Separation rule
 
