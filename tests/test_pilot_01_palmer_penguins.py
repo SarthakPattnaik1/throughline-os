@@ -93,7 +93,8 @@ EXPECTED_P = float(EXPECTED["p_value"])
 EXPECTED_CI_LOW = float(EXPECTED["ci_low"])
 EXPECTED_CI_HIGH = float(EXPECTED["ci_high"])
 REFUSAL_FILTERS = CONTRACT["refusal"]["filters"]
-REFUSAL_REASON = str(CONTRACT["refusal"]["reason"])
+REFUSAL_REASON = str(CONTRACT["refusal"]["capability_reason"])
+REFUSAL_ERRORS = CONTRACT["refusal"]["expected_errors"]
 
 
 def _frozen_source_bytes() -> bytes:
@@ -170,6 +171,8 @@ def test_frozen_contract_metadata_stays_synchronized():
     assert str(EXPECTED_CI_HIGH) in protocol
     assert "Adelie" in protocol
     assert REFUSAL_REASON in protocol
+    assert REFUSAL_ERRORS["code_export"] in protocol
+    assert REFUSAL_ERRORS["replay_receipt"] in protocol
     assert f'{CONTRACT["fixture_path"]} text eol=lf' in attributes
 
 
@@ -461,8 +464,8 @@ def test_species_filtered_neighbor_is_refused_for_the_declared_reason(
     with connection() as conn, conn.cursor() as cur:
         with pytest.raises(code_export.CannotEmit) as emitted:
             code_export.for_run(cur, run_id)
-        assert str(emitted.value) == REFUSAL_REASON
+        assert str(emitted.value) == REFUSAL_ERRORS["code_export"]
 
         with pytest.raises(replay_receipt.CannotReceipt) as receipted:
             replay_receipt.for_run(cur, run_id)
-        assert str(receipted.value) == REFUSAL_REASON
+        assert str(receipted.value) == REFUSAL_ERRORS["replay_receipt"]
