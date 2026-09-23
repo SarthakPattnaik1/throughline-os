@@ -76,31 +76,8 @@ PGBIN="$("$PY_BIN" -c 'import pathlib,pgserver;print(pathlib.Path(pgserver.__fil
 # guarantee conditional on the very thing an update is about to change.
 #
 # Found by running an update against a stopped installation.
-echo "  database…"
-THROUGHLINE_TARGET="$HOME_DIR" DUMP="$WORK/database.dump" "$PY_BIN" -c "
-import os, pathlib, subprocess, sys
-import pgserver
-
-home = pathlib.Path(os.environ['THROUGHLINE_TARGET'])
-server = pgserver.get_server(str(home / 'pgdata'))
-binaries = pathlib.Path(pgserver.__file__).parent / 'pginstall' / 'bin'
-
-result = subprocess.run(
-    [str(binaries / 'pg_dump'), '-Fc', '-f', os.environ['DUMP'],
-     '--exclude-table-data=installation_secrets', server.get_uri()],
-    capture_output=True, text=True,
-)
-if result.returncode != 0:
-    print(result.stderr.strip()[:500], file=sys.stderr)
-    sys.exit(1)
-" || { echo "  the database could not be dumped" >&2; exit 1; }
-
-echo "  objects…"
-if [ -d "$HOME_DIR/objects" ]; then
-  tar -czf "$WORK/objects.tar.gz" -C "$HOME_DIR" objects
-else
-  tar -czf "$WORK/objects.tar.gz" -C "$WORK" --files-from /dev/null
-fi
+echo "  database + objects (one consistent snapshot)…"
+"$PY_BIN" "$REPO/scripts/capture_backup.py"   "$HOME_DIR" "$WORK/database.dump" "$WORK/objects.tar.gz"   || { echo "  the database/object snapshot could not be captured" >&2; exit 1; }
 
 # A manifest, so a restore can tell whether the archive is intact before it
 # starts overwriting anything.

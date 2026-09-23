@@ -66,15 +66,23 @@ CONNECTION_COLUMNS: tuple[tuple[str, str], ...] = (
 def _cell(value: Any) -> str:
     """One value, written the way a spreadsheet should receive it.
 
-    `None` becomes empty rather than "None", "NA" or 0. A blank cell sorts and
-    filters correctly in every tool a researcher will open this in; a word does
-    not, and a zero is a measurement nobody made.
+    Numeric database values stay numeric. Text is made literal when a spreadsheet
+    would otherwise interpret it as a formula. Dataset names and variable labels
+    come from uploaded files, so a dangerous formula prefix must never become
+    executable merely because a researcher opens the exported CSV.
     """
     if value is None:
         return ""
     if isinstance(value, bool):
         return "true" if value else "false"
-    return str(value)
+    if isinstance(value, (int, float)):
+        return str(value)
+
+    text = str(value)
+    first = text.lstrip(" \t\r\n")[:1]
+    if first in {"=", "+", "-", "@"}:
+        return "'" + text
+    return text
 
 
 def connections_csv(cur, project_id: str) -> str:

@@ -132,3 +132,47 @@ class TestTheChoicesItMakes:
         # The browser resamples before sending, so nothing here converts or
         # guesses.
         assert speech.SAMPLE_RATE == 16_000
+
+
+
+def test_speech_route_rejects_oversized_body_before_transcription(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from throughline_api.app import app
+    from throughline_domain import auth
+    from throughline_domain.db import transaction
+    from throughline_domain.ids import new_id
+
+    email = f"{new_id('usr')}@speech-limit.invalid"
+    with transaction() as cur:
+        user = auth.create_user(
+            cur,
+            email=email,
+            display_name="Speech Limit",
+            password="correct-horse-battery",
+            is_admin=False,
+        )
+        token = auth.create_session(cur, user_id=user["id"])
+
+    called = False
+
+    def must_not_run(_raw):
+        nonlocal called
+        called = True
+        raise AssertionError("oversized audio reached transcription")
+
+    monkeypatch.setattr(speech, "transcribe", must_not_run)
+
+    try:
+        with TestClient(app) as client:
+            client.cookies.set(auth.SESSION_COOKIE, token)
+            response = client.post(
+                "/api/speech/transcribe",
+                content=b"\\x00" * (speech.MAX_RAW_BYTES + 1),
+                headers={"Content-Type": "application/octet-stream"},
+            )
+        assert response.status_code == 413, response.text
+        assert called is False
+    finally:
+        with transaction() as cur:
+            cur.execute("DELETE FROM users WHERE id = %s", (user["id"],))

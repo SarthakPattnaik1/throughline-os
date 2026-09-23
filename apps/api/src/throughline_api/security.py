@@ -116,6 +116,89 @@ def route_template(request: Request) -> str:
     return request.url.path
 
 
+MAX_REQUEST_BYTES = 256 * 1024 * 1024
+
+
+class RequestTooLarge(RuntimeError):
+    """The actual received body crossed the installation-wide request ceiling."""
+
+
+class RequestBodyLimitMiddleware:
+    """Bound HTTP request bodies before FastAPI or multipart parsing sees them.
+
+    A route-level UploadFile check is too late: Starlette may already have
+    spooled the multipart body to disk before the endpoint is called. This
+    middleware counts ASGI receive chunks themselves, so Content-Length lies,
+    omissions and chunked transfer encoding all meet the same hard ceiling.
+    """
+
+    def __init__(self, app, max_bytes: int = MAX_REQUEST_BYTES) -> None:  # noqa: ANN001
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def _refuse(self, scope, receive, send) -> None:  # noqa: ANN001
+        response = JSONResponse(
+            status_code=413,
+            content={
+                "detail": (
+                    f"Request body exceeds the {self.max_bytes // (1024 * 1024)} MiB "
+                    "installation limit."
+                )
+            },
+        )
+        _apply_headers(response)
+        await response(scope, receive, send)
+
+    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = {
+            key.lower(): value
+            for key, value in scope.get("headers", [])
+        }
+        declared = headers.get(b"content-length")
+        if declared is not None:
+            try:
+                if int(declared) > self.max_bytes:
+                    await self._refuse(scope, receive, send)
+                    return
+            except ValueError:
+                # Invalid Content-Length is the server/protocol stack's concern.
+                # The actual-byte counter below remains authoritative.
+                pass
+
+        received = 0
+        response_started = False
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise RequestTooLarge
+            return message
+
+        async def tracking_send(message):
+            nonlocal response_started
+            if message.get("type") == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, limited_receive, tracking_send)
+        except RequestTooLarge:
+            # Body-consuming endpoints parse before they start a response. If a
+            # future streaming endpoint starts responding first, a second HTTP
+            # response would itself be invalid, so surface the exception rather
+            # than corrupting the protocol.
+            if response_started:
+                raise
+            await self._refuse(scope, receive, send)
+
+
 _READS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
@@ -201,6 +284,8 @@ def _apply_headers(response: Response) -> None:
             "max-age=31536000; includeSubDomains")
 
 
-__all__ = ["LIMITS", "LOCAL_LIMITS", "Limit", "RateLimiter", "SecurityMiddleware",
-           "client_key", "deployment_is_local", "limit_for",
-           "session_cookie_kwargs"]
+__all__ = [
+    "LIMITS", "LOCAL_LIMITS", "MAX_REQUEST_BYTES", "Limit", "RateLimiter",
+    "RequestBodyLimitMiddleware", "SecurityMiddleware", "client_key",
+    "deployment_is_local", "limit_for", "session_cookie_kwargs",
+]

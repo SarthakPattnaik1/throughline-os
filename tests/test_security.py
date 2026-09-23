@@ -8,6 +8,7 @@ the thing rather than reading it.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 
 import pytest
@@ -176,6 +177,57 @@ def test_media_permissions_allow_only_same_origin():
     assert "geolocation=()" in policy
     assert "payment=()" in policy
     assert "usb=()" in policy
+
+
+def test_oversized_declared_request_is_refused_before_routing(client):
+    response = client.post(
+        "/api/auth/login",
+        content=b"{}",
+        headers={
+            "content-type": "application/json",
+            "content-length": str(security.MAX_REQUEST_BYTES + 1),
+        },
+    )
+    assert response.status_code == 413
+    assert "installation limit" in response.json()["detail"]
+
+
+def test_chunked_body_is_limited_by_actual_bytes_without_content_length():
+    consumed = {"completed": False}
+
+    async def inner(scope, receive, send):
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                continue
+            if not message.get("more_body", False):
+                break
+        consumed["completed"] = True
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = security.RequestBodyLimitMiddleware(inner, max_bytes=5)
+    messages = iter([
+        {"type": "http.request", "body": b"abc", "more_body": True},
+        {"type": "http.request", "body": b"def", "more_body": False},
+    ])
+    sent = []
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message)
+
+    asyncio.run(middleware(
+        {"type": "http", "method": "POST", "path": "/upload", "headers": []},
+        receive,
+        send,
+    ))
+
+    assert consumed["completed"] is False
+    start = next(message for message in sent if message["type"] == "http.response.start")
+    assert start["status"] == 413
 
 
 def test_hsts_is_not_sent_from_a_local_install(monkeypatch):
@@ -409,3 +461,18 @@ def test_reads_do_not_spend_the_budget_for_starting_work(monkeypatch, client):
         client.get("/api/projects/prj_1/analyses")
 
     assert client.post("/api/projects/prj_1/analyses", json={}).status_code != 429
+
+
+def test_network_bound_entrypoint_provisions_first_run_authority():
+    """serve.sh binds 0.0.0.0, so it must provision the setup authority it relies on."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    source = (root / "scripts" / "serve.sh").read_text(encoding="utf-8")
+    assert "--host 0.0.0.0" in source
+    assert "THROUGHLINE_REMOTE_SETUP_TOKEN" in source
+    assert "secrets.token_urlsafe" in source
+
+    token = source.index("THROUGHLINE_REMOTE_SETUP_TOKEN")
+    server = source.index("python -m uvicorn")
+    assert token < server, "the server starts before first-run authority exists"

@@ -257,6 +257,15 @@ def parse_pdf(path: Path) -> ParsedDocument:
 def parse_docx(path: Path) -> ParsedDocument:
     from docx import Document
 
+    from .archive_safety import UnsafeArchive, check_zip_container
+
+    try:
+        check_zip_container(path)
+    except UnsafeArchive as exc:
+        raise UnsupportedFormat(
+            f"This .docx is unsafe to expand in the ingestion worker ({exc})"
+        ) from exc
+
     document = Document(path)
     passages: list[Passage] = []
     chunks: list[str] = []

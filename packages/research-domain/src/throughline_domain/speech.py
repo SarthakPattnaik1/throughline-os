@@ -53,6 +53,12 @@ DEFAULT_MODEL = "tiny.en"
 #: interaction this exists for is a sentence, not a dictation.
 MAX_SECONDS = 30.0
 
+#: Raw request-body ceiling for 16 kHz mono float32 audio. The API enforces
+#: this while streaming the request, before it can allocate an arbitrarily
+#: large body and only then discover the clip is too long.
+BYTES_PER_SAMPLE = 4
+MAX_RAW_BYTES = int(SAMPLE_RATE * MAX_SECONDS * BYTES_PER_SAMPLE)
+
 
 class SpeechError(Exception):
     """Audio this system will not transcribe, with a reason for a person."""

@@ -82,6 +82,39 @@ def test_identical_content_is_stored_once(cur):
     assert first["id"] == second["id"]
 
 
+def test_reupload_repairs_a_corrupted_content_addressed_blob(cur):
+    user = _user(cur)
+    project_id = new_id("prj")
+    cur.execute(
+        "INSERT INTO projects(id, owner_user_id, name) VALUES (%s, %s, 'Repair')",
+        (project_id, user["id"]),
+    )
+    payload = b"country,value\nIN,1\n"
+    first = storage.register_file(
+        cur,
+        project_id=project_id,
+        filename="data.csv",
+        stream=io.BytesIO(payload),
+        media_type="text/csv",
+    )
+    path = storage.path_for(str(first["storage_key"]))
+    path.write_bytes(b"corrupted on disk")
+    assert storage.verify(str(first["storage_key"]), str(first["content_hash"])) is False
+
+    second = storage.register_file(
+        cur,
+        project_id=project_id,
+        filename="same-data.csv",
+        stream=io.BytesIO(payload),
+        media_type="text/csv",
+    )
+
+    assert second["id"] == first["id"]
+    assert second["deduplicated"] is True
+    assert storage.verify(str(first["storage_key"]), str(first["content_hash"])) is True
+    assert path.read_bytes() == payload
+
+
 def test_stored_bytes_can_be_reverified_against_the_cited_hash(cur):
     user = _user(cur)
     project_id = new_id("prj")

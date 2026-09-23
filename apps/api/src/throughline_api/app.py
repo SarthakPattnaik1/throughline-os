@@ -8,6 +8,8 @@ entry commit together.
 
 from __future__ import annotations
 
+import hmac
+import ipaddress
 import io
 import logging
 import os
@@ -24,6 +26,7 @@ from fastapi import (
     Response, UploadFile,
 )
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 from throughline_visual import spec as visual_spec
 from pydantic import ValidationError as PayloadInvalid
@@ -65,7 +68,12 @@ from throughline_domain.db import connection, jsonb, transaction
 from throughline_domain.ids import new_id
 from throughline_domain.migrate import migrate
 from throughline_runtime.executor import policy_report as sandbox_policy_report
-from .security import SecurityMiddleware, deployment_is_local, session_cookie_kwargs
+from .security import (
+    RequestBodyLimitMiddleware,
+    SecurityMiddleware,
+    deployment_is_local,
+    session_cookie_kwargs,
+)
 from throughline_schemas.enums import (
     FindingLifecycle,
     FindingType,
@@ -108,6 +116,9 @@ app = FastAPI(title="Throughline OS", version=API_VERSION, lifespan=lifespan)
 # ten, and every limit was a third of what it said. Invisible while limits were
 # looked up by concrete path, since no bucket came near one (T167).
 app.add_middleware(SecurityMiddleware)
+# Added after SecurityMiddleware so this pure-ASGI boundary is outermost and
+# can reject oversized multipart/chunked bodies before FastAPI parses them.
+app.add_middleware(RequestBodyLimitMiddleware)
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +138,9 @@ class SetupRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     display_name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=12, max_length=MAX_PASSWORD)
+    # Required only when first-run setup reaches the API from a non-loopback
+    # peer (for example through Docker's bridge). It is never stored.
+    setup_token: str = Field(default="", max_length=512)
 
 
 class LoginRequest(BaseModel):
@@ -275,7 +289,18 @@ async def transcribe_speech(request: Request,
     this one loads a speech model and runs it over whatever body arrives. The
     cookie is `SameSite=strict`, so a cross-origin POST carries no session.
     """
-    raw = await request.body()
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > speech.MAX_RAW_BYTES:
+            raise HTTPException(
+                413,
+                f"That recording is larger than the maximum "
+                f"{speech.MAX_SECONDS:.0f}-second raw audio clip."
+            )
+        chunks.append(chunk)
+    raw = b"".join(chunks)
     try:
         return speech.transcribe(raw)
     except speech.SpeechError as exc:
@@ -315,9 +340,69 @@ def auth_status(throughline_session: str | None = Cookie(default=None)) -> dict[
     return {"needs_setup": needs_setup, "authenticated": bool(user), "user": user}
 
 
+_FIRST_ACCOUNT_LOCK = "throughline:first-account"
+
+
+def _lock_first_account(cur) -> None:
+    """Serialize the decision about which account is the administrator."""
+    cur.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (_FIRST_ACCOUNT_LOCK,),
+    )
+
+
+def _setup_peer_is_loopback(request: Request) -> bool:
+    """Whether first-run setup originated from this machine itself.
+
+    Deployment labels are configuration; the peer address is the network fact.
+    A packaged container binds on all interfaces, so treating every
+    `THROUGHLINE_DEPLOYMENT=local` request as loopback would let the first LAN
+    caller become the administrator of a fresh installation.
+
+    Starlette's TestClient uses the literal host "testclient". It is accepted
+    only while pytest is actually running so the test harness does not become a
+    production bypass.
+    """
+    host = ((request.client.host if request.client else "") or "").split("%", 1)[0]
+    if host == "testclient" and os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host.lower() == "localhost"
+
+
+def _require_remote_setup_authority(
+    request: Request, *, body_token: str = "",
+) -> None:
+    """Require an operator secret for every non-loopback first-admin setup.
+
+    This deliberately does *not* trust `deployment_is_local()`. The container
+    entrypoint binds FastAPI to 0.0.0.0, and an operator can publish that port to
+    a LAN or wider network while leaving the deployment label at its default.
+    The first account controls users, models and machine-level capabilities, so
+    network reachability must never be enough to win that race.
+    """
+    if _setup_peer_is_loopback(request):
+        return
+
+    expected = os.environ.get("THROUGHLINE_REMOTE_SETUP_TOKEN", "")
+    supplied = body_token or request.headers.get("x-throughline-setup-token", "")
+    if not expected or not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(
+            403,
+            "First-run setup reached Throughline over a network connection. "
+            "Enter the setup token printed by the Throughline server, or set "
+            "THROUGHLINE_REMOTE_SETUP_TOKEN on the server and use that value."
+        )
+
+
 @app.post("/api/auth/setup")
-def auth_setup(payload: SetupRequest, response: Response) -> dict[str, Any]:
+def auth_setup(payload: SetupRequest, response: Response,
+               request: Request) -> dict[str, Any]:
+    _require_remote_setup_authority(request, body_token=payload.setup_token)
     with transaction() as cur:
+        _lock_first_account(cur)
         cur.execute("SELECT COUNT(*) AS n FROM users")
         if cur.fetchone()["n"]:
             raise HTTPException(409, "This installation is already set up.")
@@ -420,6 +505,9 @@ def auth_register(payload: RegisterRequest, request: Request,
             "unless the operator turns on open registration in Settings.")
 
     with transaction() as cur:
+        # Setup and registration can arrive together on a fresh installation.
+        # They must serialize before deciding which account is the one admin.
+        _lock_first_account(cur)
         cur.execute("SELECT COUNT(*) AS n FROM users")
         first = cur.fetchone()["n"] == 0
         try:
@@ -2336,25 +2424,15 @@ def finding_provenance_log(finding_id: str,
 
 @app.get("/api/projects/{project_id}/snapshot.zip")
 def project_snapshot(project_id: str,
-                     user: dict = Depends(current_user)) -> Response:
+                     user: dict = Depends(current_user)) -> FileResponse:
     """
     One project as one file, to keep or to carry to another machine (§75).
 
-    `backup.sh` copies the whole installation — every project, including other
-    researchers'. This is the one somebody actually asks for: *give me
-    everything about this project*.
-
-    A zip rather than JSON, because the records are only half of it. The files
-    the project ingested travel beside them under `files/`, named by the
-    storage key the records refer to, so the archive is self-contained: a
-    snapshot describing analyses of a CSV nobody has is a description of work
-    rather than the work.
-
-    Built in memory. A project's records are small and its files are already
-    on this disk; streaming would add a temporary file to clean up for no gain
-    at the sizes involved, and the download is local.
+    The records and stored files can be much larger than the API process should
+    ever hold in memory. The archive is therefore assembled in a private
+    temporary file and sent by FileResponse. The file is removed after the
+    response finishes, and also on any construction failure.
     """
-    import io
     import zipfile
 
     scoped_project(project_id, user)
@@ -2365,38 +2443,50 @@ def project_snapshot(project_id: str,
             raise HTTPException(404, str(exc)) from exc
         files = snapshot.files_in(cur, project_id)
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("project.json", records)
-        missing: list[str] = []
-        for entry in files:
-            try:
-                path = _verified_research_path(
-                    entry["storage_key"],
-                    entry["content_hash"],
-                    label=f"Snapshot file {entry['filename']}",
-                )
-            except HTTPException as exc:
-                # Preserve the snapshot route's existing honesty about missing
-                # evidence, but never package bytes that contradict project.json.
-                missing.append(
-                    f"{entry['storage_key']}  {entry['filename']}  "
-                    f"[unavailable or hash mismatch: {exc.detail}]"
-                )
-                continue
-            archive.write(path, f"files/{entry['storage_key']}")
-        if missing:
-            archive.writestr(
-                "files/MISSING.txt",
-                "These files are recorded in project.json and were not on "
-                "this machine when the snapshot was taken:\n\n"
-                + "\n".join(missing) + "\n")
+    handle = tempfile.NamedTemporaryFile(
+        prefix="throughline-snapshot-",
+        suffix=".zip",
+        delete=False,
+    )
+    archive_path = Path(handle.name)
+    handle.close()
 
-    return Response(
-        content=buffer.getvalue(),
+    try:
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("project.json", records)
+            missing: list[str] = []
+            for entry in files:
+                try:
+                    path = _verified_research_path(
+                        entry["storage_key"],
+                        entry["content_hash"],
+                        label=f"Snapshot file {entry['filename']}",
+                    )
+                except HTTPException as exc:
+                    # Keep the snapshot honest about unavailable evidence, but
+                    # never package bytes that contradict the recorded hash.
+                    missing.append(
+                        f"{entry['storage_key']}  {entry['filename']}  "
+                        f"[unavailable or hash mismatch: {exc.detail}]"
+                    )
+                    continue
+                archive.write(path, f"files/{entry['storage_key']}")
+            if missing:
+                archive.writestr(
+                    "files/MISSING.txt",
+                    "These files are recorded in project.json and were not on "
+                    "this machine when the snapshot was taken:\n\n"
+                    + "\n".join(missing) + "\n",
+                )
+    except BaseException:
+        archive_path.unlink(missing_ok=True)
+        raise
+
+    return FileResponse(
+        archive_path,
         media_type="application/zip",
-        headers={"Content-Disposition":
-                 f'attachment; filename="{project_id}-snapshot.zip"'},
+        filename=f"{project_id}-snapshot.zip",
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
     )
 
 

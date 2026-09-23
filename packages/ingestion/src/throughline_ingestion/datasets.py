@@ -287,6 +287,17 @@ def read_dataset(path: Path, *, suffix: str | None = None,
     if suffix in {".db", ".sqlite", ".sqlite3"}:
         return _read_sqlite(path, table)
     if suffix in {".xlsx", ".xlsm"}:
+        from .archive_safety import UnsafeArchive, check_zip_container
+
+        try:
+            check_zip_container(path)
+        except UnsafeArchive as exc:
+            raise UnsupportedDataset(
+                f"This {suffix} file is unsafe to expand in the ingestion "
+                f"worker ({exc}). Saving the table as CSV/TSV avoids the ZIP "
+                "container entirely."
+            ) from exc
+
         # Wrapped for the same reason as .xls below. This one predates the .xls
         # branch: pandas raises a bare ValueError ("Excel file format cannot be
         # determined") on a malformed workbook, which escaped every
@@ -510,7 +521,13 @@ def _read_rds(path: Path) -> tuple[pd.DataFrame, str]:
 
 
 def _read_hdf5(path: Path) -> tuple[pd.DataFrame, str]:
-    """HDF5 is a container: one file, potentially many tables."""
+    """Read only the non-pickle pandas HDF5 representation.
+
+    Pandas' fixed HDF format can deserialize object-dtype blocks with pickle.
+    Uploaded research files are untrusted input, so accepting that format would
+    turn "read a dataset" into a Python object-deserialization boundary. Table
+    format is the safe pandas representation we support here.
+    """
     with pd.HDFStore(str(path), mode="r") as store:
         keys = list(store.keys())
         if not keys:
@@ -525,7 +542,17 @@ def _read_hdf5(path: Path) -> tuple[pd.DataFrame, str]:
                 f"{', …' if len(keys) > 6 else ''}). Export the one you want as "
                 f"its own file, so the analysis names what it read."
             )
-        frame = store[keys[0]]
+
+        key = keys[0]
+        storer = store.get_storer(key)
+        if getattr(storer, "format_type", None) != "table":
+            raise UnsupportedDataset(
+                "This HDF5 file uses pandas' fixed format, which can contain "
+                "pickled Python objects. Throughline will not deserialize that "
+                "format from an uploaded file. Re-save the table with "
+                "format='table' or export it as CSV."
+            )
+        frame = store.select(key)
     return frame.astype(str), "hdf5"
 
 
@@ -993,13 +1020,73 @@ def _semantic_type(
     return "measurement"
 
 
+PROFILE_CHUNK_ROWS = 50_000
+
+
+def _profile_delimited(
+    path: Path, *, suffix: str, row_limit: int,
+) -> tuple[pd.DataFrame, str, int]:
+    """Read at most the profiled rows while still counting the whole file.
+
+    `profile_dataset` used to call `read_dataset` first and only then apply
+    `head(row_limit)`. On a multi-million-row CSV that means the advertised
+    profiling limit did nothing for memory: pandas materialised every string in
+    the file before throwing most rows away.
+
+    Keep the historical profiling semantics exactly — the first `row_limit`
+    rows are profiled — while continuing through later chunks only to count
+    them. Peak dataframe memory is therefore bounded by the profiling contract,
+    not by the size of the uploaded CSV/TSV.
+    """
+    delimiter = "\t" if suffix == ".tsv" else sniff_delimiter(path)
+    fmt = "tsv" if delimiter == "\t" else "csv"
+    kept: list[pd.DataFrame] = []
+    kept_rows = 0
+    total_rows = 0
+
+    reader = pd.read_csv(
+        path,
+        sep=delimiter,
+        dtype=str,
+        keep_default_na=False,
+        encoding="utf-8",
+        encoding_errors="replace",
+        chunksize=PROFILE_CHUNK_ROWS,
+        low_memory=False,
+    )
+    columns: list[str] | None = None
+    for chunk in reader:
+        if columns is None:
+            columns = [str(name) for name in chunk.columns]
+        count = len(chunk)
+        total_rows += count
+        if kept_rows < row_limit:
+            take = min(row_limit - kept_rows, count)
+            if take:
+                kept.append(chunk.iloc[:take].copy())
+                kept_rows += take
+
+    if kept:
+        frame = pd.concat(kept, ignore_index=True)
+    else:
+        frame = pd.DataFrame(columns=columns or [])
+    return frame, fmt, total_rows
+
+
 def profile_dataset(path: Path, *, suffix: str | None = None,
                     row_limit: int = 500_000) -> DatasetProfile:
-    frame, fmt = read_dataset(path, suffix=suffix)
-    original_rows = len(frame)
+    suffix = (suffix or path.suffix).lower()
+    if suffix in {".csv", ".tsv"}:
+        frame, fmt, original_rows = _profile_delimited(
+            path, suffix=suffix, row_limit=row_limit,
+        )
+    else:
+        frame, fmt = read_dataset(path, suffix=suffix)
+        original_rows = len(frame)
+        if original_rows > row_limit:
+            frame = frame.head(row_limit)
+
     sampled = original_rows > row_limit
-    if sampled:
-        frame = frame.head(row_limit)
 
     # Present only for formats that carry their own metadata; empty otherwise.
     labels: dict[str, str] = frame.attrs.get("column_labels", {})

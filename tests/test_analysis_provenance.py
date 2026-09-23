@@ -136,6 +136,39 @@ def test_spec_cannot_reach_another_projects_dataset(analysed_project):
 # ---------------------------------------------------------------------------
 
 
+def test_analysis_refuses_dataset_bytes_that_do_not_match_the_version_hash(
+        analysed_project):
+    project_id, version_id = analysed_project
+    with connection() as conn, conn.cursor() as cur:
+        created = analysis.create_spec(
+            cur,
+            project_id=project_id,
+            spec={
+                "method": "pearson_correlation",
+                "dataset_version_ids": [version_id],
+                "variables": {"x": "consumption_ddd", "y": "resistance_pct"},
+            },
+            actor="test",
+        )
+        cur.execute(
+            "SELECT storage_key FROM dataset_versions WHERE id = %s",
+            (version_id,),
+        )
+        key = cur.fetchone()["storage_key"]
+
+    # The content-addressed filename alone is not proof that the bytes inside it
+    # still have that identity.
+    storage.path_for(key).write_bytes(
+        b"country,consumption_ddd,resistance_pct\nX,1,999\n"
+    )
+
+    from throughline_workers.handlers import _prepare_analysis
+
+    with connection() as conn, conn.cursor() as cur:
+        with pytest.raises(ValueError, match="recorded SHA-256"):
+            _prepare_analysis(cur, created["spec_id"])
+
+
 def test_analysis_produces_a_real_computed_result_with_provenance(analysed_project):
     project_id, version_id = analysed_project
     run_id = _analyse(project_id, version_id, method="pearson_correlation",

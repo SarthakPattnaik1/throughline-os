@@ -306,6 +306,33 @@ def create_run(
     cur, *, project_id: str, spec_id: str, forked_from_run_id: str | None = None,
     fork_reason: str = "",
 ) -> str:
+    """Create a run only from analysis state owned by this project.
+
+    The foreign keys prove the ids exist, but not that their project_id matches
+    the run being created. Without this check a domain caller could create a run
+    in project A from project B's spec, and record cross-project provenance.
+    """
+    cur.execute(
+        "SELECT project_id FROM analysis_specs WHERE id = %s",
+        (spec_id,),
+    )
+    spec = cur.fetchone()
+    if not spec:
+        raise AnalysisError(f"Unknown analysis spec: {spec_id}")
+    if spec["project_id"] != project_id:
+        raise AnalysisError("The analysis spec belongs to a different project.")
+
+    if forked_from_run_id:
+        cur.execute(
+            "SELECT project_id FROM analysis_runs WHERE id = %s",
+            (forked_from_run_id,),
+        )
+        parent = cur.fetchone()
+        if not parent:
+            raise AnalysisError(f"Unknown analysis run: {forked_from_run_id}")
+        if parent["project_id"] != project_id:
+            raise AnalysisError("The forked analysis run belongs to a different project.")
+
     run_id = new_id("arun")
     cur.execute(
         "INSERT INTO analysis_runs (id, project_id, spec_id, forked_from_run_id, "
