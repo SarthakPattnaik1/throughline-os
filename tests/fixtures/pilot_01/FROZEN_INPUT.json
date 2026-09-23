@@ -29,6 +29,6 @@
         "value": "Adelie"
       }
     ],
-    "reason": "declarative filters are outside replay receipt v1"
+    "reason": "Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows."
   }
 }
