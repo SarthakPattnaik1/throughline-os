@@ -18,7 +18,7 @@
  * identical while making the sentence false.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -144,6 +144,19 @@ describe("the marks are one set reconfigured", () => {
         `${form} after choosing Violin`,
       ).toBe(form === "Violin" ? "true" : "false");
     }
+  });
+
+  it("uses the latest onFormChange callback through its imperative ref", () => {
+    const ref = createRef<MarksHandle>();
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = render(<Marks ref={ref} onFormChange={first} />);
+
+    rerender(<Marks ref={ref} onFormChange={second} />);
+
+    act(() => ref.current!.setStage(3));
+    expect(second).toHaveBeenCalledWith("Interval");
+    expect(first).not.toHaveBeenCalled();
   });
 
   it("follows the scroll when the reader has not taken over", () => {
