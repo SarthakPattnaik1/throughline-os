@@ -97,7 +97,7 @@ From a fresh checkout of the exact audited commit:
 git rev-parse HEAD
 python scripts/verify_pilot_01.py
 
-$env:THROUGHLINE_TEST_HOME = Join-Path (Get-Location) (".pilot01-gateb-" + [guid]::NewGuid().ToString())
+$env:THROUGHLINE_TEST_HOME = Join-Path $env:USERPROFILE (".throughline-pilot01-gateb-" + [guid]::NewGuid().ToString())
 $env:THROUGHLINE_HOME = $env:THROUGHLINE_TEST_HOME
 
 python scripts/manage.py bootstrap
