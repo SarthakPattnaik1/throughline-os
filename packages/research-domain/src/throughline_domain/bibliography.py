@@ -57,7 +57,7 @@ _ESCAPE = {
     # Metadata is untrusted text, not author-supplied TeX, so preserving it
     # would let a scraped title containing an input/write command become an
     # instruction when the exported .bib is later compiled.
-    "\\\\": r"\\textbackslash{}",
+    "\\": r"\textbackslash{}",
     "&": r"\\&",
     "%": r"\\%",
     "$": r"\\$",
