@@ -51,7 +51,7 @@ NODE_MINIMUM = 20
 # the embedded PostgreSQL as a binary wheel and publishes none past cp312. Windows
 # is included in that — the win_amd64 wheels exist through cp312 — so this is a
 # version constraint, not a platform one.
-REQUIRED_PYTHON = (3, 12)
+REQUIRED_PYTHON = tuple(int(part) for part in runtimes.CPYTHON_VERSION.split("."))
 
 # Order satisfies the dependency graph. None of these is published, so pip can
 # only resolve `throughline-visual` and friends if the directory providing them is
@@ -147,7 +147,7 @@ def _venv_version(root: Path = ROOT) -> tuple[int, int] | None:
 
 
 def bootstrap() -> int:
-    version = sys.version_info[:2]
+    version = sys.version_info[:3]
     want = ".".join(str(part) for part in REQUIRED_PYTHON)
     have = ".".join(str(part) for part in version)
 
@@ -177,7 +177,7 @@ def bootstrap() -> int:
     # A virtualenv built by a different interpreter is not reusable, and the
     # symptom if it is reused is an import error naming a C symbol.
     existing = _venv_version()
-    if existing is not None and existing != REQUIRED_PYTHON:
+    if existing is not None and existing != REQUIRED_PYTHON[:2]:
         stale = ".".join(str(part) for part in existing)
         print(f"Replacing the existing virtualenv: it was built from Python "
               f"{stale}, and this is {have}.")
@@ -231,7 +231,9 @@ def bootstrap() -> int:
     for package in PACKAGES:
         print(f"  installing {package}")
         result = subprocess.run(
-            [python, "-m", "pip", "install", "-q", "-e", str(ROOT / package)])
+            [python, "-m", "pip", "install", "-q",
+             "-c", str(ROOT / "requirements" / "scientific-runtime.lock"),
+             "-e", str(ROOT / package)])
         if result.returncode != 0:
             print(f"\nFailed installing {package}.", file=sys.stderr)
             return result.returncode
@@ -246,6 +248,7 @@ def bootstrap() -> int:
     # declared, which is precisely the class of defect this project's CI exists
     # to catch. It ran here only because Wave 0 installed it by hand.
     subprocess.run([python, "-m", "pip", "install", "-q",
+                    "-c", str(ROOT / "requirements" / "scientific-runtime.lock"),
                     "pytest", "httpx", "xlwt"], check=True)
 
     print("Applying migrations (this boots the bundled PostgreSQL on first run)…")
