@@ -2379,8 +2379,11 @@ def project_snapshot(project_id: str,
             raise HTTPException(404, str(exc)) from exc
         files = snapshot.files_in(cur, project_id)
 
+    # The temporary filesystem path must not contain request-controlled data.
+    # tempfile supplies the uniqueness; project_id belongs only in the download
+    # filename presented to the authenticated user, not in a server-side path.
     handle, temp_name = tempfile.mkstemp(
-        prefix=f"throughline-{project_id}-", suffix="-snapshot.zip"
+        prefix="throughline-snapshot-", suffix=".zip"
     )
     os.close(handle)
     temp_path = Path(temp_name)
