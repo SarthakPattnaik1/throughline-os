@@ -114,6 +114,8 @@ def database() -> None:
     from throughline_domain.db import shutdown
 
     shutdown()
+    if _EXPLICIT_TEST_HOME is None:
+        shutil.rmtree(_TEST_HOME, ignore_errors=True)
 
 
 @pytest.fixture()
