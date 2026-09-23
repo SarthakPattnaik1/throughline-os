@@ -29,6 +29,10 @@
         "value": "Adelie"
       }
     ],
-    "reason": "Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows."
+    "capability_reason": "Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows.",
+    "expected_errors": {
+      "replay_receipt": "Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows.",
+      "code_export": "Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows. Replay-supported methods: pearson_correlation, spearman_correlation."
+    }
   }
 }
