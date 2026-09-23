@@ -459,7 +459,10 @@ def test_species_filtered_neighbor_is_refused_for_the_declared_reason(
     assert 0 < run["result"]["sample_size"] < 342
 
     with connection() as conn, conn.cursor() as cur:
-        with pytest.raises(code_export.CannotEmit, match="filters"):
+        with pytest.raises(code_export.CannotEmit) as emitted:
             code_export.for_run(cur, run_id)
-        with pytest.raises(replay_receipt.CannotReceipt, match="filters"):
+        assert str(emitted.value) == REFUSAL_REASON
+
+        with pytest.raises(replay_receipt.CannotReceipt) as receipted:
             replay_receipt.for_run(cur, run_id)
+        assert str(receipted.value) == REFUSAL_REASON
