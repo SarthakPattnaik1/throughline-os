@@ -6,6 +6,7 @@ import io
 
 import pytest
 from throughline_domain import auth, storage
+from throughline_domain.db import connection
 from throughline_domain.ids import new_id
 
 
@@ -96,6 +97,50 @@ def test_stored_bytes_can_be_reverified_against_the_cited_hash(cur):
 def test_storage_key_cannot_escape_the_object_store(cur):
     with pytest.raises(storage.StorageError):
         storage.path_for("../../../../etc/passwd")
+
+
+def test_blob_collection_refuses_a_noncanonical_key(tmp_path, monkeypatch):
+    """A corrupt files.storage_key must never widen deletion inside the store."""
+    monkeypatch.setattr(storage, "storage_root", lambda: tmp_path)
+    digest = "0" * 64
+    neighbour = tmp_path / "unrelated.txt"
+    neighbour.write_bytes(b"keep me")
+
+    result = storage.collect([(digest, "unrelated.txt")])
+
+    assert result["removed"] == 0
+    assert result["failed"] == 1
+    assert neighbour.read_bytes() == b"keep me"
+
+
+def test_blob_collection_rechecks_live_references_before_unlinking():
+    """A stale orphan decision cannot delete bytes a concurrent upload now uses."""
+    with connection() as conn, conn.cursor() as cur:
+        user = _user(cur)
+        project_id = new_id("prj")
+        cur.execute(
+            "INSERT INTO projects(id, owner_user_id, name) VALUES (%s, %s, 'Live')",
+            (project_id, user["id"]),
+        )
+        record = storage.register_file(
+            cur,
+            project_id=project_id,
+            filename="live.csv",
+            stream=io.BytesIO(b"x\n1\n"),
+            media_type="text/csv",
+        )
+        conn.commit()
+
+    path = storage.path_for(str(record["storage_key"]))
+    assert path.exists()
+
+    result = storage.collect([
+        (str(record["content_hash"]), str(record["storage_key"])),
+    ])
+
+    assert result["removed"] == 0
+    assert result["kept"] == 1
+    assert path.exists()
 
 
 # ---------------------------------------------------------------------------

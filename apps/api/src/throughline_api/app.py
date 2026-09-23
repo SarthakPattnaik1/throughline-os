@@ -671,16 +671,11 @@ def delete_project(project_id: str,
             # thing it records is not an audit entry.
             detail={"name": project["name"], "destroyed": destroyed})
 
-        # Which of those blobs are now referenced by nothing at all.
-        orphans: list[str] = []
-        for content_hash, key in candidates:
-            cur.execute(
-                "SELECT 1 FROM files WHERE content_hash = %s LIMIT 1",
-                (content_hash,))
-            if not cur.fetchone():
-                orphans.append(key)
-
-    collected = storage.collect(orphans)
+    # Recheck references after commit while holding the same hash-scoped lock
+    # that register_file() uses. That closes the upload/delete race: whichever
+    # operation wins the lock establishes the blob's final state before the
+    # other proceeds.
+    collected = storage.collect(candidates)
     # After the commit, like `collect`: files are removed only once the rows
     # that described them are gone for good.
     storage.collect_exports(exports)
@@ -688,11 +683,11 @@ def delete_project(project_id: str,
         "deleted": project_id,
         "name": project["name"],
         "files_removed": collected["removed"],
-        "files_kept_shared": len(candidates) - len(orphans),
+        "files_kept_shared": collected["kept"],
         "note": (
             f"{project['name']} and everything in it is gone. "
             + (f"{collected['removed']} stored files were removed; "
-               f"{len(candidates) - len(orphans)} were kept because another "
+               f"{collected['kept']} were kept because another "
                "project uses the same bytes."
                if candidates else "No stored files were attached.")),
     }
