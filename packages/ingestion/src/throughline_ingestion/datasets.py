@@ -287,6 +287,17 @@ def read_dataset(path: Path, *, suffix: str | None = None,
     if suffix in {".db", ".sqlite", ".sqlite3"}:
         return _read_sqlite(path, table)
     if suffix in {".xlsx", ".xlsm"}:
+        from .archive_safety import UnsafeArchive, check_zip_container
+
+        try:
+            check_zip_container(path)
+        except UnsafeArchive as exc:
+            raise UnsupportedDataset(
+                f"This {suffix} file is unsafe to expand in the ingestion "
+                f"worker ({exc}). Saving the table as CSV/TSV avoids the ZIP "
+                "container entirely."
+            ) from exc
+
         # Wrapped for the same reason as .xls below. This one predates the .xls
         # branch: pandas raises a bare ValueError ("Excel file format cannot be
         # determined") on a malformed workbook, which escaped every
