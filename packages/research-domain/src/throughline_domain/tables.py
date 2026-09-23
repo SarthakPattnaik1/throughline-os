@@ -63,7 +63,27 @@ CONNECTION_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _cell(value: Any) -> str:\n    """One value, written the way a spreadsheet should receive it.\n\n    Numeric database values stay numeric. Text is made literal when a spreadsheet\n    would otherwise interpret it as a formula. Dataset names and variable labels\n    come from uploaded files, so a dangerous formula prefix must never become\n    executable merely because a researcher opens the exported CSV.\n    """\n    if value is None:\n        return ""\n    if isinstance(value, bool):\n        return "true" if value else "false"\n    if isinstance(value, (int, float)):\n        return str(value)\n\n    text = str(value)\n    first = text.lstrip(" \\t\\r\\n")[:1]\n    if first in {"=", "+", "-", "@"}:\n        return "\\'" + text\n    return text\n
+def _cell(value: Any) -> str:
+    """One value, written the way a spreadsheet should receive it.
+
+    Numeric database values stay numeric. Text is made literal when a spreadsheet
+    would otherwise interpret it as a formula. Dataset names and variable labels
+    come from uploaded files, so a dangerous formula prefix must never become
+    executable merely because a researcher opens the exported CSV.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+
+    text = str(value)
+    first = text.lstrip(" \t\r\n")[:1]
+    if first in {"=", "+", "-", "@"}:
+        return "'" + text
+    return text
+
 
 def connections_csv(cur, project_id: str) -> str:
     """
