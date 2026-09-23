@@ -275,6 +275,24 @@ def test_an_unapplied_memory_limit_is_admitted_in_the_run(monkeypatch, tmp_path)
 
 
 @posix_rlimit_only
+def test_an_unapplied_memory_limit_downgrades_the_recorded_policy():
+    report = executor.policy_report()
+    assert report["enforced"]["memory_limit"] is True
+
+    actual = executor._report_actual_limits(
+        report,
+        "[sandbox] WARNING: could not apply a 512MB memory limit — "
+        "neither RLIMIT_AS nor RLIMIT_DATA was accepted on this platform. "
+        "The analysis is running WITHOUT a memory ceiling and could exhaust this machine.\n",
+    )
+
+    assert actual["enforced"]["memory_limit"] is False
+    assert actual["best_effort"]["memory_limit"] == "requested_but_not_applied"
+    # The static capability description must remain unchanged for another run.
+    assert report["enforced"]["memory_limit"] is True
+
+
+@posix_rlimit_only
 def test_the_warning_names_the_limit_that_was_requested(monkeypatch):
     """A warning that does not say what was asked for cannot be acted on."""
     import resource as resource_module
