@@ -10,6 +10,7 @@ ALLOWED = (
     "no pack installed in this environment to check against",
     "Main.dc.html is generated", "tests/test_mutating_routes_require_a_session.py",
     "Blender is not installed",
+    "optional HDF5 reader is not installed",
 )
 
 
