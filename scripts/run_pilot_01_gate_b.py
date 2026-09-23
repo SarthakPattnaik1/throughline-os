@@ -179,6 +179,14 @@ def main() -> int:
             env,
             record,
         )
+        # The core scientific stack is pinned, but the broader workspace still
+        # contains transitive/floor-bounded packages. Record the complete
+        # resolved environment so the audit evidence says exactly what ran.
+        _run(
+            [str(venv_python), "-m", "pip", "freeze", "--all"],
+            env,
+            record,
+        )
         _run(
             [
                 str(venv_python),
