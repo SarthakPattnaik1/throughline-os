@@ -49,9 +49,14 @@ jobs:
         run: ./.venv/bin/python scripts/check_test_skips.py pytest.out
 
   windows-sandbox:
-    name: windows · sandbox
+    name: windows · sandbox + Pilot 01
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      # A runner-local home means the Windows Gate A run cannot inherit a
+      # PostgreSQL cluster from an earlier checkout or audit.
+      THROUGHLINE_TEST_HOME: ${{ runner.temp }}\throughline-tests
+      THROUGHLINE_HOME: ${{ runner.temp }}\throughline-tests
     steps:
       - uses: actions/checkout@v7
 
@@ -59,40 +64,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Verify Pilot 01 frozen CSV bytes
-        shell: pwsh
-        run: |
-          @'
-          from pathlib import Path
-          import hashlib
-
-          path = Path("tests/fixtures/pilot_01/penguins.csv")
-          payload = path.read_bytes()
-          expected_bytes = 15_241
-          expected_sha256 = "f204db2c753b0937caac3cb35258562c14f073e4bbc76be24b4c51ce22767a93"
-
-          actual_bytes = len(payload)
-          actual_sha256 = hashlib.sha256(payload).hexdigest()
-
-          if actual_bytes != expected_bytes:
-              raise SystemExit(
-                  f"Pilot 01 frozen CSV byte count changed: "
-                  f"{actual_bytes} != {expected_bytes}"
-              )
-          if actual_sha256 != expected_sha256:
-              raise SystemExit(
-                  f"Pilot 01 frozen CSV SHA-256 changed: "
-                  f"{actual_sha256} != {expected_sha256}"
-              )
-
-          print(
-              f"Pilot 01 frozen CSV verified: "
-              f"{actual_bytes} bytes, sha256={actual_sha256}"
-          )
-          '@ | python -
+      - name: Verify Pilot 01 frozen input before bootstrap
+        run: python scripts/verify_pilot_01.py
 
       - name: Install
         run: python scripts/manage.py bootstrap
+
+      - name: Run Pilot 01 Gate A on Windows
+        run: |
+          .venv\Scripts\python scripts/verify_pilot_01.py --environment
+          .venv\Scripts\python -m pytest tests/test_pilot_01_palmer_penguins.py -q
 
       - name: Verify Windows sandbox confinement
         run: .venv\Scripts\python -m pytest tests/test_sandbox.py -q
