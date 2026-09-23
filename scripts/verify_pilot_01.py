@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import platform
+import runpy
 import sys
 from pathlib import Path
 
@@ -67,19 +68,57 @@ def verify_input() -> dict:
     return contract
 
 
-def print_environment() -> None:
-    """Print the replay environment after bootstrap without claiming to lock it."""
+def _locked_environment() -> tuple[str, dict[str, str]]:
+    runtime = runpy.run_path(str(ROOT / "scripts" / "runtimes.py"))
+    expected_python = str(runtime["CPYTHON_VERSION"])
+
+    expected_packages: dict[str, str] = {}
+    for raw in (ROOT / "requirements" / "scientific-runtime.lock").read_text(
+        encoding="utf-8"
+    ).splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, sep, version = line.partition("==")
+        if sep != "==":
+            raise SystemExit(f"Unpinned scientific-runtime entry: {line}")
+        expected_packages[name.strip()] = version.strip()
+    return expected_python, expected_packages
+
+
+def verify_environment() -> None:
+    """Verify the exact frozen Python and scientific-library versions."""
     import numpy
     import pandas
     import scipy
     import statsmodels
 
+    expected_python, expected_packages = _locked_environment()
+    actual_python = platform.python_version()
+    actual_packages = {
+        "numpy": numpy.__version__,
+        "pandas": pandas.__version__,
+        "scipy": scipy.__version__,
+        "statsmodels": statsmodels.__version__,
+    }
+
     print(f"platform={platform.platform()}")
-    print(f"python={platform.python_version()} ({sys.executable})")
-    print(f"pandas={pandas.__version__}")
-    print(f"numpy={numpy.__version__}")
-    print(f"scipy={scipy.__version__}")
-    print(f"statsmodels={statsmodels.__version__}")
+    print(f"python={actual_python} ({sys.executable})")
+    for name in ("pandas", "numpy", "scipy", "statsmodels"):
+        print(f"{name}={actual_packages[name]}")
+
+    if actual_python != expected_python:
+        raise SystemExit(
+            f"Pilot 01 Python version drift: {actual_python} != {expected_python}"
+        )
+    for name, expected in expected_packages.items():
+        actual = actual_packages.get(name)
+        if actual != expected:
+            raise SystemExit(
+                f"Pilot 01 dependency drift: {name} {actual} != {expected}"
+            )
+
+    print("Pilot 01 frozen environment verified.")
 
 
 def main() -> int:
@@ -87,13 +126,13 @@ def main() -> int:
     parser.add_argument(
         "--environment",
         action="store_true",
-        help="also print the installed scientific runtime versions",
+        help="verify the exact frozen Python and scientific runtime versions",
     )
     args = parser.parse_args()
 
     verify_input()
     if args.environment:
-        print_environment()
+        verify_environment()
     return 0
 
 
