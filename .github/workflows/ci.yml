@@ -59,6 +59,38 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Verify Pilot 01 frozen CSV bytes
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import hashlib
+
+          path = Path("tests/fixtures/pilot_01/penguins.csv")
+          payload = path.read_bytes()
+          expected_bytes = 15_241
+          expected_sha256 = "f204db2c753b0937caac3cb35258562c14f073e4bbc76be24b4c51ce22767a93"
+
+          actual_bytes = len(payload)
+          actual_sha256 = hashlib.sha256(payload).hexdigest()
+
+          if actual_bytes != expected_bytes:
+              raise SystemExit(
+                  f"Pilot 01 frozen CSV byte count changed: "
+                  f"{actual_bytes} != {expected_bytes}"
+              )
+          if actual_sha256 != expected_sha256:
+              raise SystemExit(
+                  f"Pilot 01 frozen CSV SHA-256 changed: "
+                  f"{actual_sha256} != {expected_sha256}"
+              )
+
+          print(
+              f"Pilot 01 frozen CSV verified: "
+              f"{actual_bytes} bytes, sha256={actual_sha256}"
+          )
+          '@ | python -
+
       - name: Install
         run: python scripts/manage.py bootstrap
 

@@ -7,3 +7,7 @@
 # carriage return, and the error names a file that plainly exists.
 *.command text eol=lf
 *.sh text eol=lf
+
+# Pilot 01 freezes the exact source bytes for replay/audit. Keep this fixture
+# LF-only on every platform so Windows checkout cannot rewrite the pinned file.
+tests/fixtures/pilot_01/penguins.csv text eol=lf
