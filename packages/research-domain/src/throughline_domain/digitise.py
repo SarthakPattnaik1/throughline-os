@@ -41,6 +41,7 @@ import math
 from typing import Any
 
 from throughline_schemas.words import counted
+from .image_safety import UnsafeImage, checked_dimensions
 from .verdicts import Verdict
 
 #: Below this a published figure has been through too much compression for the
@@ -150,6 +151,11 @@ def detect_points(path: str, *, marker_colour: tuple[int, int, int] | None = Non
             "Reading points off a figure needs OpenCV, which is not installed "
             "in this environment.") from exc
 
+    try:
+        checked_dimensions(path)
+    except UnsafeImage as exc:
+        raise DigitiseError(str(exc)) from exc
+
     image = cv2.imread(path, cv2.IMREAD_COLOR)
     if image is None:
         raise DigitiseError("That file could not be read as an image.")
@@ -203,10 +209,10 @@ def digitise(*, path: str, calibration: Calibration,
     one end and nearly right at the other, which is the most convincing kind of
     wrong there is.
     """
-    from PIL import Image
-
-    with Image.open(path) as image:
-        width, height = image.size
+    try:
+        width, height = checked_dimensions(path)
+    except UnsafeImage as exc:
+        raise DigitiseError(str(exc)) from exc
 
     if min(width, height) < MIN_DIMENSION:
         return _refusal(

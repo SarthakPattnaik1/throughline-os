@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from throughline_schemas.words import counted
+from .image_safety import UnsafeImage, checked_dimensions
 from .verdicts import RunState, Verdict
 
 #: Hamming distance thresholds on a 64-bit perceptual hash.
@@ -50,6 +51,7 @@ class ImageError(RuntimeError):
 def _grey(path: str, size: int):
     from PIL import Image
 
+    checked_dimensions(path)
     with Image.open(path) as image:
         image = image.convert("L").resize((size, size), Image.Resampling.LANCZOS)
         import numpy as np
@@ -88,10 +90,7 @@ def hamming(left: int, right: int) -> int:
 
 
 def dimensions(path: str) -> tuple[int, int]:
-    from PIL import Image
-
-    with Image.open(path) as image:
-        return image.size
+    return checked_dimensions(path)
 
 
 def _transform_hashes(path: str) -> dict[str, int]:
@@ -106,6 +105,7 @@ def _transform_hashes(path: str) -> dict[str, int]:
 
     import numpy as np
 
+    checked_dimensions(path)
     with Image.open(path) as image:
         base = image.convert("L").resize((9, 9), Image.Resampling.LANCZOS)
         variants = {
@@ -166,6 +166,8 @@ def shared_region(left_path: str, right_path: str) -> dict[str, Any] | None:
         # interface says which checks did not run.
         return None
 
+    checked_dimensions(left_path)
+    checked_dimensions(right_path)
     left = cv2.imread(left_path, cv2.IMREAD_GRAYSCALE)
     right = cv2.imread(right_path, cv2.IMREAD_GRAYSCALE)
     if left is None or right is None:
@@ -222,6 +224,8 @@ def compare(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     try:
         left_size = dimensions(left["path"])
         right_size = dimensions(right["path"])
+    except UnsafeImage as exc:
+        raise ImageError(str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — an unreadable image is an answer
         raise ImageError(f"That file could not be read as an image ({exc}).") from exc
 
