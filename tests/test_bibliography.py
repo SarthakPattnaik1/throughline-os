@@ -285,8 +285,8 @@ class TestOneBadTitleCannotTakeTheFileWithIt:
         source = _paper(
             cur,
             project,
-            title=r"Results \\input{/etc/passwd} ^ ~",
-            authors=[r"Eve \\write18{touch /tmp/owned}"],
+            title=r"Results \input{/etc/passwd} ^ ~",
+            authors=[r"Eve \write18{touch /tmp/owned}"],
             journal="J",
             date="2024-01-01",
         )
@@ -294,12 +294,12 @@ class TestOneBadTitleCannotTakeTheFileWithIt:
 
         text = bibliography.as_bibtex(cur, project)
 
-        assert r"\\input" not in text
-        assert r"\\write18" not in text
-        assert r"\\textbackslash{}input" in text
-        assert r"\\textbackslash{}write18" in text
-        assert r"\\textasciicircum{}" in text
-        assert r"\\textasciitilde{}" in text
+        assert r"\input" not in text
+        assert r"\write18" not in text
+        assert r"\textbackslash{}input" in text
+        assert r"\textbackslash{}write18" in text
+        assert r"\textasciicircum{}" in text
+        assert r"\textasciitilde{}" in text
         assert _entries_close(text)
 
     def test_a_plain_title_is_untouched(self, cur, project):
