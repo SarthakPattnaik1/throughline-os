@@ -32,6 +32,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 BACKUP = ROOT / "scripts" / "backup.sh"
+CAPTURE = ROOT / "scripts" / "capture_backup.py"
 
 #: `pg_dump -Fc` writes a custom-format archive, which begins with this.
 #: Checked rather than "the file is non-empty", because the failure being
@@ -145,12 +146,14 @@ def test_database_and_objects_are_captured_under_one_write_freeze():
     structural invariant as well: the SHARE locks are acquired before either
     capture operation, and both happen inside the same Python/transaction block.
     """
-    source = BACKUP.read_text()
+    source = CAPTURE.read_text()
+    wrapper = BACKUP.read_text()
 
     lock = source.index("LOCK TABLE {} IN SHARE MODE")
-    dump = source.index("'pg_dump'", lock)
-    objects = source.index("tarfile.open(objects_archive", dump)
-    release = source.index("releases all SHARE locks", objects)
+    dump = source.index('"pg_dump"', lock)
+    objects = source.index('tarfile.open(objects_archive, "w:gz")', dump)
+    release = source.index("releasing", objects)
 
     assert lock < dump < objects < release
-    assert "database + objects (one consistent snapshot)" in source
+    assert "scripts/capture_backup.py" in wrapper
+    assert "database + objects (one consistent snapshot)" in wrapper
