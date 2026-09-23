@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -83,3 +85,25 @@ def test_gate_b_record_cannot_be_written_inside_checkout(monkeypatch):
     with pytest.raises(SystemExit) as raised:
         gate_b.main()
     assert raised.value.code == 2
+
+
+
+@pytest.mark.parametrize("name", ["THROUGHLINE_DATABASE_URL", "THROUGHLINE_STORAGE"])
+def test_test_suite_refuses_inherited_external_data_paths(name):
+    env = os.environ.copy()
+    env[name] = "external-test-value"
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import runpy; runpy.run_path('tests/conftest.py')",
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode != 0
+    assert "Refusing to run the test suite with external data-path overrides set" in (
+        done.stdout + done.stderr
+    )
