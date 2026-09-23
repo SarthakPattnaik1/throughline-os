@@ -110,6 +110,8 @@ created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 source: $HOME_DIR
 database_bytes: $(wc -c < "$WORK/database.dump" | tr -d ' ')
 objects_bytes: $(wc -c < "$WORK/objects.tar.gz" | tr -d ' ')
+database_sha256: $("$PY_BIN" -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$WORK/database.dump")
+objects_sha256: $("$PY_BIN" -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$WORK/objects.tar.gz")
 EOF
 
 ARCHIVE="$DEST/throughline-$STAMP.tar"
