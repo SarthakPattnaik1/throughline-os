@@ -2372,7 +2372,7 @@ def project_snapshot(project_id: str,
         files = snapshot.files_in(cur, project_id)
 
     handle = tempfile.NamedTemporaryFile(
-        prefix=f"throughline-{project_id}-snapshot-",
+        prefix="throughline-snapshot-",
         suffix=".zip",
         delete=False,
     )
