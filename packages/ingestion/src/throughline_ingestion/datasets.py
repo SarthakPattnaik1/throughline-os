@@ -510,7 +510,13 @@ def _read_rds(path: Path) -> tuple[pd.DataFrame, str]:
 
 
 def _read_hdf5(path: Path) -> tuple[pd.DataFrame, str]:
-    """HDF5 is a container: one file, potentially many tables."""
+    """Read only the non-pickle pandas HDF5 representation.
+
+    Pandas' fixed HDF format can deserialize object-dtype blocks with pickle.
+    Uploaded research files are untrusted input, so accepting that format would
+    turn "read a dataset" into a Python object-deserialization boundary. Table
+    format is the safe pandas representation we support here.
+    """
     with pd.HDFStore(str(path), mode="r") as store:
         keys = list(store.keys())
         if not keys:
@@ -525,7 +531,17 @@ def _read_hdf5(path: Path) -> tuple[pd.DataFrame, str]:
                 f"{', …' if len(keys) > 6 else ''}). Export the one you want as "
                 f"its own file, so the analysis names what it read."
             )
-        frame = store[keys[0]]
+
+        key = keys[0]
+        storer = store.get_storer(key)
+        if getattr(storer, "format_type", None) != "table":
+            raise UnsupportedDataset(
+                "This HDF5 file uses pandas' fixed format, which can contain "
+                "pickled Python objects. Throughline will not deserialize that "
+                "format from an uploaded file. Re-save the table with "
+                "format='table' or export it as CSV."
+            )
+        frame = store.select(key)
     return frame.astype(str), "hdf5"
 
 
