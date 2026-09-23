@@ -110,6 +110,7 @@ def main() -> int:
             "THROUGHLINE_ALLOW_INSTALLED_HOME",
             "PYTHONPATH",
             "PYTHONHOME",
+            "THROUGHLINE_RUNTIME_DIR",
         ],
         "reused_virtualenv": False,
         "status": "running",
@@ -144,7 +145,9 @@ def main() -> int:
         audit_home = _fresh_home()
         env["THROUGHLINE_TEST_HOME"] = str(audit_home)
         env["THROUGHLINE_HOME"] = str(audit_home)
+        env["THROUGHLINE_RUNTIME_DIR"] = str(audit_home / "runtimes")
         record["test_home"] = str(audit_home)
+        record["runtime_home"] = env["THROUGHLINE_RUNTIME_DIR"]
 
         _run(
             [
@@ -157,7 +160,18 @@ def main() -> int:
             env,
             record,
         )
-        _run([sys.executable, "scripts/manage.py", "bootstrap"], env, record)
+        # Fetch the reviewed CPython archive into an audit-private runtime
+        # directory first. This avoids trusting a machine-global cached binary,
+        # which runtimes.ensure() otherwise accepts based on existence alone.
+        runtime_step = [sys.executable, "scripts/runtimes.py", "python"]
+        _run(runtime_step, env, record)
+
+        runtime = __import__("runpy").run_path(str(ROOT / "scripts" / "runtimes.py"))
+        pinned_python = runtime["executable"]("python", Path(env["THROUGHLINE_RUNTIME_DIR"]))
+        if not Path(pinned_python).exists():
+            raise RuntimeError(f"pinned audit Python was not created: {pinned_python}")
+
+        _run([str(pinned_python), "scripts/manage.py", "bootstrap"], env, record)
 
         venv_python = _venv_python()
         if not venv_python.exists():
