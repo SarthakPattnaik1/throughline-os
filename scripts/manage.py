@@ -99,7 +99,7 @@ def _explain_the_version(want: str, have: str) -> None:
           file=sys.stderr)
     print(f"\n  Every package here declares requires-python >= {want}, and"
           f"\n  pgserver — which provides the embedded PostgreSQL — publishes"
-          f"\n  no wheel past cp{''.join(str(p) for p in REQUIRED_PYTHON)}."
+          f"\n  no wheel past cp{REQUIRED_PYTHON[0]}{REQUIRED_PYTHON[1]}."
           f" Anything newer cannot install\n  the database."
           f"\n\n  Run this with a {want} interpreter instead.", file=sys.stderr)
 
