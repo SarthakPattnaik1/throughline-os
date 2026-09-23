@@ -18,6 +18,22 @@ The frozen input is:
 - canonical upstream path: `inst/extdata/penguins.csv`
 - canonical upstream Git blob: `25b46d384bf81f8399188500ea54917bb49d8890`
 
+## Frozen analysis contract
+
+The same machine-readable contract also fixes the supported Pilot 01 analysis:
+
+- method: `pearson_correlation`
+- x: `flipper_length_mm`
+- y: `body_mass_g`
+- sample size: `342`
+- Pearson r: `0.8712017673060112`
+- p-value: `4.370680963000641e-107`
+- 95% CI low: `0.8430410326303456`
+- 95% CI high: `0.8945989968524182`
+
+Changing any of these values creates a different Pilot 01 acceptance contract
+and requires both audit gates to be rerun deliberately.
+
 Do not refresh, normalize, re-export, reorder, or otherwise replace this CSV
 without explicitly declaring a new Pilot 01 input and rerunning both gates.
 
@@ -160,7 +176,12 @@ The refusal case is fixed as:
 [{"column": "species", "operator": "eq", "value": "Adelie"}]
 ```
 
-The scientific analysis itself must complete. The replay script and replay
-receipt must refuse because declarative filters are outside replay receipt v1.
-Changing the species, operator, value, or refusal reason creates a different
-audit contract.
+The scientific analysis itself must complete. Both replay artifacts must refuse
+with this exact reason:
+
+```text
+Replay receipt v1 does not yet reproduce declarative row filters; filtered runs are refused rather than replayed against different rows.
+```
+
+Changing the species, operator, value, or exact refusal reason creates a
+different audit contract.
