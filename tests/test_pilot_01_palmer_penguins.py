@@ -397,9 +397,9 @@ def test_supported_run_produces_a_faithful_publishable_figure(penguins_project):
         assert "flipper length (mm)" in spec.caption
         assert "body mass g" in spec.caption
         assert "Association does not establish causation." in spec.caption
-        assert "r = 0.871" in spec.caption
+        assert f"r = {EXPECTED_R:.3f}" in spec.caption
         assert "pearson_r" not in spec.caption
-        assert "n = 342" in spec.caption
+        assert f"n = {EXPECTED_N}" in spec.caption
 
         made = visuals.create_visual(
             cur,
@@ -438,9 +438,9 @@ def test_supported_run_produces_a_faithful_publishable_figure(penguins_project):
     assert "body mass g against flipper length" in visible
     assert "flipper length (mm)" in visible
     assert "body mass g" in visible
-    assert "r = 0.871" in visible
+    assert f"r = {EXPECTED_R:.3f}" in visible
     assert "pearson_r" not in visible
-    assert "n = 342" in visible
+    assert f"n = {EXPECTED_N}" in visible
     assert "Association does not establish causation." in visible
 
 def test_species_filtered_neighbor_is_refused_for_the_declared_reason(
@@ -456,7 +456,7 @@ def test_species_filtered_neighbor_is_refused_for_the_declared_reason(
 
     # The analysis itself is valid and really ran. Only the replay claim is refused.
     assert run["status"] == "completed", run["error"]
-    assert 0 < run["result"]["sample_size"] < 342
+    assert 0 < run["result"]["sample_size"] < EXPECTED_N
 
     with connection() as conn, conn.cursor() as cur:
         with pytest.raises(code_export.CannotEmit) as emitted:
