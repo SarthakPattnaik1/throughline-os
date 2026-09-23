@@ -52,8 +52,22 @@ WANTED = ("author", "year", "journal")
 #: by hand; this file is emitted from parsed metadata, where a brace is far
 #: more likely to be noise than intent. A visible brace in one title is a
 #: smaller harm than a bibliography that will not parse.
-_ESCAPE = {"&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_",
-           "{": r"\{", "}": r"\}"}
+_ESCAPE = {
+    # Backslash is the important one: it is the TeX command introducer.
+    # Metadata is untrusted text, not author-supplied TeX, so preserving it
+    # would let a scraped title containing an input/write command become an
+    # instruction when the exported .bib is later compiled.
+    "\\\\": r"\\textbackslash{}",
+    "&": r"\\&",
+    "%": r"\\%",
+    "$": r"\\$",
+    "#": r"\\#",
+    "_": r"\\_",
+    "{": r"\\{",
+    "}": r"\\}",
+    "^": r"\\textasciicircum{}",
+    "~": r"\\textasciitilde{}",
+}
 
 
 def _escaped(text: str) -> str:
