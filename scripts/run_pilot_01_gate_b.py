@@ -105,7 +105,7 @@ def main() -> int:
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
         "platform": platform.platform(),
         "launcher_python": platform.python_version(),
-        "sanitized_environment": "all inherited THROUGHLINE_* plus PYTHONPATH/PYTHONHOME",
+        "sanitized_environment": "all inherited THROUGHLINE_*/PIP_* plus PYTHONPATH/PYTHONHOME",
         "reused_virtualenv": False,
         "status": "running",
         "steps": [],
@@ -119,7 +119,11 @@ def main() -> int:
         # database URL outranks the fresh test home, and PYTHONPATH can shadow the
         # audited checkout/venv with arbitrary packages from elsewhere.
         for key in list(env):
-            if key.startswith("THROUGHLINE_") or key in {"PYTHONPATH", "PYTHONHOME"}:
+            if (
+                key.startswith("THROUGHLINE_")
+                or key.startswith("PIP_")
+                or key in {"PYTHONPATH", "PYTHONHOME"}
+            ):
                 env.pop(key, None)
 
         # .venv is intentionally gitignored, so a clean Git tree does not prove
