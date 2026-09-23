@@ -29,8 +29,11 @@ pass against the same commit and the exact source bytes pinned below.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import io
+import json
+import math
 import re
 import subprocess
 import sys
@@ -38,7 +41,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from scipy import stats
 from throughline_domain import (
     analysis,
     code_export,
@@ -55,14 +57,15 @@ from throughline_visual.spec import VisualType
 from throughline_workers.runner import Worker
 
 
-DATA = Path(__file__).parent / "fixtures" / "pilot_01" / "penguins.csv"
+PILOT_DIR = Path(__file__).parent / "fixtures" / "pilot_01"
+CONTRACT = json.loads((PILOT_DIR / "FROZEN_INPUT.json").read_text(encoding="utf-8"))
+DATA = Path(__file__).parent.parent / CONTRACT["fixture_path"]
 
-# Audit gate: these identify the exact source bytes, not merely a filename or
-# an upstream repository that could change. If the fixture changes for any
-# reason, Pilot 01 is no longer the same frozen evaluation and both audit gates
-# must be rerun deliberately.
-DATA_SHA256 = "f204db2c753b0937caac3cb35258562c14f073e4bbc76be24b4c51ce22767a93"
-DATA_BYTES = 15_241
+# Audit gate: one machine-readable manifest is the source of truth for the
+# exact input. CI, Gate B, and this test all read the same bytes/hash values so
+# those copies cannot silently drift apart.
+DATA_SHA256 = str(CONTRACT["sha256"])
+DATA_BYTES = int(CONTRACT["bytes"])
 
 # Frozen independently from Throughline using the public CSV itself.
 # These are not generated from a Throughline run, so agreement cannot pass
@@ -90,7 +93,42 @@ def _frozen_source_bytes() -> bytes:
 
 def test_source_csv_is_exactly_the_frozen_input():
     """Gate A fails immediately if the Pilot 01 source bytes drift."""
-    _frozen_source_bytes()
+    payload = _frozen_source_bytes()
+    git_blob = hashlib.sha1(
+        f"blob {len(payload)}\0".encode("ascii") + payload,
+        usedforsecurity=False,
+    ).hexdigest()
+    assert git_blob == CONTRACT["upstream"]["git_blob_sha"]
+
+
+def _independent_pearson_from_frozen_csv() -> tuple[int, float]:
+    """Pearson r from raw CSV bytes without pandas, SciPy, or Throughline.
+
+    This is intentionally a separate implementation from both the runtime and
+    the generated replay script.  It checks the headline estimate and complete-
+    case count; the frozen p-value/CI remain acceptance constants rather than a
+    second call into the same scientific library.
+    """
+    xs: list[float] = []
+    ys: list[float] = []
+    with DATA.open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            x, y = row["flipper_length_mm"], row["body_mass_g"]
+            if x in {"", "NA"} or y in {"", "NA"}:
+                continue
+            xs.append(float(x))
+            ys.append(float(y))
+
+    n = len(xs)
+    mean_x = math.fsum(xs) / n
+    mean_y = math.fsum(ys) / n
+    dx = [x - mean_x for x in xs]
+    dy = [y - mean_y for y in ys]
+    numerator = math.fsum(a * b for a, b in zip(dx, dy))
+    denominator = math.sqrt(
+        math.fsum(a * a for a in dx) * math.fsum(b * b for b in dy)
+    )
+    return n, numerator / denominator
 
 
 def _drain() -> None:
@@ -266,19 +304,16 @@ def test_supported_run_replays_under_the_frozen_contract(
 
     frame = pd.read_csv(DATA)
     paired = frame[["flipper_length_mm", "body_mass_g"]].dropna()
-    independent = stats.pearsonr(
-        paired["flipper_length_mm"], paired["body_mass_g"]
-    )
+    independent_n, independent_r = _independent_pearson_from_frozen_csv()
 
-    assert run["result"]["sample_size"] == len(paired) == EXPECTED_N
+    assert run["result"]["sample_size"] == len(paired) == independent_n == EXPECTED_N
     assert run["result"]["estimate"] == pytest.approx(EXPECTED_R, abs=1e-12)
     assert run["result"]["p_value"] == pytest.approx(EXPECTED_P, rel=1e-10)
     assert run["result"]["ci_low"] == pytest.approx(EXPECTED_CI_LOW, abs=1e-10)
     assert run["result"]["ci_high"] == pytest.approx(EXPECTED_CI_HIGH, abs=1e-10)
 
-    # A second implementation check against scipy on the raw public rows.
-    assert run["result"]["estimate"] == pytest.approx(float(independent.statistic))
-    assert run["result"]["p_value"] == pytest.approx(float(independent.pvalue))
+    # A genuinely separate implementation check over the raw frozen rows.
+    assert run["result"]["estimate"] == pytest.approx(independent_r, abs=1e-12)
 
 
 
