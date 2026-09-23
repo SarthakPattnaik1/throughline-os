@@ -131,7 +131,14 @@ def main() -> int:
             raise RuntimeError(f"bootstrap did not create {venv_python}")
 
         _run(
-            [str(venv_python), "scripts/verify_pilot_01.py", "--environment"],
+            [
+                str(venv_python),
+                "scripts/verify_pilot_01.py",
+                "--expected-commit",
+                args.expected_commit,
+                "--clean-tree",
+                "--environment",
+            ],
             env,
             record,
         )
