@@ -193,6 +193,32 @@ def test_unsupported_upload_fails_with_a_useful_reason(committed_project):
     assert ".csv" in detail
 
 
+def test_ingestion_refuses_bytes_that_no_longer_match_the_recorded_hash(
+        committed_project):
+    source_id = _upload(
+        committed_project,
+        "amr.csv",
+        b"country,year,rate\nIND,2019,31.2\nUSA,2019,18.6\n",
+    )
+
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT f.storage_key FROM sources s "
+            "JOIN files f ON f.id = s.file_id WHERE s.id = %s",
+            (source_id,),
+        )
+        key = cur.fetchone()["storage_key"]
+
+    # Simulate disk corruption after registration but before the worker reads it.
+    storage.path_for(key).write_bytes(b"country,year,rate\nIND,2019,999.0\n")
+
+    _drain()
+    source = _source(source_id)
+    assert source["ingestion_status"] == str(IngestionStatus.FAILED)
+    assert "SHA-256" in source["ingestion_detail"]
+    assert "altered or corrupted" in source["ingestion_detail"]
+
+
 def test_a_corrupt_file_in_a_supported_format_says_so(committed_project):
     """A readable format and a readable file are different claims.
 

@@ -67,6 +67,25 @@ def add_edge(
     """
     if source_artifact_id == target_artifact_id:
         raise LineageError("An artifact cannot derive from itself")
+
+    cur.execute(
+        "SELECT id, project_id FROM research_objects WHERE id = ANY(%s)",
+        ([source_artifact_id, target_artifact_id],),
+    )
+    projects = {row["id"]: row["project_id"] for row in cur.fetchall()}
+    missing = [object_id for object_id in (source_artifact_id, target_artifact_id)
+               if object_id not in projects]
+    if missing:
+        raise LineageError(
+            "A lineage edge can only name recorded research objects: "
+            + ", ".join(missing)
+        )
+    if (projects[source_artifact_id] != project_id
+            or projects[target_artifact_id] != project_id):
+        raise LineageError(
+            "Both ends of a lineage edge must belong to the edge's project."
+        )
+
     edge_id = new_id("lin")
     cur.execute(
         """
