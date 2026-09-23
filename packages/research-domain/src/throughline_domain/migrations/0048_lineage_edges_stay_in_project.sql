@@ -4,7 +4,7 @@
 -- that a direct SQL writer or future caller must not be able to manufacture a
 -- cross-project graph behind that check.
 
-DO $
+DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
@@ -18,7 +18,7 @@ BEGIN
             'existing cross-project lineage edges must be repaired before migration 0048';
     END IF;
 END
-$;
+$$;
 
 CREATE OR REPLACE FUNCTION enforce_lineage_edge_project()
 RETURNS trigger AS $$
