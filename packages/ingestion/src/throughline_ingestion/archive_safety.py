@@ -8,10 +8,9 @@ import zipfile
 # Office XML is compressed text. These ceilings are intentionally on expanded
 # bytes, not the upload bytes: a tiny ZIP can otherwise allocate enormous XML
 # trees inside openpyxl/python-docx.
-MAX_EXPANDED_BYTES = 512 * 1024 * 1024
-MAX_MEMBER_BYTES = 256 * 1024 * 1024
+MAX_EXPANDED_BYTES = 256 * 1024 * 1024
+MAX_MEMBER_BYTES = 128 * 1024 * 1024
 MAX_MEMBERS = 20_000
-MAX_COMPRESSION_RATIO = 200
 
 
 class UnsafeArchive(RuntimeError):
@@ -46,16 +45,6 @@ def check_zip_container(path: Path) -> None:
                 f"{MAX_MEMBER_BYTES:,} expanded bytes."
             )
 
-        # Zero-byte compressed representation is legitimate only for an empty
-        # member. Otherwise it is an impossible ratio and is refused.
-        if size:
-            ratio = size / max(compressed, 1)
-            if ratio > MAX_COMPRESSION_RATIO:
-                raise UnsafeArchive(
-                    f"{member.filename!r} expands at {ratio:.0f}:1. "
-                    "That compression ratio is characteristic of an archive "
-                    "bomb rather than an ordinary research document."
-                )
 
         if total > MAX_EXPANDED_BYTES:
             raise UnsafeArchive(
