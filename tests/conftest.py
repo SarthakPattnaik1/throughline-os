@@ -23,7 +23,12 @@ import pytest
 # Written here because the obvious response to a seven-minute backend run is to
 # reach for `xdist`, and the cost of learning this by doing it is an afternoon.
 # `xdist` is not installed, which is the only thing currently preventing it.
-_TEST_HOME = Path(tempfile.gettempdir()) / "throughline-os-tests"
+_TEST_HOME = Path(
+    os.environ.get(
+        "THROUGHLINE_TEST_HOME",
+        str(Path(tempfile.gettempdir()) / "throughline-os-tests"),
+    )
+)
 os.environ.setdefault("THROUGHLINE_HOME", str(_TEST_HOME))
 
 
