@@ -105,13 +105,7 @@ def main() -> int:
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
         "platform": platform.platform(),
         "launcher_python": platform.python_version(),
-        "sanitized_environment": [
-            "THROUGHLINE_DATABASE_URL",
-            "THROUGHLINE_ALLOW_INSTALLED_HOME",
-            "PYTHONPATH",
-            "PYTHONHOME",
-            "THROUGHLINE_RUNTIME_DIR",
-        ],
+        "sanitized_environment": "all inherited THROUGHLINE_* plus PYTHONPATH/PYTHONHOME",
         "reused_virtualenv": False,
         "status": "running",
         "steps": [],
@@ -124,13 +118,9 @@ def main() -> int:
         # Gate B must not inherit machine-local execution overrides. An exported
         # database URL outranks the fresh test home, and PYTHONPATH can shadow the
         # audited checkout/venv with arbitrary packages from elsewhere.
-        for key in (
-            "THROUGHLINE_DATABASE_URL",
-            "THROUGHLINE_ALLOW_INSTALLED_HOME",
-            "PYTHONPATH",
-            "PYTHONHOME",
-        ):
-            env.pop(key, None)
+        for key in list(env):
+            if key.startswith("THROUGHLINE_") or key in {"PYTHONPATH", "PYTHONHOME"}:
+                env.pop(key, None)
 
         # .venv is intentionally gitignored, so a clean Git tree does not prove
         # the audit is using a fresh environment. Remove it before bootstrap.
