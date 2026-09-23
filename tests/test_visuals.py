@@ -208,6 +208,81 @@ def test_simple_regression_figure_uses_recorded_fit_not_a_refit(analysed, tmp_pa
     assert slope == pytest.approx(coefficients["consumption_ddd"]["estimate"])
 
 
+def test_api_dataset_views_stay_on_the_immutable_version_when_source_moves(analysed):
+    """A version-labelled view must never follow the source's newer file pointer."""
+    _, version_id, runs = analysed
+
+    from throughline_api import app as api_app
+
+    before = api_app._column_values(version_id, "consumption_ddd")
+    assert before and before[0] != 999.0
+
+    replacement = (
+        b"country,consumption_ddd,resistance_pct,gdp_per_capita\n"
+        b"IND,999,999,999\nUSA,999,999,999\n"
+    )
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT d.source_id FROM dataset_versions dv "
+            "JOIN datasets d ON d.id = dv.dataset_id WHERE dv.id = %s",
+            (version_id,),
+        )
+        source_id = cur.fetchone()["source_id"]
+        cur.execute(
+            "SELECT project_id FROM sources WHERE id = %s",
+            (source_id,),
+        )
+        project_id = cur.fetchone()["project_id"]
+        newer = storage.register_file(
+            cur, project_id=project_id, filename="newer.csv",
+            stream=io.BytesIO(replacement), media_type="text/csv",
+        )
+        cur.execute(
+            "UPDATE sources SET file_id = %s, content_hash = %s WHERE id = %s",
+            (newer["id"], newer["content_hash"], source_id),
+        )
+        conn.commit()
+
+    after = api_app._column_values(version_id, "consumption_ddd")
+    assert after == before
+    assert 999.0 not in after
+
+    with connection() as conn, conn.cursor() as cur:
+        run = analysis.get_run(cur, runs["correlation"])
+        recommendation = visuals.recommend_for_run(
+            cur, analysis_run_id=runs["correlation"]
+        )
+        sample, _ = api_app._visual_sample(cur, recommendation["spec"])
+    assert sample["consumption_ddd"][0] == pytest.approx(before[0])
+    assert 999.0 not in sample["consumption_ddd"]
+
+
+def test_api_dataset_views_refuse_tampered_version_bytes(analysed):
+    """A hash-named path is not evidence; the bytes themselves must still hash."""
+    _, version_id, _ = analysed
+
+    from fastapi import HTTPException
+    from throughline_api import app as api_app
+
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT storage_key FROM dataset_versions WHERE id = %s",
+            (version_id,),
+        )
+        key = cur.fetchone()["storage_key"]
+
+    path = storage.path_for(key)
+    original = path.read_bytes()
+    try:
+        path.write_bytes(b"country,consumption_ddd\nIND,999\n")
+        with pytest.raises(HTTPException) as exc:
+            api_app._column_values(version_id, "consumption_ddd")
+        assert exc.value.status_code == 409
+        assert "SHA-256" in str(exc.value.detail)
+    finally:
+        path.write_bytes(original)
+
+
 # ---------------------------------------------------------------------------
 # §76 — the critic
 # ---------------------------------------------------------------------------
