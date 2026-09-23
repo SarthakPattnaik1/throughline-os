@@ -16,8 +16,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Superseded PR runs may be cancelled, but every main commit must finish.
+  # Gate A and Gate B are required to refer to the same exact commit, so
+  # cancelling a main run because a later PR merged would erase that evidence.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   suite:
