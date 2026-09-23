@@ -36,7 +36,7 @@ def _fresh_home() -> Path:
 
 def _run(command: list[str], env: dict[str, str], record: dict) -> None:
     shown = subprocess.list2cmdline(command) if os.name == "nt" else " ".join(command)
-    step = {"command": shown}
+    step = {"argv": command, "command": shown}
     record["steps"].append(step)
     completed = subprocess.run(
         command,
@@ -74,6 +74,11 @@ def main() -> int:
         help="exact commit SHA supplied for the independent Gate B run",
     )
     parser.add_argument(
+        "--operator",
+        required=True,
+        help="name or handle of the independent second-person auditor",
+    )
+    parser.add_argument(
         "--record",
         type=Path,
         help="optional JSON record path; keep it outside the repository",
@@ -91,7 +96,8 @@ def main() -> int:
 
     record = {
         "schema": "throughline.pilot-01-gate-b.v1",
-        "operator": "independent-second-person",
+        "operator": args.operator,
+        "operator_role_required": "independent-second-person",
         "expected_commit": args.expected_commit,
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
         "platform": platform.platform(),
