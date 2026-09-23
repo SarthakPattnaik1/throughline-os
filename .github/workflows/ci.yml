@@ -52,17 +52,19 @@ jobs:
     name: windows · sandbox + Pilot 01
     runs-on: windows-latest
     timeout-minutes: 60
-    env:
-      # A runner-local home means the Windows Gate A run cannot inherit a
-      # PostgreSQL cluster from an earlier checkout or audit.
-      THROUGHLINE_TEST_HOME: ${{ runner.temp }}\throughline-tests
-      THROUGHLINE_HOME: ${{ runner.temp }}\throughline-tests
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      - name: Prepare isolated test home
+        shell: pwsh
+        run: |
+          $testHome = Join-Path $env:RUNNER_TEMP "throughline-tests"
+          "THROUGHLINE_TEST_HOME=$testHome" >> $env:GITHUB_ENV
+          "THROUGHLINE_HOME=$testHome" >> $env:GITHUB_ENV
 
       - name: Verify Pilot 01 frozen input before bootstrap
         run: python scripts/verify_pilot_01.py
