@@ -63,10 +63,16 @@ def _write_record(path: Path | None, record: dict) -> None:
         print(payload, end="")
         return
     path = path.expanduser().resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(payload, encoding="utf-8")
-    temporary.replace(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(payload, encoding="utf-8")
+        temporary.replace(path)
+    except OSError as exc:
+        print(f"\nCould not write Gate B audit record to {path}: {exc}", file=sys.stderr)
+        print("--- Gate B audit record fallback ---", file=sys.stderr)
+        print(payload, end="", file=sys.stderr)
+        raise
     print(f"\nGate B audit record: {path}")
 
 
@@ -107,6 +113,7 @@ def main() -> int:
         "launcher_python": platform.python_version(),
         "sanitized_environment": "all inherited THROUGHLINE_*/PIP_* plus PYTHONPATH/PYTHONHOME",
         "reused_virtualenv": False,
+        "preexisting_virtualenv_removed": False,
         "status": "running",
         "steps": [],
     }
@@ -130,6 +137,7 @@ def main() -> int:
         # the audit is using a fresh environment. Remove it before bootstrap.
         existing_venv = ROOT / ".venv"
         if existing_venv.exists():
+            record["preexisting_virtualenv_removed"] = True
             shutil.rmtree(existing_venv)
         if existing_venv.exists():
             raise RuntimeError(
