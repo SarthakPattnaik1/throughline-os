@@ -4735,9 +4735,7 @@ def column_density(version_id: str, column: str = Query(...),
             raise HTTPException(404, f"No column {column!r} in this dataset version.")
         labels = harmonize.labels(cur, project_id)
 
-    values = _column_values(version_id, column)
-    finite = np.asarray([v for v in values if v is not None and np.isfinite(v)],
-                        dtype=float)
+    finite = _column_values(version_id, column)
     if finite.size < 10:
         raise HTTPException(
             409,
@@ -5421,15 +5419,19 @@ def edit_visual(visual_id: str, payload: VisualEdit,
             "publishable": edited["publishable"], "critique": edited["critique"]}
 
 
-def _column_values(version_id: str, column: str) -> list[float | None]:
-    """
-    Every numeric value of one column, read server-side.
+MAX_DENSITY_OBSERVATIONS = 250_000
 
-    Unlike `_visual_sample` this is not capped: a density estimate over a
-    truncated head of the file would describe the first rows rather than the
-    distribution, and the shape would change silently with row order. The values
-    never leave the server — only the fitted curve does.
+
+def _column_values(version_id: str, column: str):
+    """Finite numeric values for one column, with bounded parsing and compute.
+
+    Density is an exact calculation over the observations it accepts. It does
+    not silently take a head/sample when a dataset is too large, because that
+    would draw a different distribution. Delimited files are read one column
+    at a time in chunks; once the exact KDE ceiling is crossed the request is
+    refused with a visible explanation.
     """
+    import numpy as np
     import pandas as pd
 
     from throughline_ingestion.datasets import read_dataset
@@ -5447,18 +5449,60 @@ def _column_values(version_id: str, column: str) -> list[float | None]:
         )
         row = cur.fetchone()
     if not row:
-        return []
+        return np.asarray([], dtype=float)
 
     path = _verified_research_path(
         row["storage_key"], row["content_hash"], label="Dataset version"
     )
     suffix = (Path(row["title"] or "").suffix.lower()
               or f".{(row['format'] or 'csv').lower()}")
+
+    if suffix in {".csv", ".tsv"}:
+        separator = "\t" if suffix == ".tsv" else _sniff(path)
+        chunks: list[Any] = []
+        usable = 0
+        try:
+            reader = pd.read_csv(
+                path,
+                sep=separator,
+                usecols=[column],
+                chunksize=SAMPLE_CHUNK_ROWS,
+                low_memory=False,
+            )
+            for chunk in reader:
+                numeric = pd.to_numeric(chunk[column], errors="coerce").to_numpy(
+                    dtype=float
+                )
+                numeric = numeric[np.isfinite(numeric)]
+                if numeric.size:
+                    chunks.append(numeric)
+                    usable += int(numeric.size)
+                    if usable > MAX_DENSITY_OBSERVATIONS:
+                        raise HTTPException(
+                            409,
+                            f"{column!r} has more than "
+                            f"{MAX_DENSITY_OBSERVATIONS:,} usable observations. "
+                            "Throughline refuses to approximate an exact density "
+                            "with an unstated sample; use a bounded view instead.",
+                        )
+        except ValueError:
+            return np.asarray([], dtype=float)
+        return (np.concatenate(chunks)
+                if chunks else np.asarray([], dtype=float))
+
+    # Formats whose readers do not expose a compatible chunk/column-only path.
     frame, _ = read_dataset(path, suffix=suffix)
     if column not in frame.columns:
-        return []
-    numeric = pd.to_numeric(frame[column], errors="coerce")
-    return [None if pd.isna(v) else float(v) for v in numeric]
+        return np.asarray([], dtype=float)
+    numeric = pd.to_numeric(frame[column], errors="coerce").to_numpy(dtype=float)
+    numeric = numeric[np.isfinite(numeric)]
+    if numeric.size > MAX_DENSITY_OBSERVATIONS:
+        raise HTTPException(
+            409,
+            f"{column!r} has {numeric.size:,} usable observations, above the "
+            f"{MAX_DENSITY_OBSERVATIONS:,} exact-density ceiling.",
+        )
+    return numeric
 
 
 #: Rows read at a time when sampling a delimited file. Large enough that the
