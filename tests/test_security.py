@@ -161,6 +161,23 @@ def test_security_headers_are_applied():
     assert "default-src 'self'" in response.headers["Content-Security-Policy"]
 
 
+def test_media_permissions_allow_only_same_origin():
+    """Camera/voice features require permission, but embeds must never inherit it."""
+    from fastapi.responses import JSONResponse
+
+    response = JSONResponse(content={})
+    security._apply_headers(response)
+    policy = response.headers["Permissions-Policy"]
+
+    assert "camera=(self)" in policy
+    assert "microphone=(self)" in policy
+    assert "camera=()" not in policy
+    assert "microphone=()" not in policy
+    assert "geolocation=()" in policy
+    assert "payment=()" in policy
+    assert "usb=()" in policy
+
+
 def test_hsts_is_not_sent_from_a_local_install(monkeypatch):
     """
     HSTS from a plain-HTTP local install would pin the browser to a scheme that
