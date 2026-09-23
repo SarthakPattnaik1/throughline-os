@@ -36,6 +36,12 @@ def test_backup_forces_private_permissions():
 
 def test_backup_excludes_saved_model_credentials():
     backup = (ROOT / "scripts" / "backup.sh").read_text()
-    assert "--exclude-table-data=installation_secrets" in backup, (
-        "backup.sh would copy usable installation credentials into portable "
-        "backup archives")
+    capture = (ROOT / "scripts" / "capture_backup.py").read_text()
+
+    # The shell wrapper delegates the consistency-critical capture to Python.
+    # Pin both parts of that contract so a future refactor cannot silently
+    # reintroduce usable model credentials into portable backup archives.
+    assert "scripts/capture_backup.py" in backup
+    assert "--exclude-table-data=installation_secrets" in capture, (
+        "capture_backup.py would copy usable installation credentials into "
+        "portable backup archives")

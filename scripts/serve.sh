@@ -10,6 +10,20 @@ cd -P -- "${BASH_SOURCE[0]%/*}/.."
 
 PORT="${PORT:-8080}"
 
+# This entrypoint binds on all container interfaces. Docker may publish that
+# port only to host loopback (the documented default), but the API cannot infer
+# that from inside the container: the browser normally appears as the Docker
+# bridge peer, which is non-loopback. Protect first-admin creation with an
+# operator-held token instead of trusting the deployment label or a proxy/Host
+# header. A supplied token is respected; otherwise generate an ephemeral one for
+# this server start and print it once for the person running the container.
+if [ -z "${THROUGHLINE_REMOTE_SETUP_TOKEN:-}" ]; then
+  THROUGHLINE_REMOTE_SETUP_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+  export THROUGHLINE_REMOTE_SETUP_TOKEN
+  echo "Throughline first-run setup token: ${THROUGHLINE_REMOTE_SETUP_TOKEN}"
+  echo "Enter this token only if the setup screen says this connection is remote."
+fi
+
 # Checks then migrations, in one process — see throughline_domain/preflight.py.
 # The check runs first because migration 0001 is where an ARM host fails, and
 # its traceback names nothing that would lead anyone to the cause. One process

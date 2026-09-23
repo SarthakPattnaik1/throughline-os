@@ -162,10 +162,23 @@ def _bibliography_of(cur, source_id: str) -> dict[str, Any]:
 def store_paper(
     cur, *, project_id: str, source_id: str, parsed: Any, actor: str,
 ) -> dict[str, Any]:
-    """Create the paper record and its research object, with lineage."""
+    """Create or refresh one paper without inventing a second paper object.
+
+    Source ingestion may be retried or deliberately re-run with a better parser.
+    The paper is still the same research object. Serialising by source also
+    closes the first-write race where two workers could both decide no paper
+    existed and each create a provenance root before the UNIQUE(source_id)
+    upsert chose only one domain row.
+    """
+    _lock_source(cur, source_id)
     source_object_id = _source_object(cur, project_id=project_id, source_id=source_id, actor=actor)
     title = _readable_title(cur, parsed, source_id)
-    paper_object_id = create_object(
+    cur.execute(
+        "SELECT object_id FROM papers WHERE source_id = %s FOR UPDATE",
+        (source_id,),
+    )
+    existing = cur.fetchone()
+    paper_object_id = existing["object_id"] if existing and existing["object_id"] else create_object(
         cur, project_id=project_id, object_type=ObjectType.PAPER,
         title=title, actor=actor, source_id=source_id,
         derived_from=[source_object_id], lineage_type=LineageType.DERIVED_FROM,
@@ -193,8 +206,9 @@ def store_paper(
                                             papers.publication_date),
                 doi = COALESCE(EXCLUDED.doi, papers.doi),
                 pmid = COALESCE(EXCLUDED.pmid, papers.pmid),
-                arxiv_id = COALESCE(EXCLUDED.arxiv_id, papers.arxiv_id)
-        RETURNING id
+                arxiv_id = COALESCE(EXCLUDED.arxiv_id, papers.arxiv_id),
+                object_id = COALESCE(papers.object_id, EXCLUDED.object_id)
+        RETURNING id, object_id
         """,
         (paper_id, project_id, source_id, paper_object_id, title,
          parsed.page_count, parsed.metadata,
@@ -202,20 +216,36 @@ def store_paper(
          citation.get("publication_date"),
          citation.get("doi"), citation.get("pmid"), citation.get("arxiv_id")),
     )
-    return {"paper_id": cur.fetchone()["id"], "object_id": paper_object_id}
+    stored_paper = cur.fetchone()
+    return {"paper_id": stored_paper["id"], "object_id": stored_paper["object_id"]}
 
 
 def store_dataset(
     cur, *, project_id: str, source_id: str, name: str, profile: Any,
     content_hash: str, storage_key: str | None, actor: str,
 ) -> dict[str, Any]:
-    """Create dataset, an immutable version, and its profiled columns."""
+    """Create dataset, an immutable version, and its profiled columns.
+
+    One source has one dataset research object. Re-ingestion adds a dataset
+    version; it must not add a second root object that nothing points at.
+    Holding the source advisory lock also makes MAX(version)+1 serial rather
+    than letting two workers choose the same version number.
+    """
+    _lock_source(cur, source_id)
     source_object_id = _source_object(cur, project_id=project_id, source_id=source_id, actor=actor)
-    dataset_object_id = create_object(
-        cur, project_id=project_id, object_type=ObjectType.DATASET, title=name,
-        actor=actor, source_id=source_id, derived_from=[source_object_id],
-        metadata={"format": profile.format, "rows": profile.row_count,
-                  "columns": profile.column_count},
+    cur.execute(
+        "SELECT id, object_id FROM datasets WHERE source_id = %s FOR UPDATE",
+        (source_id,),
+    )
+    existing = cur.fetchone()
+    dataset_object_id = (
+        existing["object_id"] if existing and existing["object_id"] else
+        create_object(
+            cur, project_id=project_id, object_type=ObjectType.DATASET, title=name,
+            actor=actor, source_id=source_id, derived_from=[source_object_id],
+            metadata={"format": profile.format, "rows": profile.row_count,
+                      "columns": profile.column_count},
+        )
     )
 
     dataset_id = new_id("dst")
@@ -223,12 +253,16 @@ def store_dataset(
         """
         INSERT INTO datasets (id, project_id, source_id, object_id, name, format)
         VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (source_id) DO UPDATE SET name = EXCLUDED.name
-        RETURNING id
+        ON CONFLICT (source_id) DO UPDATE
+            SET name = EXCLUDED.name,
+                object_id = COALESCE(datasets.object_id, EXCLUDED.object_id)
+        RETURNING id, object_id
         """,
         (dataset_id, project_id, source_id, dataset_object_id, name, profile.format),
     )
-    dataset_id = cur.fetchone()["id"]
+    stored_dataset = cur.fetchone()
+    dataset_id = stored_dataset["id"]
+    dataset_object_id = stored_dataset["object_id"]
 
     cur.execute(
         "SELECT COALESCE(MAX(version), 0) AS v FROM dataset_versions WHERE dataset_id = %s",
@@ -280,6 +314,14 @@ def store_dataset(
         "version": next_version,
         "object_id": dataset_object_id,
     }
+
+
+def _lock_source(cur, source_id: str) -> None:
+    """Serialize creation/versioning of research objects derived from one source."""
+    cur.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        ("throughline:source:" + source_id,),
+    )
 
 
 def _source_object(cur, *, project_id: str, source_id: str, actor: str) -> str:

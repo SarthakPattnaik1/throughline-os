@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Sky } from "@/components/Sky";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 
 export type AuthStatus = {
   needs_setup: boolean; authenticated: boolean;
@@ -24,6 +24,8 @@ export function Gate({ status, onDone }: { status: AuthStatus; onDone: () => voi
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [setupToken, setSetupToken] = useState("");
+  const [needsSetupToken, setNeedsSetupToken] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   /*
@@ -54,8 +56,12 @@ export function Gate({ status, onDone }: { status: AuthStatus; onDone: () => voi
     setBusy(true); setError(null);
     try {
       if (setup) {
-        await api.post("/api/auth/setup",
-                       { email, display_name: name || "Researcher", password });
+        await api.post("/api/auth/setup", {
+          email,
+          display_name: name || "Researcher",
+          password,
+          setup_token: setupToken,
+        });
       } else if (mode === "signup") {
         await api.post("/api/auth/register",
                        { email, display_name: name || "Researcher", password });
@@ -65,6 +71,10 @@ export function Gate({ status, onDone }: { status: AuthStatus; onDone: () => voi
       try { window.localStorage.setItem("throughline.account", "1"); } catch { /* a convenience only */ }
       onDone();
     } catch (err) {
+      if (setup && err instanceof ApiError && err.status === 403
+          && /setup token|first-run setup/i.test(err.message)) {
+        setNeedsSetupToken(true);
+      }
       setError(err);
     } finally {
       setBusy(false);
@@ -151,6 +161,19 @@ export function Gate({ status, onDone }: { status: AuthStatus; onDone: () => voi
                      value={password} onChange={(e) => setPassword(e.target.value)} />
               {creating && <span className="gate-hint">At least 12 characters. It protects an entire research corpus.</span>}
             </label>
+
+            {setup && needsSetupToken && (
+              <label className="gate-field">
+                <span>Setup token</span>
+                <input type="password" required autoComplete="off"
+                       value={setupToken}
+                       onChange={(e) => setSetupToken(e.target.value)} />
+                <span className="gate-hint">
+                  This first-run setup reached Throughline over a network connection.
+                  Enter the token printed by the Throughline server/container.
+                </span>
+              </label>
+            )}
 
             {message ? <div className="gate-error" role="alert">{message}</div> : null}
 

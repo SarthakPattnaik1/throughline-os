@@ -461,3 +461,18 @@ def test_reads_do_not_spend_the_budget_for_starting_work(monkeypatch, client):
         client.get("/api/projects/prj_1/analyses")
 
     assert client.post("/api/projects/prj_1/analyses", json={}).status_code != 429
+
+
+def test_network_bound_entrypoint_provisions_first_run_authority():
+    """serve.sh binds 0.0.0.0, so it must provision the setup authority it relies on."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    source = (root / "scripts" / "serve.sh").read_text(encoding="utf-8")
+    assert "--host 0.0.0.0" in source
+    assert "THROUGHLINE_REMOTE_SETUP_TOKEN" in source
+    assert "secrets.token_urlsafe" in source
+
+    token = source.index("THROUGHLINE_REMOTE_SETUP_TOKEN")
+    server = source.index("python -m uvicorn")
+    assert token < server, "the server starts before first-run authority exists"

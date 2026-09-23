@@ -94,6 +94,38 @@ def test_another_project_is_not_in_it(client):
     assert "not_mine" not in text
 
 
+def test_text_cells_cannot_become_spreadsheet_formulas(client):
+    _account(client)
+    project_id = client.post("/api/projects", json={"name": "Safe CSV"}).json()["id"]
+
+    dangerous = [
+        "=HYPERLINK(\"https://example.invalid\",\"click\")",
+        " +SUM(1,1)",
+        "\t@SUM(1,1)",
+        "-CMD|' /C calc'!A0",
+    ]
+    for value in dangerous:
+        _tested(project_id, left_variable=value)
+
+    rows = list(csv.DictReader(io.StringIO(
+        client.get(f"/api/projects/{project_id}/results.csv").text
+    )))
+
+    exported = [row["Variable A"] for row in rows]
+    assert len(exported) == len(dangerous)
+    # Results are deliberately ordered by statistical evidence and id, not by
+    # insertion order. Verify every dangerous label is preserved literally
+    # without coupling this security regression test to row ordering.
+    assert set(exported) == {"'" + raw for raw in dangerous}
+
+
+def test_negative_numbers_remain_numeric_cells():
+    from throughline_domain import tables
+
+    assert tables._cell(-1) == "-1"
+    assert tables._cell(-0.5) == "-0.5"
+
+
 def test_a_project_that_tested_nothing_is_a_header_not_an_error(client):
     """
     An empty file and a failed download look identical once saved, so this
