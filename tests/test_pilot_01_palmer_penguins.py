@@ -309,9 +309,11 @@ def test_supported_run_produces_a_faithful_publishable_figure(penguins_project):
         # must never duplicate the unit inside the label itself.
         assert spec.x.label == "flipper length"
         assert spec.x.unit == "mm"
-        assert spec.y.label == "body mass"
-        assert spec.y.unit == "g"
-        assert spec.title == "body mass (g) against flipper length (mm)"
+        # Single-letter suffixes are deliberately not inferred as units: "g"
+        # could be a semantic token rather than a measurement declaration.
+        assert spec.y.label == "body mass g"
+        assert spec.y.unit is None
+        assert spec.title == "body mass g against flipper length (mm)"
         assert "Association does not establish causation." in spec.caption
         assert "pearson_r = 0.871" in spec.caption
         assert "n = 342" in spec.caption
@@ -348,9 +350,9 @@ def test_supported_run_produces_a_faithful_publishable_figure(penguins_project):
     svg = svg_path.read_text(encoding="utf-8")
 
     # Matplotlib keeps SVG text as text, so the exported figure can be audited.
-    assert "body mass (g) against flipper length (mm)" in svg
+    assert "body mass g against flipper length (mm)" in svg
     assert "flipper length (mm)" in svg
-    assert "body mass (g)" in svg
+    assert "body mass g" in svg
     assert "pearson_r = 0.871" in svg
     assert "n = 342" in svg
     assert "Association does not establish causation." in svg
