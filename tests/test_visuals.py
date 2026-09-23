@@ -257,6 +257,43 @@ def test_api_dataset_views_stay_on_the_immutable_version_when_source_moves(analy
     assert 999.0 not in sample["consumption_ddd"]
 
 
+def test_density_reads_only_the_requested_column_in_chunks(analysed, monkeypatch):
+    _, version_id, _ = analysed
+
+    import pandas as pd
+    from throughline_api import app as api_app
+
+    real_read_csv = pd.read_csv
+    calls = []
+
+    def watched_read_csv(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return real_read_csv(*args, **kwargs)
+
+    monkeypatch.setattr(pd, "read_csv", watched_read_csv)
+    values = api_app._column_values(version_id, "consumption_ddd")
+
+    assert values.size == 120
+    relevant = [call for call in calls if call.get("usecols") == ["consumption_ddd"]]
+    assert relevant, calls
+    assert relevant[-1]["chunksize"] == api_app.SAMPLE_CHUNK_ROWS
+
+
+def test_density_refuses_when_exact_kde_would_exceed_its_ceiling(
+        analysed, monkeypatch):
+    _, version_id, _ = analysed
+
+    from fastapi import HTTPException
+    from throughline_api import app as api_app
+
+    monkeypatch.setattr(api_app, "MAX_DENSITY_OBSERVATIONS", 10)
+    with pytest.raises(HTTPException) as exc:
+        api_app._column_values(version_id, "consumption_ddd")
+
+    assert exc.value.status_code == 409
+    assert "refuses to approximate" in str(exc.value.detail)
+
+
 def test_api_dataset_views_refuse_tampered_version_bytes(analysed):
     """A hash-named path is not evidence; the bytes themselves must still hash."""
     _, version_id, _ = analysed
