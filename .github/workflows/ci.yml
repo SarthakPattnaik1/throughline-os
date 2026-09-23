@@ -62,7 +62,10 @@ jobs:
       - name: Prepare isolated test home
         shell: pwsh
         run: |
-          $testHome = Join-Path $env:RUNNER_TEMP "throughline-tests"
+          # pgserver/initdb must be able to adjust permissions on its data
+          # directory. GitHub's D:\a\_temp root can refuse that on Windows,
+          # so use a fresh checkout-local directory instead.
+          $testHome = Join-Path $env:GITHUB_WORKSPACE ".pilot01-test-home"
           "THROUGHLINE_TEST_HOME=$testHome" >> $env:GITHUB_ENV
           "THROUGHLINE_HOME=$testHome" >> $env:GITHUB_ENV
 
