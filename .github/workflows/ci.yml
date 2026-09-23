@@ -90,7 +90,7 @@ jobs:
 
       - name: Run Pilot 01 Gate A on Windows
         run: |
-          .venv\Scripts\python scripts/verify_pilot_01.py --environment
+          .venv\Scripts\python scripts/verify_pilot_01.py --expected-commit "${{ github.sha }}" --clean-tree --environment
           .venv\Scripts\python -m pytest tests/test_pilot_01_palmer_penguins.py -q
 
       - name: Verify Windows sandbox confinement
