@@ -36,17 +36,25 @@ export function Gate({ status, onDone }: { status: AuthStatus; onDone: () => voi
    */
   const setup = status.needs_setup;
   /*
-   * Which path to lead with. A brand-new visitor arrives from the landing
-   * page's only button and used to meet "Welcome back" with account creation
-   * as an underlined link in body text (T135). The browser remembers whether
-   * an account has ever signed in here; until it has, creating one leads.
-   * Both paths are always visible as equal, labelled choices.
+   * Which path to lead with — asked of the installation, not of the browser.
+   *
+   * A brand-new visitor arrives from the landing page's only button and should
+   * not meet "Welcome back" (T135). That was read from `localStorage`: whether
+   * *this browser* had ever signed in here. Which is the wrong question, and it
+   * failed the common case — open the product in another browser, clear site
+   * data, or use a private window, and an installation full of your own
+   * projects greeted you with "Create your account". Type the email you
+   * already have and it answers "an account with this email already exists",
+   * which is a dead end reached in two clicks from the front page.
+   *
+   * `needs_setup` is the honest signal and it is already on this object: false
+   * means this installation has at least one account, so the overwhelmingly
+   * likely visitor is somebody who owns one. Lead with signing in. A genuine
+   * second person on a shared machine is one clearly-labelled click away, and
+   * both paths stay visible as equal choices.
    */
-  const [seen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    try { return window.localStorage.getItem("throughline.account") === "1"; } catch { return false; }
-  });
-  const [mode, setMode] = useState<"signin" | "signup">(seen ? "signin" : "signup");
+  const [mode, setMode] = useState<"signin" | "signup">(
+    status.needs_setup ? "signup" : "signin");
   const creating = setup || mode === "signup";
 
   async function submit(event: React.FormEvent) {
@@ -62,7 +70,6 @@ export function Gate({ status, onDone }: { status: AuthStatus; onDone: () => voi
       } else {
         await api.post("/api/auth/login", { email, password });
       }
-      try { window.localStorage.setItem("throughline.account", "1"); } catch { /* a convenience only */ }
       onDone();
     } catch (err) {
       setError(err);
