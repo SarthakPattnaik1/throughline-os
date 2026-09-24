@@ -13,8 +13,8 @@
  * calling it the dataset.
  */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { Cartesian } from "@/components/charts/Cartesian";
 
 const DATA = Array.from({ length: 40 }, (_, i) => ({
