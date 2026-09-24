@@ -22,7 +22,7 @@
 import { useApi } from "@/lib/useApi";
 import type { Connection } from "@/lib/api";
 import { Fold, Loading } from "./primitives";
-import { StateMark, Status } from "./primitives";
+import { StateMark } from "./primitives";
 import { Term } from "./term";
 import {
   IconChevronRight, IconConnections, IconDataset, IconLink, IconNote,
@@ -37,7 +37,7 @@ type Note = {
 };
 
 export function AnalysisContext({ projectId, runId, onOpenConnection,
-                                  onOpenSource, onOpenLineage }: {
+                                  onOpenLineage }: {
   projectId: string;
   runId: string;
   /** The connection this run produced, where validation is decided. */
