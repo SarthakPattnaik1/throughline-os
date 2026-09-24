@@ -328,7 +328,7 @@ def ensure(kind: str, root: Path | None = None, log=print) -> Path:
 
     url, expected, _ = RUNTIMES[kind][host()]
     target = install_dir(kind, root)
-    log(f"Fetching {kind} {VERSIONS[kind]} for {host()} — this happens once.")
+    log(f"Fetching {kind} {VERSIONS[kind]} for {host()} - this happens once.")
     archive = download(url, expected, target.parent / url.rsplit("/", 1)[-1], log)
     try:
         unpack(archive, target, kind)
