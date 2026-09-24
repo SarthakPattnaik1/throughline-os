@@ -69,6 +69,31 @@ def test_checkout_verifier_refuses_dirty_tree(monkeypatch):
         verifier.verify_checkout("a" * 40, True)
 
 
+
+
+def test_gate_b_forces_utf8_for_child_processes(monkeypatch, tmp_path):
+    """Windows locale encodings must not make audit subprocess logging fail."""
+    seen = {}
+
+    def fake_run(command, *, cwd, env, text, encoding, errors, stdout, stderr):
+        seen["env"] = dict(env)
+        seen["encoding"] = encoding
+        seen["errors"] = errors
+        return _Result("ok\n", 0)
+
+    monkeypatch.setattr(gate_b.subprocess, "run", fake_run)
+    gate_b._run(
+        [sys.executable, "-c", "print('ok')"],
+        {"PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
+        {"steps": [], "status": "running"},
+    )
+
+    assert seen["encoding"] == "utf-8"
+    assert seen["errors"] == "replace"
+    assert seen["env"]["PYTHONIOENCODING"] == "utf-8"
+    assert seen["env"]["PYTHONUTF8"] == "1"
+
+
 def test_gate_b_record_cannot_be_written_inside_checkout(monkeypatch):
     monkeypatch.setattr(
         sys,
