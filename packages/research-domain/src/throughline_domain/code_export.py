@@ -108,10 +108,10 @@ def for_run(
     variables = dict(run["variables"] or {})
     hashes = dict(run["input_hashes"] or {})
     if dataset_relative_path is None:
-        imports = "import pandas as pd\\nfrom scipy import stats"
+        imports = "import pandas as pd\nfrom scipy import stats"
         dataset_read = f"pd.read_csv({run['filename']!r})"
     else:
-        imports = "from pathlib import Path\\n\\nimport pandas as pd\\nfrom scipy import stats"
+        imports = "from pathlib import Path\n\nimport pandas as pd\nfrom scipy import stats"
         dataset_read = (
             "pd.read_csv(Path(__file__).resolve().parent.parent / "
             f"{dataset_relative_path!r})"
