@@ -11,3 +11,4 @@
 # Pilot 01 freezes the exact source bytes for replay/audit. Keep this fixture
 # LF-only on every platform so Windows checkout cannot rewrite the pinned file.
 tests/fixtures/pilot_01/penguins.csv text eol=lf
+tests/fixtures/pilot_02/heart_failure_clinical_records_dataset.csv text eol=lf
