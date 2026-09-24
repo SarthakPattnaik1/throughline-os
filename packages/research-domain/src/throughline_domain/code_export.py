@@ -55,12 +55,11 @@ not a finding. See the provenance log for what else was recorded.
 Method chosen because: {rationale}
 """
 
-import pandas as pd
-from scipy import stats
+{imports}
 
 # The file this ran on. Point it at your copy; the recorded content hash was
 # {content_hash}, so a different file is a different analysis.
-FRAME = pd.read_csv({path!r})
+FRAME = {dataset_read}
 '''
 
 BODY = '''
@@ -79,8 +78,18 @@ print(f"p = {{p_value:.6g}}")
 '''
 
 
-def for_run(cur, run_id: str) -> str:
-    """A runnable script for one replay-eligible recorded analysis, or refusal."""
+def for_run(
+    cur,
+    run_id: str,
+    *,
+    dataset_relative_path: str | None = None,
+) -> str:
+    """A runnable script for one replay-eligible recorded analysis, or refusal.
+
+    ``dataset_relative_path`` is for a portable handoff package. It is resolved
+    from the generated script's location, so the consumer can execute the script
+    unchanged without inheriting the producer's storage path.
+    """
     try:
         run = replay_capability.eligible_run(cur, run_id)
     except replay_capability.ReplayIneligible as exc:
@@ -98,13 +107,23 @@ def for_run(cur, run_id: str) -> str:
 
     variables = dict(run["variables"] or {})
     hashes = dict(run["input_hashes"] or {})
+    if dataset_relative_path is None:
+        imports = "import pandas as pd\\nfrom scipy import stats"
+        dataset_read = f"pd.read_csv({run['filename']!r})"
+    else:
+        imports = "from pathlib import Path\\n\\nimport pandas as pd\\nfrom scipy import stats"
+        dataset_read = (
+            "pd.read_csv(Path(__file__).resolve().parent.parent / "
+            f"{dataset_relative_path!r})"
+        )
     return (
         HEADER.format(
             question=run["research_question"] or "An analysis.",
             run_id=run["id"],
             rationale=run["method_rationale"] or "not recorded",
             content_hash=hashes["dataset_content_hash"],
-            path=run["filename"],
+            imports=imports,
+            dataset_read=dataset_read,
         )
         + BODY.format(x=variables["x"], y=variables["y"], call=call)
     )
