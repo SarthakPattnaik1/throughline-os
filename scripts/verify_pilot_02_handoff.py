@@ -87,10 +87,13 @@ def verify(package: Path, contract_path: Path, trusted_manifest_sha256: str) -> 
 
     for relative, expected in manifest["files"].items():
         payload = (package / relative).read_bytes()
-        if len(payload) != int(expected["bytes"]):
-            raise RuntimeError(f"{relative}: byte length mismatch")
+        # Hash is the frozen identity failure reason for N3/N4. Check it first:
+        # a mutation may change both size and digest, but the contract explicitly
+        # requires those controls to fail on SHA-256 mismatch.
         if _sha256(payload) != expected["sha256"]:
             raise RuntimeError(f"{relative}: sha256 mismatch")
+        if len(payload) != int(expected["bytes"]):
+            raise RuntimeError(f"{relative}: byte length mismatch")
 
     source = contract["source"]
     dataset = (package / "dataset/heart_failure_clinical_records_dataset.csv").read_bytes()
