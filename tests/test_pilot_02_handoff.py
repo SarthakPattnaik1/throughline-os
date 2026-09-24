@@ -121,9 +121,10 @@ def _analyse(project_id: str, version_id: str, y: str) -> str:
 
 
 def _verify(package: Path, contract: Path, anchor: str):
+    contract_sha256 = hashlib.sha256(contract.read_bytes()).hexdigest()
     return subprocess.run(
         [sys.executable, str(ROOT / "scripts/verify_pilot_02_handoff.py"),
-         str(package), str(contract), anchor],
+         str(package), str(contract), anchor, contract_sha256],
         capture_output=True, text=True, check=False,
     )
 
