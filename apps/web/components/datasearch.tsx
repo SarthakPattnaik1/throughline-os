@@ -35,7 +35,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import { plainText } from "@/lib/plain-text";
-import { Empty, Failure, Loading } from "./primitives";
+import { Empty, Failure } from "./primitives";
 import { SearchingSources, SourceChip, SourceMark } from "./SourceMark";
 
 type Usability = {
