@@ -50,7 +50,6 @@ import { isDarkPage, selectionColour } from "@/lib/charts/theme";
 import { useSpatialKeys } from "@/lib/charts/spatialKeys";
 import { drawLitSphere } from "@/lib/charts3d/shading";
 import { ChartExport } from "@/components/charts/ChartExport";
-import { Colourbar } from "@/components/charts/Colourbar";
 import { isZoomWheel, wheelZoomFactor } from "@/lib/charts/wheel";
 import {
   DEFAULT_VOLUME, Grid, Splat, Volume, VolumeSettings, Window, describeVolume,
