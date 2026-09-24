@@ -58,7 +58,7 @@ jobs:
         run: ./.venv/bin/python scripts/check_test_skips.py pytest.out
 
   windows-sandbox:
-    name: windows · sandbox + Pilot 01
+    name: windows · sandbox
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -88,10 +88,11 @@ jobs:
       - name: Verify pinned Python runtime
         run: .venv\Scripts\python -c "import sys; assert sys.version_info[:3] == (3, 12, 14), sys.version"
 
-      - name: Run Pilot 01 Gate A on Windows
+      - name: Run Pilot Gate A suites on Windows
         run: |
           .venv\Scripts\python scripts/verify_pilot_01.py --expected-commit "${{ github.sha }}" --clean-tree --environment
           .venv\Scripts\python -m pytest tests/test_pilot_01_palmer_penguins.py -q
+          .venv\Scripts\python -m pytest tests/test_pilot_02_handoff.py -q
 
       - name: Verify Windows sandbox confinement
         run: .venv\Scripts\python -m pytest tests/test_sandbox.py -q
