@@ -44,6 +44,8 @@ def _run(command: list[str], env: dict[str, str], record: dict) -> None:
         cwd=ROOT,
         env=env,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
@@ -148,6 +150,12 @@ def main() -> int:
         env["THROUGHLINE_TEST_HOME"] = str(audit_home)
         env["THROUGHLINE_HOME"] = str(audit_home)
         env["THROUGHLINE_RUNTIME_DIR"] = str(audit_home / "runtimes")
+        # Force Python child processes to use UTF-8 for stdout/stderr even on
+        # Windows locales such as CP949. Audit commands may print Unicode and
+        # must not fail before their actual work begins because the console
+        # code page cannot represent one character.
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
         record["test_home"] = str(audit_home)
         record["runtime_home"] = env["THROUGHLINE_RUNTIME_DIR"]
 
