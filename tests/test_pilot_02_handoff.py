@@ -1,12 +1,14 @@
 """Pilot 02 Gate A: producer-to-consumer handoff identity and replay."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
 import shutil
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 
 import pytest
@@ -31,31 +33,14 @@ EXPORT_REFUSAL = RECEIPT_REFUSAL + " Replay-supported methods: pearson_correlati
 
 
 def _contract(path: Path) -> Path:
-    value = {
-        "contract_version": "1.0.0",
-        "source": {"fixture_bytes": DATA_BYTES, "fixture_sha256": DATA_SHA256},
-        "semantic_spec": {
-            "analysis_type": "statistical",
-            "research_question": QUESTION,
-            "method": "pearson_correlation",
-            "variables": {"x": "serum_creatinine", "y": "DEATH_EVENT"},
-            "filters": [], "transformations": [], "parameters": {},
-            "confidence_level": 0.95, "assumptions": [], "outputs_requested": [],
-            "visualization_intent": "", "random_seed": 0,
-            "method_rationale": RATIONALE,
-        },
-        "oracle": {
-            "sample_size": EXPECTED_N,
-            "estimate": EXPECTED_R,
-            "p_value_two_sided": EXPECTED_P,
-            "stored_vs_oracle": {
-                "estimate": {"abs_tol": 1e-12},
-                "p_value": {"rel_tol": 1e-10, "abs_tol": 0.0},
-                "sample_size": {"exact": True},
-            },
-        },
-    }
-    path.write_text(json.dumps(value), encoding="utf-8")
+    """Materialize the exact pre-implementation-approved contract bytes."""
+    encoded = (
+        ROOT / "tests/fixtures/pilot_02/FROZEN_CONTRACT_v1.0.0.json.zlib.b64"
+    ).read_text(encoding="ascii")
+    payload = zlib.decompress(base64.b64decode(encoded))
+    assert len(payload) == 14085
+    assert hashlib.sha256(payload).hexdigest() == CONTRACT_SHA256
+    path.write_bytes(payload)
     return path
 
 
@@ -121,10 +106,9 @@ def _analyse(project_id: str, version_id: str, y: str) -> str:
 
 
 def _verify(package: Path, contract: Path, anchor: str):
-    contract_sha256 = hashlib.sha256(contract.read_bytes()).hexdigest()
     return subprocess.run(
         [sys.executable, str(ROOT / "scripts/verify_pilot_02_handoff.py"),
-         str(package), str(contract), anchor, contract_sha256],
+         str(package), str(contract), anchor, CONTRACT_SHA256],
         capture_output=True, text=True, check=False,
     )
 
