@@ -65,9 +65,21 @@ def _compare_number(actual: float, expected: float, rule: dict[str, Any]) -> boo
     )
 
 
-def verify(package: Path, contract_path: Path, trusted_manifest_sha256: str) -> dict[str, Any]:
+def verify(
+    package: Path,
+    contract_path: Path,
+    trusted_manifest_sha256: str,
+    trusted_contract_sha256: str,
+) -> dict[str, Any]:
     package = package.resolve()
-    contract = _load(contract_path)
+    contract_bytes = contract_path.read_bytes()
+    actual_contract_hash = _sha256(contract_bytes)
+    if actual_contract_hash != trusted_contract_sha256:
+        raise RuntimeError(
+            "trusted contract mismatch: "
+            f"{actual_contract_hash} != {trusted_contract_sha256}"
+        )
+    contract = json.loads(contract_bytes)
     manifest_path = package / "HANDOFF_MANIFEST.json"
     manifest_bytes = manifest_path.read_bytes()
     actual_manifest_hash = _sha256(manifest_bytes)
@@ -188,9 +200,15 @@ def main() -> int:
     parser.add_argument("package", type=Path)
     parser.add_argument("contract", type=Path)
     parser.add_argument("trusted_manifest_sha256")
+    parser.add_argument("trusted_contract_sha256")
     args = parser.parse_args()
     try:
-        result = verify(args.package, args.contract, args.trusted_manifest_sha256)
+        result = verify(
+            args.package,
+            args.contract,
+            args.trusted_manifest_sha256,
+            args.trusted_contract_sha256,
+        )
     except Exception as exc:
         print(f"Pilot 02 consumer verification failed: {exc}", file=sys.stderr)
         return 1
