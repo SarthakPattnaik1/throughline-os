@@ -58,7 +58,7 @@ jobs:
         run: ./.venv/bin/python scripts/check_test_skips.py pytest.out
 
   windows-sandbox:
-    name: windows · sandbox + Pilots
+    name: windows · sandbox
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
