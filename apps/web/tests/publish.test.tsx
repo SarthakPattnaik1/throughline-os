@@ -25,14 +25,6 @@ const clean = {
   critique: { publishable: true, critiques: [] as Critique[] },
 };
 
-function mountAndPrepare(created: unknown = clean) {
-  vi.spyOn(api, "post").mockImplementation(async (path: string) =>
-    (String(path).includes("/visuals?") || String(path).endsWith("/visuals")
-      ? created : { warning: null }) as never);
-  render(<PublishFigure projectId="prj_1" analysisRunId="arun_1" />);
-  return screen.findByRole("button", { name: /Export for publication/ });
-}
-
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:x");
