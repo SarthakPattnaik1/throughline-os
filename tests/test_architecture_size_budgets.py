@@ -10,7 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 LINE_BUDGETS = {
-    "apps/api/src/throughline_api/app.py": 6447,
+    "apps/api/src/throughline_api/app.py": 6101,
+    "apps/api/src/throughline_api/auth_routes.py": 327,
     "apps/web/components/views.tsx": 4301,
     "apps/web/app/globals.css": 8268,
     "scripts/manage.py": 2213,

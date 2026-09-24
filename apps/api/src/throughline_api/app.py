@@ -8,8 +8,6 @@ entry commit together.
 
 from __future__ import annotations
 
-import hmac
-import ipaddress
 import io
 import logging
 import os
@@ -74,6 +72,19 @@ from .security import (
     deployment_is_local,
     session_cookie_kwargs,
 )
+from .auth_routes import (
+    LoginRequest,
+    MAX_PASSWORD,
+    NewAccount,
+    PasswordChange,
+    RegisterRequest,
+    RegistrationSetting,
+    SetupRequest,
+    admin_user,
+    current_user,
+    router as auth_router,
+    scoped_project,
+)
 from throughline_schemas.enums import (
     FindingLifecycle,
     FindingType,
@@ -120,32 +131,13 @@ app.add_middleware(SecurityMiddleware)
 # can reject oversized multipart/chunked bodies before FastAPI parses them.
 app.add_middleware(RequestBodyLimitMiddleware)
 
+# Account/authentication routes live in a bounded module; paths are unchanged.
+app.include_router(auth_router)
+
 
 # ---------------------------------------------------------------------------
 # Request/response models
 # ---------------------------------------------------------------------------
-
-
-#: The longest password any request accepts — one number for every model that
-#: takes one. Setting a password allowed 1024 characters while signing in (and
-#: first-run setup) allowed 400, so a long generated passphrase could be set and
-#: then never used: sign-in refused it as too long before checking it, and the
-#: account was locked out for good (T169).
-MAX_PASSWORD = 1024
-
-
-class SetupRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=254)
-    display_name: str = Field(min_length=1, max_length=200)
-    password: str = Field(min_length=12, max_length=MAX_PASSWORD)
-    # Required only when first-run setup reaches the API from a non-loopback
-    # peer (for example through Docker's bridge). It is never stored.
-    setup_token: str = Field(default="", max_length=512)
-
-
-class LoginRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=1, max_length=MAX_PASSWORD)
 
 
 class ProjectCreate(BaseModel):
@@ -187,47 +179,6 @@ class FindingLimitations(BaseModel):
     """What a finding does not establish, in the researcher's own words."""
 
     limitations: list[str] = Field(default_factory=list, max_length=40)
-
-
-# ---------------------------------------------------------------------------
-# Auth plumbing
-# ---------------------------------------------------------------------------
-
-
-def current_user(throughline_session: str | None = Cookie(default=None)) -> dict[str, Any]:
-    with transaction() as cur:
-        user = auth.resolve_session(cur, throughline_session)
-    if not user:
-        raise HTTPException(401, "Sign in to continue.")
-    return user
-
-
-def admin_user(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    """
-    The signed-in account, if it is this installation's administrator.
-
-    `users.is_admin` has been set since accounts existed — the first account is
-    the administrator, `docs/TRY_IT.md` says so, and the interface shows the
-    badge — and nothing checked it. Any account could install packs, save or
-    clear the model key, change the model, create accounts and install the
-    desktop entry. Those act on the machine rather than on a researcher's own
-    projects, and they are this role's now (T166). 403 rather than 404: unlike
-    another account's project, what is being refused here is no secret.
-    """
-    if not user.get("is_admin"):
-        raise HTTPException(
-            403, "Only the administrator of this installation can do this. It "
-                 "changes the machine for everyone who uses it, not one project.")
-    return user
-
-
-def scoped_project(project_id: str, user: dict[str, Any]) -> str:
-    """Project isolation is checked here, never in the client."""
-    with transaction() as cur:
-        if not auth.owns_project(cur, user_id=user["id"], project_id=project_id):
-            # Not 403: an account should not learn that someone else's project id exists.
-            raise HTTPException(404, "Project not found.")
-    return project_id
 
 
 def _verified_research_path(
@@ -329,303 +280,6 @@ def liveness() -> dict[str, Any]:
         cur.execute("SELECT 1 AS ok")
         db_ok = cur.fetchone()["ok"] == 1
     return {"status": "ok" if db_ok else "degraded", "version": API_VERSION}
-
-
-@app.get("/api/auth/status")
-def auth_status(throughline_session: str | None = Cookie(default=None)) -> dict[str, Any]:
-    with transaction() as cur:
-        cur.execute("SELECT COUNT(*) AS n FROM users")
-        needs_setup = cur.fetchone()["n"] == 0
-        user = auth.resolve_session(cur, throughline_session)
-    return {"needs_setup": needs_setup, "authenticated": bool(user), "user": user}
-
-
-_FIRST_ACCOUNT_LOCK = "throughline:first-account"
-
-
-def _lock_first_account(cur) -> None:
-    """Serialize the decision about which account is the administrator."""
-    cur.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-        (_FIRST_ACCOUNT_LOCK,),
-    )
-
-
-def _setup_peer_is_loopback(request: Request) -> bool:
-    """Whether first-run setup originated from this machine itself.
-
-    Deployment labels are configuration; the peer address is the network fact.
-    A packaged container binds on all interfaces, so treating every
-    `THROUGHLINE_DEPLOYMENT=local` request as loopback would let the first LAN
-    caller become the administrator of a fresh installation.
-
-    Starlette's TestClient uses the literal host "testclient". It is accepted
-    only while pytest is actually running so the test harness does not become a
-    production bypass.
-    """
-    host = ((request.client.host if request.client else "") or "").split("%", 1)[0]
-    if host == "testclient" and os.environ.get("PYTEST_CURRENT_TEST"):
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return host.lower() == "localhost"
-
-
-def _require_remote_setup_authority(
-    request: Request, *, body_token: str = "",
-) -> None:
-    """Require an operator secret for every non-loopback first-admin setup.
-
-    This deliberately does *not* trust `deployment_is_local()`. The container
-    entrypoint binds FastAPI to 0.0.0.0, and an operator can publish that port to
-    a LAN or wider network while leaving the deployment label at its default.
-    The first account controls users, models and machine-level capabilities, so
-    network reachability must never be enough to win that race.
-    """
-    if _setup_peer_is_loopback(request):
-        return
-
-    expected = os.environ.get("THROUGHLINE_REMOTE_SETUP_TOKEN", "")
-    supplied = body_token or request.headers.get("x-throughline-setup-token", "")
-    if not expected or not supplied or not hmac.compare_digest(supplied, expected):
-        raise HTTPException(
-            403,
-            "First-run setup reached Throughline over a network connection. "
-            "Enter the setup token printed by the Throughline server, or set "
-            "THROUGHLINE_REMOTE_SETUP_TOKEN on the server and use that value."
-        )
-
-
-@app.post("/api/auth/setup")
-def auth_setup(payload: SetupRequest, response: Response,
-               request: Request) -> dict[str, Any]:
-    _require_remote_setup_authority(request, body_token=payload.setup_token)
-    with transaction() as cur:
-        _lock_first_account(cur)
-        cur.execute("SELECT COUNT(*) AS n FROM users")
-        if cur.fetchone()["n"]:
-            raise HTTPException(409, "This installation is already set up.")
-        try:
-            user = auth.create_user(
-                cur, email=payload.email, display_name=payload.display_name,
-                password=payload.password,
-            )
-        except auth.AuthError as exc:
-            raise HTTPException(400, str(exc)) from exc
-        token = auth.create_session(cur, user_id=user["id"])
-    _set_session_cookie(response, token)
-    return {"user": user}
-
-
-class RegisterRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
-    display_name: str = Field(default="", max_length=200)
-    password: str = Field(min_length=12, max_length=MAX_PASSWORD)
-
-
-def _registration_is_open(request: Request) -> bool:
-    """
-    Whether a stranger may create an account on this installation.
-
-    Open sign-up and a local-first workspace are in genuine tension: anyone who
-    can reach the port could otherwise help themselves to a corpus that lives on
-    someone's laptop. So it is allowed from the machine itself, and off-machine
-    only when the operator has explicitly turned it on.
-
-    That keeps the ordinary case — a researcher installs this and signs up —
-    working exactly as expected, without turning a laptop on café wifi into an
-    open registration server.
-    """
-    with transaction() as cur:
-        if (domain_settings.get(cur, "open_registration") or "").lower() in _OPEN:
-            return True
-    host = (request.client.host if request.client else "") or ""
-    return host in ("127.0.0.1", "::1", "localhost")
-
-
-class RegistrationSetting(BaseModel):
-    open: bool
-
-
-_OPEN = ("1", "true", "yes", "on")
-
-
-@app.get("/api/system/registration")
-def registration_setting(user: dict = Depends(current_user)) -> dict[str, Any]:
-    """
-    Whether strangers on the network may create accounts, and whether you can
-    change that. Readable by any account, so the screen can say what is true
-    and who can alter it rather than offering a switch that answers 403.
-    """
-    with transaction() as cur:
-        value = (domain_settings.get(cur, "open_registration") or "").lower()
-    return {"open": value in _OPEN, "can_change": bool(user.get("is_admin"))}
-
-
-@app.put("/api/system/registration")
-def set_registration(payload: RegistrationSetting,
-                     user: dict = Depends(admin_user)) -> dict[str, Any]:
-    """
-    Turn open registration on or off.
-
-    `_registration_is_open` has always read this, and the sign-up refusal and
-    `docs/TRY_IT.md` both told people to turn it on in Settings — where there
-    was no such switch, and no route that wrote it (T166). Administrator only:
-    turned on, anyone who can reach the port can make themselves an account
-    beside unpublished data. Written through `settings.set_value`, so who
-    opened it and when is on the record.
-    """
-    with transaction() as cur:
-        domain_settings.set_value(cur, "open_registration",
-                                  "true" if payload.open else "false",
-                                  changed_by=user["id"])
-    return {"open": payload.open, "can_change": True}
-
-
-@app.post("/api/auth/register", status_code=201)
-def auth_register(payload: RegisterRequest, request: Request,
-                  response: Response) -> dict[str, Any]:
-    """
-    Create an account and sign in, in one step.
-
-    A brand-new user could not previously get in at all: `setup` runs once and
-    `accounts` needs an existing session, so the second person to open this
-    installation had no way to create an account.
-
-    The new account owns nothing. Projects are scoped by owner, so a fresh
-    account sees an empty workspace rather than anyone else's corpus — that is
-    a property of the query, not of the interface hiding rows.
-    """
-    if not _registration_is_open(request):
-        raise HTTPException(
-            403,
-            "Sign-up is limited to this machine. This workspace holds a "
-            "researcher's corpus, so accounts can only be created locally "
-            "unless the operator turns on open registration in Settings.")
-
-    with transaction() as cur:
-        # Setup and registration can arrive together on a fresh installation.
-        # They must serialize before deciding which account is the one admin.
-        _lock_first_account(cur)
-        cur.execute("SELECT COUNT(*) AS n FROM users")
-        first = cur.fetchone()["n"] == 0
-        try:
-            user = auth.create_user(
-                cur, email=payload.email, display_name=payload.display_name,
-                password=payload.password,
-                # The person who installs it administers it. Nobody after that.
-                is_admin=first)
-        except auth.AuthError as exc:
-            raise HTTPException(400, str(exc)) from exc
-        token = auth.create_session(cur, user_id=user["id"])
-
-    _set_session_cookie(response, token)
-    return {"user": user, "first_account": first}
-
-
-@app.post("/api/auth/login")
-def auth_login(payload: LoginRequest, response: Response) -> dict[str, Any]:
-    with transaction() as cur:
-        user = auth.authenticate(cur, email=payload.email, password=payload.password)
-        if not user:
-            raise HTTPException(401, "Email or password is incorrect.")
-        token = auth.create_session(cur, user_id=user["id"])
-    _set_session_cookie(response, token)
-    return {"user": user}
-
-
-class NewAccount(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
-    display_name: str = Field(default="", max_length=200)
-    password: str = Field(min_length=12, max_length=MAX_PASSWORD)
-
-
-class PasswordChange(BaseModel):
-    current_password: str = Field(min_length=1, max_length=MAX_PASSWORD)
-    new_password: str = Field(min_length=12, max_length=MAX_PASSWORD)
-
-
-@app.post("/api/auth/accounts", status_code=201)
-def create_account(payload: NewAccount,
-                   user: dict = Depends(admin_user)) -> dict[str, Any]:
-    """
-    Add another researcher to this installation.
-
-    Requires an existing session on purpose. This is a local-first workspace,
-    not a service: anyone who can reach the port is on the machine or the
-    network the researcher chose, and an open registration endpoint would let
-    them help themselves to the corpus.
-    """
-    with transaction() as cur:
-        try:
-            created = auth.create_user(
-                cur, email=payload.email, display_name=payload.display_name,
-                password=payload.password, is_admin=False)
-        except auth.AuthError as exc:
-            raise HTTPException(400, str(exc)) from exc
-    return {"user": created}
-
-
-@app.post("/api/auth/password")
-def change_password(payload: PasswordChange, response: Response,
-                    user: dict = Depends(current_user),
-                    throughline_session: str | None = Cookie(default=None)
-                    ) -> dict[str, Any]:
-    """
-    Change your own password, proving you know the current one.
-
-    Every other session is destroyed. A password change is usually a response to
-    the suspicion that someone else has it, and leaving their session alive is
-    the one thing that would make the change pointless.
-    """
-    with transaction() as cur:
-        confirmed = auth.authenticate(cur, email=user["email"],
-                                      password=payload.current_password)
-        if not confirmed:
-            raise HTTPException(403, "That is not your current password.")
-        try:
-            auth.set_password(cur, user_id=user["id"],
-                              password=payload.new_password)
-        except auth.AuthError as exc:
-            raise HTTPException(400, str(exc)) from exc
-        auth.destroy_other_sessions(cur, user_id=user["id"],
-                                    keep_token=throughline_session)
-    return {"ok": True,
-            "note": "Signed out everywhere else. This session stays open."}
-
-
-@app.get("/api/auth/accounts")
-def list_accounts(user: dict = Depends(current_user)) -> list[dict[str, Any]]:
-    with transaction() as cur:
-        cur.execute(
-            "SELECT id, email, display_name, is_admin, created_at FROM users "
-            "ORDER BY created_at")
-        return [dict(row) for row in cur.fetchall()]
-
-
-@app.post("/api/auth/logout")
-def auth_logout(response: Response,
-                throughline_session: str | None = Cookie(default=None)) -> dict[str, bool]:
-    with transaction() as cur:
-        auth.destroy_session(cur, throughline_session)
-    response.delete_cookie(auth.SESSION_COOKIE, path="/")
-    return {"ok": True}
-
-
-def _set_session_cookie(response: Response, token: str) -> None:
-    """
-    Set the session cookie with flags matched to the deployment.
-
-    `secure` was hardcoded False here, which is right on http://localhost and
-    silently wrong the moment the API is reachable over a network — the token
-    would travel in clear text with nothing in the interface saying so. It now
-    defaults to on and is relaxed only when the deployment declares itself local.
-    """
-    response.set_cookie(
-        auth.SESSION_COOKIE, token, max_age=auth.SESSION_DAYS * 86400,
-        **session_cookie_kwargs(),
-    )
 
 
 # ---------------------------------------------------------------------------
