@@ -8,7 +8,7 @@
  * when a release did not take.
  */
 
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { Approvals, waitedFor } from "@/components/approvals";
