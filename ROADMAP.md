@@ -186,7 +186,7 @@ that already holds it in place.
 Then the **pre-registration gate** (giving `preRegistered` something to be true
 about) and a **session-scoped exploration ledger** — Benjamini–Hochberg is real
 but project-wide and counts only discovery sweeps, not the unified per-session
-count across all five verbs that Part H2 describes. Finally, the four evals
+count across all five verbs that Part H2 describes. Finally, the 3 eval
 categories currently declared `not_implemented`.
 
 ---

@@ -301,7 +301,7 @@ describe("the step between the formula and the number", () => {
   it("shows less, not nothing, when a report lacks the ratio", async () => {
     // Guarded like the rest of the screen: one missing field must not take
     // the whole panel down, which is what an unguarded `.toPrecision` did.
-    const { risk_ratio: _omitted, ...without } = REPORT;
+    const without = { ...REPORT, risk_ratio: undefined };
     vi.spyOn(api, "get").mockResolvedValue(without as never);
     render(<Fragility connectionId="conn_1" />);
 

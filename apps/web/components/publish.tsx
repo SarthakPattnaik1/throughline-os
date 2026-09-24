@@ -580,6 +580,8 @@ export function BlenderRender({ visualId }: { visualId: string }) {
       {error && <p className="notice" role="alert">{error}</p>}
       {state.render && image && (
         <figure>
+          {/* Generated Blender renders are blob/data URLs, so Next image optimization adds no value. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={image} alt="The fitted surface, rendered through Blender" />
           <figcaption>
             {state.colour_scale && <>{state.colour_scale.text}{" "}</>}

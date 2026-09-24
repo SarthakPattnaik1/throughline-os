@@ -276,7 +276,7 @@ describe("what a plain reading owes the reader", () => {
   it("says when the reading was kept from an earlier call", async () => {
     // The cached branch sends no `operational_summary`, which is why that
     // field is optional in the type.
-    const { operational_summary: _dropped, ...cached } = READING;
+    const cached = { ...READING, operational_summary: undefined };
     vi.spyOn(api, "get").mockResolvedValue(
       { ...cached, cached: true } as never);
     render(<PlainReading runId="arun_1" />);

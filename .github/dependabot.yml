@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      web-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directories:
+      - "/apps/api"
+      - "/packages/ingestion"
+      - "/packages/model"
+      - "/packages/research-domain"
+      - "/packages/schemas"
+      - "/packages/visual-spec"
+      - "/services/scientific-runtime"
+      - "/services/workers"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"

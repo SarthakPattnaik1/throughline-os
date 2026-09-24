@@ -24,7 +24,7 @@
 
 import { useEffect, useState } from "react";
 import { ApiError, api } from "@/lib/api";
-import { Empty, Failure, Loading } from "./primitives";
+import { Empty, Failure } from "./primitives";
 import { SearchingSources, SourceChip, SourceMark } from "./SourceMark";
 import { PaperReader } from "./literature/PaperReader";
 import type { Excerpt, PaperSource } from "@/lib/literature/excerpt";

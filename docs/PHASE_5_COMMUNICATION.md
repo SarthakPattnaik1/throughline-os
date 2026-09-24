@@ -91,7 +91,7 @@ covers all.
 python -m evals.harness --project prj_...
 ```
 
-Six of the ten §58 categories are implemented. Four are declared and reported as
+7 of the 10 §58 categories are implemented. 3 are declared and reported as
 `not_implemented` with the reason, rather than omitted:
 
 | Category | State |
@@ -104,7 +104,7 @@ Six of the ten §58 categories are implemented. Four are declared and reported a
 | Visualization fidelity | checked |
 | Paper extraction | needs a labelled benchmark and a model |
 | Analysis selection | methodological judgement |
-| Hallucination | nothing generates prose yet |
+| Hallucinated sources | checked against ingested DOI and notebook-link targets |
 | Video claim fidelity | §136 is unbuilt |
 
 The check that actually bites is **render staleness**. Re-resolving and

@@ -337,7 +337,7 @@ function useRoomForInspector(): boolean {
 }
 
 export function Shell({
-  section, onSection, map, children, inspector, rail, bar, projectName,
+  section, onSection, map, children, inspector, rail, projectName,
   crumbs, onDropFiles, projectMenu, account, strip,
 }: {
   section: Section;
